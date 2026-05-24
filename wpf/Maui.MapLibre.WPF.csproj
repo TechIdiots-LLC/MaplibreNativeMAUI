@@ -11,9 +11,16 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <PlatformTarget>x64</PlatformTarget>
+    <!-- AnyCPU — NuGet delivers the right win-x64 or win-arm64 mbgl-cabi.dll
+         from Maui.MapLibre.Native based on the consuming app's publish RID. -->
+    <PlatformTarget>AnyCPU</PlatformTarget>
     <RootNamespace>Maui.MapLibre.WPF</RootNamespace>
     <AssemblyName>Maui.MapLibre.WPF</AssemblyName>
+
+    <!-- NuGet package metadata -->
+    <PackageId>Maui.MapLibre.WPF</PackageId>
+    <Description>WPF HwndHost control backed by MapLibre Native (mbgl-cabi). Provides a MapLibre map view for WPF applications without requiring a MAUI dependency. Consumers must also reference Maui.MapLibre.Native (pulled in automatically as a dependency).</Description>
+    <PackageTags>maplibre;map;wpf;windows;hwndhhost</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

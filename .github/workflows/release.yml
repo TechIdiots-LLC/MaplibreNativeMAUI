@@ -124,11 +124,44 @@ jobs:
           path: artifacts/*.nupkg
           retention-days: 7
 
+  # ── WPF NuGet packaging (Windows runner — WPF SDK requires Windows) ───────
+  pack-wpf:
+    name: Pack WPF NuGet
+    runs-on: windows-latest
+    needs: [version-check]
+    if: needs.version-check.outputs.published == 'false'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 9 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Pack Maui.MapLibre.WPF
+        # No native DLLs needed at pack time — mbgl-cabi.dll is delivered at
+        # runtime via the Maui.MapLibre.Native NuGet dependency, which dotnet
+        # pack records automatically from the <ProjectReference>.
+        shell: bash
+        run: |
+          dotnet pack wpf/Maui.MapLibre.WPF.csproj \
+            -c Release \
+            -p:Version=${{ needs.version-check.outputs.version }} \
+            -o artifacts/
+
+      - name: Upload WPF NuGet artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages-wpf
+          path: artifacts/*.nupkg
+          retention-days: 7
+
   # ── GitHub Release ────────────────────────────────────────────────────────
   release:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
-    needs: [version-check, pack]
+    needs: [version-check, pack, pack-wpf]
     if: needs.version-check.outputs.published == 'false'
     environment: release
 
@@ -138,7 +171,8 @@ jobs:
       - name: Download NuGet packages
         uses: actions/download-artifact@v4
         with:
-          name: nuget-packages
+          pattern: nuget-packages*
+          merge-multiple: true
           path: artifacts/
 
       - name: Extract changelog for version

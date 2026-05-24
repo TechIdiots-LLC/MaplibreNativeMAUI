@@ -111,6 +111,28 @@ jobs:
           path: artifacts/*.nupkg
           retention-days: 3
 
+  # ── WPF NuGet pack (verify packability on Windows) ────────────────────────
+  pack-wpf:
+    name: Pack WPF NuGet
+    runs-on: windows-latest
+    needs: [version]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 9 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Pack Maui.MapLibre.WPF
+        shell: bash
+        run: |
+          dotnet pack wpf/Maui.MapLibre.WPF.csproj \
+            -c Release \
+            -p:Version=${{ needs.version.outputs.version }} \
+            -o artifacts/
+
   # ── Sample app builds (validate end-to-end compilation) ───────────────────
   sample:
     name: Sample — all platforms
