@@ -468,6 +468,12 @@ public class MapLibreMapController : IMapLibreMapController
     public void SetLayerVisibility(string layerId, bool visible)
         => _style?.GetLayer(layerId)?.SetVisible(visible);
 
+    // ── Location indicator (no-op on Android — platform uses its own blue-dot) ──
+    public bool FollowLocation { get; set; } = true;
+    public bool ShowBearing    { get; set; } = true;
+    public void UpdateLocationIndicator(double lat, double lon, float bearing = 0, float accuracyMeters = 10) { }
+    public void ClearLocationIndicator() { }
+
     // -- Cleanup ---------------------------------------------------------------
 
     private void DisposeNative()
