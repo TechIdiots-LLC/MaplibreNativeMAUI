@@ -552,7 +552,6 @@ public static partial class MlnMethods
     [LibraryImport(Lib, EntryPoint = "mln_wgl_surface_attach")]
     public static unsafe partial MlnStatus WglSurfaceAttach(
         IntPtr map, MlnWglSurfaceDescriptor* descriptor, out IntPtr outSession);
-        IntPtr map, MlnVulkanSurfaceDescriptor* descriptor, out IntPtr outSession);
 
     // ── GeoJSON sources ───────────────────────────────────────────────────────
     [LibraryImport(Lib, EntryPoint = "mln_map_add_geojson_source_data",

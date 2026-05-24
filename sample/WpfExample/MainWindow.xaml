@@ -1,0 +1,56 @@
+<Window x:Class="WpfExample.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:mlwpf="clr-namespace:Maui.MapLibre.WPF;assembly=Maui.MapLibre.WPF"
+        Title="MapLibre WPF Example" Width="1100" Height="750">
+
+    <DockPanel>
+
+        <!-- ── Toolbar ── -->
+        <ToolBar DockPanel.Dock="Top" Margin="2">
+
+            <Label Content="Fly to:" VerticalAlignment="Center" />
+            <Button Content="Seattle"   Click="BtnSeattle_Click"   Margin="2,0" Padding="6,2" />
+            <Button Content="London"    Click="BtnLondon_Click"    Margin="2,0" Padding="6,2" />
+            <Button Content="New York"  Click="BtnNewYork_Click"   Margin="2,0" Padding="6,2" />
+
+            <Separator Margin="4,0" />
+
+            <Label Content="Camera:" VerticalAlignment="Center" />
+            <Button Content="＋" Click="BtnZoomIn_Click"  Margin="2,0" Padding="6,2"
+                    ToolTip="Zoom in" />
+            <Button Content="－" Click="BtnZoomOut_Click" Margin="2,0" Padding="6,2"
+                    ToolTip="Zoom out" />
+            <Button Content="⬆ N"   Click="BtnNorth_Click"  Margin="2,0" Padding="6,2"
+                    ToolTip="Reset north / pitch" />
+
+            <Separator Margin="4,0" />
+
+            <Label Content="GeoJSON:" VerticalAlignment="Center" />
+            <Button x:Name="BtnMarker" Content="Add Marker"
+                    Click="BtnMarker_Click" Margin="2,0" Padding="6,2" />
+
+        </ToolBar>
+
+        <!-- ── Status bar ── -->
+        <StatusBar DockPanel.Dock="Bottom">
+            <StatusBarItem>
+                <TextBlock x:Name="StatusText" Text="Initialising…" />
+            </StatusBarItem>
+        </StatusBar>
+
+        <!-- ── Map ── -->
+        <!--
+            MbglMapHost is an HwndHost — it owns a child HWND backed by OpenGL.
+            StyleUrl, ShowNavigationControls and events are set here; everything
+            else (pan, zoom, double-tap) is handled internally by the control.
+        -->
+        <mlwpf:MbglMapHost x:Name="MapHost"
+                           StyleUrl="https://demotiles.maplibre.org/style.json"
+                           ShowNavigationControls="True"
+                           MapReady="MapHost_MapReady"
+                           StyleLoaded="MapHost_StyleLoaded"
+                           CameraIdle="MapHost_CameraIdle" />
+    </DockPanel>
+
+</Window>

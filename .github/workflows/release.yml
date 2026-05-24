@@ -126,9 +126,9 @@ jobs:
 
   # ── WPF NuGet packaging (Windows runner — WPF SDK requires Windows) ───────
   pack-wpf:
-    name: Pack WPF NuGet
+    name: Pack WPF NuGet + Windows samples
     runs-on: windows-latest
-    needs: [version-check]
+    needs: [version-check, build-windows]
     if: needs.version-check.outputs.published == 'false'
 
     steps:
@@ -139,10 +139,22 @@ jobs:
         with:
           dotnet-version: 9.0.x
 
+      - name: Download Windows native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-windows-*
+          path: native-artifacts
+
+      - name: Stage native DLLs
+        shell: bash
+        run: |
+          mkdir -p bindings/native/win-x64 bindings/native/win-arm64
+          find native-artifacts/native-windows-x64  -name "mbgl-cabi.dll" -exec cp {} bindings/native/win-x64/ \;
+          find native-artifacts/native-windows-arm64 -name "mbgl-cabi.dll" -exec cp {} bindings/native/win-arm64/ \;
+          echo "Staged DLLs:"
+          find bindings/native -name "*.dll"
+
       - name: Pack Maui.MapLibre.WPF
-        # No native DLLs needed at pack time — mbgl-cabi.dll is delivered at
-        # runtime via the Maui.MapLibre.Native NuGet dependency, which dotnet
-        # pack records automatically from the <ProjectReference>.
         shell: bash
         run: |
           dotnet pack wpf/Maui.MapLibre.WPF.csproj \
@@ -150,11 +162,54 @@ jobs:
             -p:Version=${{ needs.version-check.outputs.version }} \
             -o artifacts/
 
+      - name: Publish ConsoleExample (win-x64)
+        shell: bash
+        run: |
+          dotnet publish sample/ConsoleExample/ConsoleExample.csproj \
+            -c Release -r win-x64 --self-contained false \
+            -o publish/ConsoleExample-win-x64
+
+      - name: Publish ConsoleExample (win-arm64)
+        shell: bash
+        run: |
+          dotnet publish sample/ConsoleExample/ConsoleExample.csproj \
+            -c Release -r win-arm64 --self-contained false \
+            -o publish/ConsoleExample-win-arm64
+
+      - name: Publish WpfExample (win-x64)
+        shell: bash
+        run: |
+          dotnet publish sample/WpfExample/WpfExample.csproj \
+            -c Release -r win-x64 --self-contained false \
+            -o publish/WpfExample-win-x64
+
+      - name: Publish WpfExample (win-arm64)
+        shell: bash
+        run: |
+          dotnet publish sample/WpfExample/WpfExample.csproj \
+            -c Release -r win-arm64 --self-contained false \
+            -o publish/WpfExample-win-arm64
+
+      - name: Zip sample outputs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path samples -Force | Out-Null
+          @('ConsoleExample-win-x64','ConsoleExample-win-arm64','WpfExample-win-x64','WpfExample-win-arm64') | ForEach-Object {
+            Compress-Archive -Path "publish/$_/*" -DestinationPath "samples/$_.zip"
+          }
+
       - name: Upload WPF NuGet artifact
         uses: actions/upload-artifact@v4
         with:
           name: nuget-packages-wpf
           path: artifacts/*.nupkg
+          retention-days: 7
+
+      - name: Upload Windows samples
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-samples
+          path: samples/*.zip
           retention-days: 7
 
   # ── GitHub Release ────────────────────────────────────────────────────────
@@ -175,6 +230,12 @@ jobs:
           merge-multiple: true
           path: artifacts/
 
+      - name: Download Windows sample zips
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-samples
+          path: artifacts/
+
       - name: Extract changelog for version
         run: |
           VERSION="${{ needs.version-check.outputs.version }}"
@@ -193,7 +254,7 @@ jobs:
           tag:          v${{ needs.version-check.outputs.version }}
           name:         v${{ needs.version-check.outputs.version }}
           bodyFile:     release-notes.md
-          artifacts:    artifacts/*.nupkg
+          artifacts:    "artifacts/*.nupkg,artifacts/*.zip"
           draft:        false
           allowUpdates: true
         env:

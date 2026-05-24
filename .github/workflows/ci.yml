@@ -113,9 +113,9 @@ jobs:
 
   # ── WPF NuGet pack (verify packability on Windows) ────────────────────────
   pack-wpf:
-    name: Pack WPF NuGet
+    name: Pack WPF NuGet + Windows samples
     runs-on: windows-latest
-    needs: [version]
+    needs: [version, build-windows]
 
     steps:
       - uses: actions/checkout@v4
@@ -125,6 +125,21 @@ jobs:
         with:
           dotnet-version: 9.0.x
 
+      - name: Download Windows native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-windows-*
+          path: native-artifacts
+
+      - name: Stage native DLLs
+        shell: bash
+        run: |
+          mkdir -p bindings/native/win-x64 bindings/native/win-arm64
+          find native-artifacts/native-windows-x64  -name "mbgl-cabi.dll" -exec cp {} bindings/native/win-x64/ \;
+          find native-artifacts/native-windows-arm64 -name "mbgl-cabi.dll" -exec cp {} bindings/native/win-arm64/ \;
+          echo "Staged DLLs:"
+          find bindings/native -name "*.dll"
+
       - name: Pack Maui.MapLibre.WPF
         shell: bash
         run: |
@@ -132,6 +147,49 @@ jobs:
             -c Release \
             -p:Version=${{ needs.version.outputs.version }} \
             -o artifacts/
+
+      - name: Publish ConsoleExample (win-x64)
+        shell: bash
+        run: |
+          dotnet publish sample/ConsoleExample/ConsoleExample.csproj \
+            -c Release -r win-x64 --self-contained false \
+            -o publish/ConsoleExample-win-x64
+
+      - name: Publish ConsoleExample (win-arm64)
+        shell: bash
+        run: |
+          dotnet publish sample/ConsoleExample/ConsoleExample.csproj \
+            -c Release -r win-arm64 --self-contained false \
+            -o publish/ConsoleExample-win-arm64
+
+      - name: Publish WpfExample (win-x64)
+        shell: bash
+        run: |
+          dotnet publish sample/WpfExample/WpfExample.csproj \
+            -c Release -r win-x64 --self-contained false \
+            -o publish/WpfExample-win-x64
+
+      - name: Publish WpfExample (win-arm64)
+        shell: bash
+        run: |
+          dotnet publish sample/WpfExample/WpfExample.csproj \
+            -c Release -r win-arm64 --self-contained false \
+            -o publish/WpfExample-win-arm64
+
+      - name: Zip sample outputs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path samples -Force | Out-Null
+          @('ConsoleExample-win-x64','ConsoleExample-win-arm64','WpfExample-win-x64','WpfExample-win-arm64') | ForEach-Object {
+            Compress-Archive -Path "publish/$_/*" -DestinationPath "samples/$_.zip"
+          }
+
+      - name: Upload Windows samples (CI)
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-samples-ci
+          path: samples/*.zip
+          retention-days: 7
 
   # ── Sample app builds (validate end-to-end compilation) ───────────────────
   sample:

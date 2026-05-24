@@ -57,10 +57,15 @@
     </None>
   </ItemGroup>
 
-  <!-- CopyToOutputDirectory only applies when actually building for Windows -->
+  <!-- CopyToOutputDirectory only applies when actually building for Windows.
+       RID-aware: win-arm64 publish gets the arm64 DLL; everything else gets x64. -->
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
     <None Include="$(_MbglNativeDir)win-x64\mbgl-cabi.dll"
-          Condition="Exists('$(_MbglNativeDir)win-x64\mbgl-cabi.dll')">
+          Condition="Exists('$(_MbglNativeDir)win-x64\mbgl-cabi.dll') And '$(RuntimeIdentifier)' != 'win-arm64'">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="$(_MbglNativeDir)win-arm64\mbgl-cabi.dll"
+          Condition="Exists('$(_MbglNativeDir)win-arm64\mbgl-cabi.dll') And '$(RuntimeIdentifier)' == 'win-arm64'">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
