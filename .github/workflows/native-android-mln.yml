@@ -1,0 +1,89 @@
+name: Native Android MLN (maplibre_native_c)
+# Builds libmaplibre_native_c.so using the maplibre-native-ffi CMake build
+# with the Android NDK toolchain.  Vulkan is the default render backend for
+# non-Apple platforms in maplibre-native-ffi.
+#
+# NOTE: maplibre-native-ffi uses pixi for native dependency management on
+# desktop; there is no Android mise variant upstream yet.  This workflow uses
+# the NDK toolchain directly — if configure fails on missing deps, add a pixi
+# step (similar to native-windows-vulkan.yml) or file an issue upstream.
+
+on:
+  workflow_call:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    name: Android MLN ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a, x86_64]
+
+    steps:
+      - name: Enable Git long paths
+        run: git config --global core.longpaths true
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Init maplibre-native-ffi submodule
+        run: git submodule update --init dependencies/maplibre-native-ffi
+
+      - name: Cache maplibre-native source tree
+        uses: actions/cache@v4
+        with:
+          path: |
+            dependencies/maplibre-native-ffi/third_party/maplibre-native
+            .git/modules/dependencies/maplibre-native-ffi/modules/third_party/maplibre-native
+          key: mln-src-v1-${{ hashFiles('dependencies/maplibre-native-ffi/.gitmodules', 'dependencies/maplibre-native-ffi/cmake/mln_version.cmake') }}
+
+      - name: Init maplibre-native submodule inside ffi (shallow)
+        working-directory: dependencies/maplibre-native-ffi
+        run: git submodule update --init --depth 1 third_party/maplibre-native
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK 27
+        run: sdkmanager "ndk;27.0.12077973"
+
+      - name: Configure CMake
+        working-directory: dependencies/maplibre-native-ffi
+        run: |
+          cmake -B build \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_HOME/ndk/27.0.12077973/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=${{ matrix.abi }} \
+            -DANDROID_PLATFORM=android-24 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DMLN_FFI_RENDER_BACKEND=vulkan
+
+      - name: Build maplibre_native_c
+        working-directory: dependencies/maplibre-native-ffi
+        timeout-minutes: 60
+        run: cmake --build build --target maplibre_native_c --parallel 4
+
+      - name: Stage built library
+        run: |
+          mkdir -p artifact
+          find dependencies/maplibre-native-ffi/build -name "libmaplibre_native_c.so" -exec cp {} artifact/ \;
+          echo "Staged:"
+          ls artifact/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-mln-android-${{ matrix.abi }}
+          path: artifact/
+          if-no-files-found: error
+          retention-days: 7

@@ -48,6 +48,22 @@ jobs:
     needs: version
     uses: ./.github/workflows/native-apple.yml
 
+  # ── Vulkan/Metal native builds (maplibre_native_c via maplibre-native-ffi) ─
+  build-windows-vulkan:
+    name: Build Windows Vulkan native (MLN)
+    needs: version
+    uses: ./.github/workflows/native-windows-vulkan.yml
+
+  build-android-mln:
+    name: Build Android MLN native
+    needs: version
+    uses: ./.github/workflows/native-android-mln.yml
+
+  build-apple-mln:
+    name: Build Apple MLN native
+    needs: version
+    uses: ./.github/workflows/native-apple-mln.yml
+
   # ── NuGet pack (verify packability, no publish) ───────────────────────────
   pack:
     name: Pack NuGet
@@ -254,3 +270,63 @@ jobs:
             -p:EnableWindowsTargeting=true \
             -p:UseLocalPackages=true
 
+  # ── Pack Maui.MapLibre.Native.Vulkan NuGet ────────────────────────────────
+  pack-vulkan:
+    name: Pack NuGet (Vulkan)
+    runs-on: macos-latest
+    needs: [version, build-windows-vulkan, build-android-mln, build-apple-mln]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Pin .NET SDK to Xcode-16-compatible feature band
+        run: echo '{"sdk":{"version":"9.0.200","rollForward":"latestPatch"}}' > global.json
+
+      - name: Set up .NET 8 and 9 SDKs
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.200
+
+      - name: Download all MLN native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-mln-*
+          path: mln-artifacts
+
+      - name: Arrange native libs for Vulkan bindings project
+        run: |
+          N=bindings/native-vulkan
+          mkdir -p $N/win-x64
+          mkdir -p $N/android-arm64 $N/android-x64
+          mkdir -p $N/ios-arm64 $N/maccatalyst
+
+          find mln-artifacts/native-mln-windows-x64-vulkan -name "maplibre_native_c.dll"  -exec cp {} $N/win-x64/      \; 2>/dev/null || true
+          find mln-artifacts/native-mln-android-arm64-v8a  -name "libmaplibre_native_c.so" -exec cp {} $N/android-arm64/ \; 2>/dev/null || true
+          find mln-artifacts/native-mln-android-x86_64     -name "libmaplibre_native_c.so" -exec cp {} $N/android-x64/  \; 2>/dev/null || true
+          find mln-artifacts/native-mln-ios-arm64          -name "libmaplibre_native_c.a"  -exec cp {} $N/ios-arm64/    \; 2>/dev/null || true
+          find mln-artifacts/native-mln-maccatalyst        -name "libmaplibre_native_c.a"  -exec cp {} $N/maccatalyst/  \; 2>/dev/null || true
+
+          echo "Vulkan native libs arranged:"
+          find $N -type f
+
+      - name: Restore workloads
+        run: dotnet workload restore maplibre-maui.sln
+
+      - name: Pack Maui.MapLibre.Native.Vulkan
+        run: |
+          dotnet pack bindings/Maui.MapLibre.Native.Vulkan.csproj \
+            -c Release \
+            -p:Version=${{ needs.version.outputs.version }} \
+            -p:_MlnNativeDir=$(pwd)/bindings/native-vulkan/ \
+            -o artifacts/
+
+      - name: Upload NuGet Vulkan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages-vulkan-ci
+          path: artifacts/*.nupkg
+          retention-days: 3

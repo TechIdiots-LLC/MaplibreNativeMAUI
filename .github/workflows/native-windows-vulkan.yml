@@ -1,0 +1,73 @@
+name: Native Windows Vulkan (maplibre_native_c)
+# Builds maplibre_native_c.dll using the maplibre-native-ffi build system.
+# Only x64 for now — the upstream mise config has no windows-arm64-vulkan variant yet.
+
+on:
+  workflow_call:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    name: Windows Vulkan ${{ matrix.variant }}
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: windows-x64-vulkan
+            runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Only init the ffi submodule here; its nested maplibre-native
+          # submodule is large and is handled separately below with caching.
+          submodules: false
+
+      - name: Init maplibre-native-ffi submodule
+        run: git submodule update --init dependencies/maplibre-native-ffi
+
+      - name: Cache maplibre-native source tree
+        id: cache-mln-src
+        uses: actions/cache@v4
+        with:
+          path: |
+            dependencies/maplibre-native-ffi/third_party/maplibre-native
+            .git/modules/dependencies/maplibre-native-ffi/modules/third_party/maplibre-native
+          key: mln-src-v1-${{ hashFiles('dependencies/maplibre-native-ffi/.gitmodules', 'dependencies/maplibre-native-ffi/cmake/mln_version.cmake') }}
+
+      - name: Init maplibre-native submodule inside ffi (shallow)
+        working-directory: dependencies/maplibre-native-ffi
+        run: git submodule update --init --depth 1 third_party/maplibre-native
+
+      - name: Set up CI dependencies (mise + sccache)
+        uses: ./dependencies/maplibre-native-ffi/.github/actions/setup-ci-deps
+
+      - name: Configure
+        working-directory: dependencies/maplibre-native-ffi
+        env:
+          MISE_ENV: ${{ matrix.variant }}
+        run: mise run configure
+
+      - name: Build
+        working-directory: dependencies/maplibre-native-ffi
+        env:
+          MISE_ENV: ${{ matrix.variant }}
+        run: mise run build
+
+      - name: Prepare native artifact
+        working-directory: dependencies/maplibre-native-ffi
+        env:
+          MISE_ENV: ${{ matrix.variant }}
+        run: mise run ci:prepare-native-artifact
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-mln-${{ matrix.variant }}
+          # ci:prepare-native-artifact stages the DLL at ci-artifact/build/<variant>/
+          path: dependencies/maplibre-native-ffi/ci-artifact/build/${{ matrix.variant }}/
+          if-no-files-found: error
+          retention-days: 7

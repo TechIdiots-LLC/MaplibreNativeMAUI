@@ -1,0 +1,103 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      Vulkan (Windows/Android) + Metal (iOS/macCatalyst) bindings for maplibre_native_c.
+      Uses the new maplibre-native-ffi upstream C API instead of mbgl-cabi.
+      Consumed by handler code that bootstraps Vulkan/Metal surfaces via NativeMethods.Mln.
+    -->
+    <TargetFrameworks>net9.0-android;net9.0-ios;net9.0-maccatalyst;net9.0-windows10.0.19041.0</TargetFrameworks>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>Maui.MapLibre.Native.Upstream</RootNamespace>
+    <AssemblyName>Maui.MapLibre.Native.Vulkan</AssemblyName>
+  </PropertyGroup>
+
+  <!-- Exclude the old mbgl-cabi source files — this package is maplibre_native_c only. -->
+  <ItemGroup>
+    <Compile Remove="NativeMethods.cs" />
+    <Compile Remove="MbglFrontend.cs" />
+    <Compile Remove="MbglMap.cs" />
+    <Compile Remove="MbglRunLoop.cs" />
+    <Compile Remove="MbglStyle.cs" />
+  </ItemGroup>
+
+  <!--
+    Native library name per platform:
+      Windows  : maplibre_native_c.dll
+      Android  : libmaplibre_native_c.so
+      iOS/mac  : libmaplibre_native_c.a (static, linked at build time)
+  -->
+  <PropertyGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
+    <NativeLibName>maplibre_native_c</NativeLibName>
+  </PropertyGroup>
+  <PropertyGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
+    <NativeLibName>maplibre_native_c</NativeLibName>
+  </PropertyGroup>
+  <PropertyGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios' Or $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">
+    <NativeLibName>__Internal</NativeLibName>
+  </PropertyGroup>
+
+  <!--
+    Pre-built native binaries — drop into native-vulkan/ subfolder alongside this .csproj.
+    Override _MlnNativeDir in a Directory.Build.props to point elsewhere (e.g. during CI packing).
+  -->
+  <PropertyGroup>
+    <_MlnNativeDir Condition="'$(_MlnNativeDir)' == ''">$(MSBuildThisFileDirectory)native-vulkan\</_MlnNativeDir>
+  </PropertyGroup>
+
+  <!--
+    Pack items MUST be in an unconditional ItemGroup.
+    NuGet evaluates Pack=true items during the outer build where TargetFramework is
+    empty, so TFM conditions evaluate false and files are silently excluded.
+    Use only file-existence conditions here.
+  -->
+  <ItemGroup>
+    <None Include="$(_MlnNativeDir)win-x64\maplibre_native_c.dll"
+          Condition="Exists('$(_MlnNativeDir)win-x64\maplibre_native_c.dll')">
+      <Pack>true</Pack>
+      <PackagePath>runtimes/win-x64/native</PackagePath>
+    </None>
+  </ItemGroup>
+
+  <!-- Windows: copy the DLL next to the output for local development / testing. -->
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
+    <None Include="$(_MlnNativeDir)win-x64\maplibre_native_c.dll"
+          Condition="Exists('$(_MlnNativeDir)win-x64\maplibre_native_c.dll')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- Android: the .so is embedded into the APK by the SDK via AndroidNativeLibrary. -->
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
+    <AndroidNativeLibrary Include="$(_MlnNativeDir)android-arm64\libmaplibre_native_c.so"
+                          Condition="Exists('$(_MlnNativeDir)android-arm64\libmaplibre_native_c.so')">
+      <Abi>arm64-v8a</Abi>
+    </AndroidNativeLibrary>
+    <AndroidNativeLibrary Include="$(_MlnNativeDir)android-x64\libmaplibre_native_c.so"
+                          Condition="Exists('$(_MlnNativeDir)android-x64\libmaplibre_native_c.so')">
+      <Abi>x86_64</Abi>
+    </AndroidNativeLibrary>
+  </ItemGroup>
+
+  <!-- iOS: static library linked into the app binary by Xcode. -->
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">
+    <NativeReference Include="$(_MlnNativeDir)ios-arm64\libmaplibre_native_c.a"
+                     Condition="Exists('$(_MlnNativeDir)ios-arm64\libmaplibre_native_c.a')">
+      <Kind>Static</Kind>
+      <ForceLoad>True</ForceLoad>
+    </NativeReference>
+  </ItemGroup>
+
+  <!-- macCatalyst: static library linked into the app binary by Xcode. -->
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">
+    <NativeReference Include="$(_MlnNativeDir)maccatalyst\libmaplibre_native_c.a"
+                     Condition="Exists('$(_MlnNativeDir)maccatalyst\libmaplibre_native_c.a')">
+      <Kind>Static</Kind>
+      <ForceLoad>True</ForceLoad>
+    </NativeReference>
+  </ItemGroup>
+
+</Project>
