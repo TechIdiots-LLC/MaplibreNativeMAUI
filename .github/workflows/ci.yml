@@ -226,13 +226,12 @@ jobs:
         run: dotnet nuget add source $(pwd)/local-feed --name local-ci
 
       - name: Restore workloads
-        # --skip-manifest-update keeps the runner's pre-installed manifests;
-        # dotnet workload restore without this flag would fetch the latest manifests
-        # which now include Microsoft.iOS.Sdk 26.5.x requiring Xcode 26.5, but
-        # macos-latest still ships Xcode 16.4.  iOS/macCatalyst sample builds are
-        # skipped below for the same reason — the pack job already compiles those TFMs
-        # and native-apple.yml validates the native layer.
-        run: dotnet workload install maui --skip-manifest-update
+        # Restore fetches the latest manifests (including MAUI 9.0.120) so NuGet
+        # version resolution matches the packed Handlers NuGet.  iOS/macCatalyst
+        # BUILD steps are omitted below because Microsoft.iOS.Sdk 26.5.x (installed
+        # here) requires Xcode 26.5, but macos-latest ships Xcode 16.4.  Merely
+        # having the 26.5 manifests installed does not affect Android or Windows builds.
+        run: dotnet workload restore sample/MauiSample.csproj
 
       - name: Build sample (Android)
         run: |
