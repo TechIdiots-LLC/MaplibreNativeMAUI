@@ -18,7 +18,6 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
     private bool   _isDragging;
     private double _lastPointerX;
     private double _lastPointerY;
-    private float  _pinchCumulativeScale = 1.0f;
 
     public IMapLibreMapController Controller => _controller;
 
@@ -132,23 +131,21 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
 
     private void OnManipulationStarted(object sender, ManipulationStartedRoutedEventArgs e)
     {
-        _pinchCumulativeScale = 1.0f;  // reset accumulator for this gesture
         e.Handled = true;
     }
 
     private void OnManipulationDelta(object sender, ManipulationDeltaRoutedEventArgs e)
     {
-        // e.Delta.Scale is incremental (per-frame ratio like 1.02); mbgl_map_on_pinch
-        // expects a cumulative scale factor from the start of the gesture.
-        _pinchCumulativeScale *= e.Delta.Scale;
+        // e.Delta.Scale is the per-frame incremental ratio (e.g. 1.02 or 0.98).
+        // Pass it directly so the native side applies log2(delta) each frame — a
+        // bounded per-frame delta that cannot diverge toward zero or infinity.
         var center = e.Position;
-        _controller.OnPinch(_pinchCumulativeScale, center.X, center.Y);
+        _controller.OnPinch(e.Delta.Scale, center.X, center.Y);
         e.Handled = true;
     }
 
     private void OnManipulationCompleted(object sender, ManipulationCompletedRoutedEventArgs e)
     {
-        _pinchCumulativeScale = 1.0f;
         e.Handled = true;
     }
 

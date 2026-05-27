@@ -451,9 +451,11 @@ mbgl_status_t mbgl_map_on_scroll(mbgl_map_t* map, double delta, double cx, doubl
     if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_on_scroll: null handle");
     try {
         auto* m = map_ptr(map);
-        double zoom = m->map->getCameraOptions().zoom.value_or(0.0) + delta / 100.0;
+        // delta is already normalized to ±1.0 per scroll tick (mouseWheelDelta/120).
+        // Multiply by 0.5 to get ~0.5 zoom levels per tick, matching typical map feel.
+        double zoom = m->map->getCameraOptions().zoom.value_or(0.0) + delta * 0.5;
         mbgl::CameraOptions cam;
-        cam.zoom   = zoom;
+        cam.zoom   = std::max(0.0, std::min(22.0, zoom));
         cam.anchor = mbgl::ScreenCoordinate{ cx, cy };
         m->map->jumpTo(cam);
         return MBGL_OK;
@@ -496,11 +498,14 @@ mbgl_status_t mbgl_map_on_pan_end(mbgl_map_t* /*map*/) noexcept {
 
 mbgl_status_t mbgl_map_on_pinch(mbgl_map_t* map, double scale_factor, double cx, double cy) noexcept {
     if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_on_pinch: null handle");
+    // scale_factor is the per-frame incremental ratio (e.g. 1.02 or 0.98).
+    // Guard against zero/negative to prevent log2 producing -infinity or NaN.
+    if (scale_factor <= 0.0) return MBGL_OK;
     try {
         auto* m = map_ptr(map);
         double zoom = m->map->getCameraOptions().zoom.value_or(0.0) + std::log2(scale_factor);
         mbgl::CameraOptions cam;
-        cam.zoom   = zoom;
+        cam.zoom   = std::max(0.0, std::min(22.0, zoom));
         cam.anchor = mbgl::ScreenCoordinate{ cx, cy };
         m->map->jumpTo(cam);
         return MBGL_OK;
