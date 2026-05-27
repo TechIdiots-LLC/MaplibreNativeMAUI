@@ -757,6 +757,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     public void SetStyleString(string styleString)
     {
+        _styleString = styleString;
         if (_map == null) return;
         if (styleString.StartsWith('{'))
             _map.SetStyleJson(styleString);
