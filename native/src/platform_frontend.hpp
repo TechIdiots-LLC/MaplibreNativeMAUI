@@ -12,7 +12,7 @@
 #include <mbgl/renderer/renderer_observer.hpp>
 #include <mbgl/util/size.hpp>
 #include <mbgl/actor/scheduler.hpp>
-#include "mbgl_cabi.h"
+#include "mln_cabi.h"
 
 namespace mbgl { class Renderer; }
 
