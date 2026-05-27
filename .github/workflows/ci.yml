@@ -262,12 +262,39 @@ jobs:
       # pack job (TFM restore) and native-apple.yml (native library compilation).
       # Re-enable once GitHub Actions ships a macOS image with Xcode 26.5.
 
+  # ── Sample app build — Windows (separate job, needs a Windows runner) ──────
+  sample-windows:
+    name: Sample — Windows
+    runs-on: windows-latest
+    needs: [version, pack]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 8 and 9 SDKs
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+
+      - name: Download NuGet packages
+        uses: actions/download-artifact@v4
+        with:
+          name: nuget-packages-ci
+          path: local-feed
+
+      - name: Add local NuGet feed
+        run: dotnet nuget add source local-feed --name local-ci
+
+      - name: Restore workloads
+        run: dotnet workload restore sample/MauiSample.csproj
+
       - name: Build sample (Windows)
         run: |
-          dotnet build sample/MauiSample.csproj \
-            -f net9.0-windows10.0.19041.0 \
-            -c Release \
-            -p:EnableWindowsTargeting=true \
+          dotnet build sample/MauiSample.csproj `
+            -f net9.0-windows10.0.19041.0 `
+            -c Release `
             -p:UseLocalPackages=true
 
   # ── Pack Maui.MapLibre.Native.Vulkan NuGet ────────────────────────────────
