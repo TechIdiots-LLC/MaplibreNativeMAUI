@@ -48,6 +48,7 @@ jobs:
 
       - name: Cache vcpkg binary cache
         uses: actions/cache@v4
+        continue-on-error: true
         with:
           path: dependencies/maplibre-native/platform/windows/vendor/vcpkg/archives
           key: vcpkg-${{ matrix.vcpkg-triplet }}-vulkan-${{ steps.vcpkg-id.outputs.commit_id }}
