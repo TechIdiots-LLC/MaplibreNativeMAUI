@@ -2,7 +2,7 @@
 
 ## Goal
 
-Evaluate replacing the hand-written `mbgl-cabi` native layer with the official
+Evaluate replacing the hand-written `mln-cabi` native layer with the official
 [maplibre-native-ffi](https://github.com/maplibre/maplibre-native-ffi) C API as
 the foundation for maplibre-maui-ac.
 
@@ -27,7 +27,7 @@ integration is either:
 
 ### Handle / object model
 
-| Concept | mbgl-cabi (current) | maplibre-native-ffi (upstream) |
+| Concept | mln-cabi (current) | maplibre-native-ffi (upstream) |
 |---|---|---|
 | Event loop / context | `mbgl_runloop_t*` | `mln_runtime*` |
 | Render target | `mbgl_frontend_t*` (OpenGL) | `mln_render_session*` (Metal/Vulkan) |
@@ -38,7 +38,7 @@ integration is either:
 
 ### Creation flow
 
-**Current (`mbgl-cabi`)**
+**Current (`mln-cabi`)**
 ```c
 mbgl_runloop_t* rl  = mbgl_runloop_create();
 mbgl_frontend_t* fe = mbgl_frontend_create_gl(surface, ctx, w, h, dpr, cb, ud);
@@ -68,7 +68,7 @@ mln_wgl_surface_attach(map, &desc, &session);  // was mln_map_attach_metal_surfa
 
 ### Event / callback model
 
-| | mbgl-cabi | mln |
+| | mln-cabi | mln |
 |---|---|---|
 | Map events | Push callback (`mbgl_map_observer_fn`) | Poll: `mln_runtime_poll_event(&event)` |
 | Render ready | Push callback (`mbgl_render_fn`) | `MLN_RUNTIME_EVENT_MAP_RENDER_UPDATE_AVAILABLE` |
@@ -82,7 +82,7 @@ while (mln_runtime_poll_event(rt, out var ev) == MlnStatus.Ok)
 
 ### Render backends
 
-| Platform | mbgl-cabi (current) | mln (upstream) |
+| Platform | mln-cabi (current) | mln (upstream) |
 |---|---|---|
 | iOS / macCatalyst | Metal (MTKView) | Metal ✓ |
 | Android | OpenGL ES / EGL | EGL ✓ (`mln_egl_surface_attach` — added) |
@@ -94,7 +94,7 @@ while (mln_runtime_poll_event(rt, out var ev) == MlnStatus.Ok)
 > `mln_wgl_surface_attach` (Windows), both guarded by
 > `#ifdef MLN_RENDER_BACKEND_OPENGL`. A binary built with
 > `MLN_FFI_RENDER_BACKEND=opengl` supports all four platforms. The primary
-> remaining difference from `mbgl-cabi` is the session ownership model
+> remaining difference from `mln-cabi` is the session ownership model
 > (see below) and the polled vs. push-callback event model.
 
 ---
@@ -126,13 +126,13 @@ while (mln_runtime_poll_event(rt, out var ev) == MlnStatus.Ok)
 
 ### `native/` project (C++ layer)
 
-The entire `mbgl-cabi` native C++ project would be **replaced** by
+The entire `mln-cabi` native C++ project would be **replaced** by
 `maplibre-native-ffi` as a dependency. We would no longer maintain our own C
 wrapper; instead we build/consume the upstream library.
 
 ### Native library name
 
-The P/Invoke `DllImport` name changes from `"mbgl-cabi"` to `"maplibre_native_c"`
+The P/Invoke `DllImport` name changes from `"mln-cabi"` to `"maplibre_native_c"`
 (or whatever the upstream publishes as the shared library name).
 
 ---
@@ -205,7 +205,7 @@ that path is exercised.
 3. Replace `NativeMethods.cs` with the `mln_*` sketch (see
    `bindings/NativeMethods.Mln.cs`).
 4. Replace `MbglMap.cs` / `MbglRunLoop.cs` with `MlnMap.cs` / `MlnRuntime.cs`.
-5. Keep the old `mbgl-cabi` code paths behind `#if !USE_MLN_FFI` until Android
+5. Keep the old `mln-cabi` code paths behind `#if !USE_MLN_FFI` until Android
    and Windows are ready.
 
 ### Phase 2 — Android (EGL) and Windows (WGL)
@@ -222,7 +222,7 @@ requires building `maplibre-native-ffi` with `MLN_FFI_RENDER_BACKEND=opengl`.
 
 Note: both use `MLN_STATUS_UNSUPPORTED` when the binary is not an OpenGL build.
 
-### Phase 3 — Remove mbgl-cabi
+### Phase 3 — Remove mln-cabi
 
 Once all three platforms are on `mln_*`, delete the `native/` C++ project and
 pull `maplibre-native-ffi` as the sole native dependency.

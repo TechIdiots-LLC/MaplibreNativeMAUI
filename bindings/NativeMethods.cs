@@ -49,9 +49,9 @@ public static partial class NativeMethods
 #if IOS || MACCATALYST
     private const string Lib = "__Internal";
 #elif ANDROID
-    private const string Lib = "mbgl-cabi";
+    private const string Lib = "mln-cabi";
 #else
-    private const string Lib = "mbgl-cabi";
+    private const string Lib = "mln-cabi";
 #endif
 
     // ── Callbacks ─────────────────────────────────────────────────────────────

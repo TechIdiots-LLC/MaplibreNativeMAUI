@@ -95,12 +95,12 @@ jobs:
           mkdir -p $N/android-arm64 $N/android-x64
           mkdir -p $N/ios-arm64 $N/maccatalyst
 
-            find native-artifacts/native-windows-x64 -name "mbgl-cabi.dll" -exec cp {} $N/win-x64/ \;
-            find native-artifacts/native-windows-arm64 -name "mbgl-cabi.dll" -exec cp {} $N/win-arm64/ \;
-            find native-artifacts/native-android-arm64-v8a -name "libmbgl-cabi.so" -exec cp {} $N/android-arm64/ \;
-            find native-artifacts/native-android-x86_64 -name "libmbgl-cabi.so" -exec cp {} $N/android-x64/ \;
-            find native-artifacts/native-ios-arm64 -name "libmbgl-cabi.a" -exec cp {} $N/ios-arm64/ \;
-            find native-artifacts/native-maccatalyst -name "libmbgl-cabi.a" -exec cp {} $N/maccatalyst/ \;
+            find native-artifacts/native-windows-x64 -name "mln-cabi.dll" -exec cp {} $N/win-x64/ \;
+            find native-artifacts/native-windows-arm64 -name "mln-cabi.dll" -exec cp {} $N/win-arm64/ \;
+            find native-artifacts/native-android-arm64-v8a -name "libmln-cabi.so" -exec cp {} $N/android-arm64/ \;
+            find native-artifacts/native-android-x86_64 -name "libmln-cabi.so" -exec cp {} $N/android-x64/ \;
+            find native-artifacts/native-ios-arm64 -name "libmln-cabi.a" -exec cp {} $N/ios-arm64/ \;
+            find native-artifacts/native-maccatalyst -name "libmln-cabi.a" -exec cp {} $N/maccatalyst/ \;
 
           echo "Native libs arranged:"
           find $N -type f
@@ -154,8 +154,8 @@ jobs:
         shell: bash
         run: |
           mkdir -p bindings/native/win-x64 bindings/native/win-arm64
-          find native-artifacts/native-windows-x64  -name "mbgl-cabi.dll" -exec cp {} bindings/native/win-x64/ \;
-          find native-artifacts/native-windows-arm64 -name "mbgl-cabi.dll" -exec cp {} bindings/native/win-arm64/ \;
+          find native-artifacts/native-windows-x64  -name "mln-cabi.dll" -exec cp {} bindings/native/win-x64/ \;
+          find native-artifacts/native-windows-arm64 -name "mln-cabi.dll" -exec cp {} bindings/native/win-arm64/ \;
           echo "Staged DLLs:"
           find bindings/native -name "*.dll"
 

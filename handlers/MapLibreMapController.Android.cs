@@ -12,7 +12,7 @@ using Location = Microsoft.Maui.Devices.Sensors.Location;
 namespace Maui.MapLibre.Handlers;
 
 /// <summary>
-/// Android IMapLibreMapController backed by mbgl-cabi.so via EGL + ANativeWindow.
+/// Android IMapLibreMapController backed by mln-cabi.so via EGL + ANativeWindow.
 /// The platform view is a SurfaceView; the C++ EGL frontend manages its own
 /// EGL display, config, context, and window surface.
 /// </summary>

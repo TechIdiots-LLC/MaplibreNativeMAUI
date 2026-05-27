@@ -15,7 +15,7 @@ This library takes a **pure C ABI** approach rather than wrapping the platform-n
 MapLibre Native (C++)
        │
        ▼
-mbgl-cabi  (C++ native library — flat C ABI)
+mln-cabi  (C++ native library — flat C ABI)
        │  P/Invoke
        ▼
 Maui.MapLibre.Native  (C# typed wrappers: MbglMap, MbglStyle, MbglFrontend …)
@@ -24,7 +24,7 @@ Maui.MapLibre.Native  (C# typed wrappers: MbglMap, MbglStyle, MbglFrontend …)
 Maui.Maplibre.Handlers  (MAUI controls, handlers, sources, layers)
 ```
 
-The `mbgl-cabi` native library is compiled per-platform:
+The `mln-cabi` native library is compiled per-platform:
 
 | Platform | Renderer | CI |
 |---|---|---|
@@ -276,7 +276,7 @@ git submodule update --init --recursive
 
 ### Build native library
 
-Each platform's CI workflow documents the exact CMake invocation. The native build output (`libmbgl-cabi.so` / `libmbgl-cabi.a` / `mbgl-cabi.dll`) must be placed under `bindings/` before packing.
+Each platform's CI workflow documents the exact CMake invocation. The native build output (`libmln-cabi.so` / `libmln-cabi.a` / `mln-cabi.dll`) must be placed under `bindings/` before packing.
 
 ```sh
 # Example: Windows
@@ -298,6 +298,6 @@ This project is **BSD 2-Clause** licensed — see [LICENSE](/LICENSE).
 
 | Dependency | License | Notes |
 |---|---|---|
-| [MapLibre Native](https://github.com/maplibre/maplibre-native) | BSD 2-Clause | Linked natively via `mbgl-cabi` |
+| [MapLibre Native](https://github.com/maplibre/maplibre-native) | BSD 2-Clause | Linked natively via `mln-cabi` |
 | [maplibre-native-ffi](https://github.com/maplibre/maplibre-native-ffi) | BSD 2-Clause | C ABI design (typed handles, status codes, log callback) |
 | Original [maplibre-maui](https://github.com/btrounson/maplibre-maui) by Benjamin Trounson | MIT | Portions adapted |

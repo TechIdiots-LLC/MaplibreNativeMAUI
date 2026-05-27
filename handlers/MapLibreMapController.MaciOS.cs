@@ -39,7 +39,7 @@ public sealed class MapContainerView : UIView
 // -- Controller ----------------------------------------------------------------
 
 /// <summary>
-/// iOS / Mac Catalyst IMapLibreMapController backed by mbgl-cabi (Metal frontend).
+/// iOS / Mac Catalyst IMapLibreMapController backed by mln-cabi (Metal frontend).
 /// Platform view is a plain container UIView; the C++ Metal backend owns an MTKView
 /// which is retrieved via GetNativeView() and added as a subview on first layout.
 /// </summary>

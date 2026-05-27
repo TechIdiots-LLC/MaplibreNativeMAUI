@@ -44,14 +44,14 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DMLN_WITH_VULKAN=ON
 
-      - name: Build mbgl-cabi
+      - name: Build mln-cabi
         timeout-minutes: 60
-        run: cmake --build build --target mbgl-cabi --parallel 4
+        run: cmake --build build --target mln-cabi --parallel 4
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: native-mln-android-${{ matrix.abi }}
-          path: build/**/libmbgl-cabi.so
+          path: build/**/libmln-cabi.so
           if-no-files-found: error
           retention-days: 7

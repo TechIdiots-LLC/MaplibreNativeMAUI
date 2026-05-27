@@ -77,12 +77,12 @@ jobs:
             } else { exit $LASTEXITCODE }
           }
 
-      - name: Build mbgl-cabi
-        run: cmake --build build --target mbgl-cabi --config Release --parallel
+      - name: Build mln-cabi
+        run: cmake --build build --target mln-cabi --config Release --parallel
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: native-windows-${{ matrix.arch }}
-          path: build/**/mbgl-cabi.dll
+          path: build/**/mln-cabi.dll
           retention-days: 7

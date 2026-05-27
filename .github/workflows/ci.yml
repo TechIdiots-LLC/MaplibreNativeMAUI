@@ -48,21 +48,21 @@ jobs:
     needs: version
     uses: ./.github/workflows/native-apple.yml
 
-  # ── Vulkan/Metal native builds (maplibre_native_c via maplibre-native-ffi) ─
+  # ── Vulkan/Metal native builds ─────────────────────────────────────────────
   build-windows-vulkan:
-    name: Build Windows Vulkan native (MLN)
+    name: Build Windows Vulkan native
     needs: version
     uses: ./.github/workflows/native-windows-vulkan.yml
 
-  build-android-mln:
-    name: Build Android MLN native
+  build-android-vulkan:
+    name: Build Android Vulkan native
     needs: version
-    uses: ./.github/workflows/native-android-mln.yml
+    uses: ./.github/workflows/native-android-vulkan.yml
 
-  build-apple-mln:
-    name: Build Apple MLN native
+  build-apple-metal:
+    name: Build Apple Metal native
     needs: version
-    uses: ./.github/workflows/native-apple-mln.yml
+    uses: ./.github/workflows/native-apple-metal.yml
 
   # ── NuGet pack (verify packability, no publish) ───────────────────────────
   pack:
@@ -99,12 +99,12 @@ jobs:
           mkdir -p $N/android-arm64 $N/android-x64
           mkdir -p $N/ios-arm64 $N/maccatalyst
 
-            find native-artifacts/native-windows-x64 -name "mbgl-cabi.dll" -exec cp {} $N/win-x64/ \;
-            find native-artifacts/native-windows-arm64 -name "mbgl-cabi.dll" -exec cp {} $N/win-arm64/ \;
-            find native-artifacts/native-android-arm64-v8a -name "libmbgl-cabi.so" -exec cp {} $N/android-arm64/ \;
-            find native-artifacts/native-android-x86_64 -name "libmbgl-cabi.so" -exec cp {} $N/android-x64/ \;
-            find native-artifacts/native-ios-arm64 -name "libmbgl-cabi.a" -exec cp {} $N/ios-arm64/ \;
-            find native-artifacts/native-maccatalyst -name "libmbgl-cabi.a" -exec cp {} $N/maccatalyst/ \;
+            find native-artifacts/native-windows-x64 -name "mln-cabi.dll" -exec cp {} $N/win-x64/ \;
+            find native-artifacts/native-windows-arm64 -name "mln-cabi.dll" -exec cp {} $N/win-arm64/ \;
+            find native-artifacts/native-android-arm64-v8a -name "libmln-cabi.so" -exec cp {} $N/android-arm64/ \;
+            find native-artifacts/native-android-x86_64 -name "libmln-cabi.so" -exec cp {} $N/android-x64/ \;
+            find native-artifacts/native-ios-arm64 -name "libmln-cabi.a" -exec cp {} $N/ios-arm64/ \;
+            find native-artifacts/native-maccatalyst -name "libmln-cabi.a" -exec cp {} $N/maccatalyst/ \;
 
           echo "Native libs arranged:"
           find $N -type f
@@ -157,8 +157,8 @@ jobs:
         shell: bash
         run: |
           mkdir -p bindings/native/win-x64 bindings/native/win-arm64
-          find native-artifacts/native-windows-x64  -name "mbgl-cabi.dll" -exec cp {} bindings/native/win-x64/ \;
-          find native-artifacts/native-windows-arm64 -name "mbgl-cabi.dll" -exec cp {} bindings/native/win-arm64/ \;
+          find native-artifacts/native-windows-x64  -name "mln-cabi.dll" -exec cp {} bindings/native/win-x64/ \;
+          find native-artifacts/native-windows-arm64 -name "mln-cabi.dll" -exec cp {} bindings/native/win-arm64/ \;
           echo "Staged DLLs:"
           find bindings/native -name "*.dll"
 
@@ -274,7 +274,7 @@ jobs:
   pack-vulkan:
     name: Pack NuGet (Vulkan)
     runs-on: macos-latest
-    needs: [version, build-windows-vulkan, build-android-mln, build-apple-mln]
+    needs: [version, build-windows-vulkan, build-android-vulkan, build-apple-metal]
 
     steps:
       - uses: actions/checkout@v4
@@ -300,15 +300,16 @@ jobs:
       - name: Arrange native libs for Vulkan bindings project
         run: |
           N=bindings/native-vulkan
-          mkdir -p $N/win-x64
+          mkdir -p $N/win-x64 $N/win-arm64
           mkdir -p $N/android-arm64 $N/android-x64
           mkdir -p $N/ios-arm64 $N/maccatalyst
 
-          find mln-artifacts/native-mln-windows-x64-vulkan -name "mbgl-cabi.dll"    -exec cp {} $N/win-x64/      \; 2>/dev/null || true
-          find mln-artifacts/native-mln-android-arm64-v8a  -name "libmbgl-cabi.so"  -exec cp {} $N/android-arm64/ \; 2>/dev/null || true
-          find mln-artifacts/native-mln-android-x86_64     -name "libmbgl-cabi.so"  -exec cp {} $N/android-x64/  \; 2>/dev/null || true
-          find mln-artifacts/native-mln-ios-arm64          -name "libmbgl-cabi.a"   -exec cp {} $N/ios-arm64/    \; 2>/dev/null || true
-          find mln-artifacts/native-mln-maccatalyst        -name "libmbgl-cabi.a"   -exec cp {} $N/maccatalyst/  \; 2>/dev/null || true
+          find mln-artifacts/native-mln-windows-x64-vulkan   -name "mln-cabi.dll"    -exec cp {} $N/win-x64/      \; 2>/dev/null || true
+          find mln-artifacts/native-mln-windows-arm64-vulkan -name "mln-cabi.dll"    -exec cp {} $N/win-arm64/    \; 2>/dev/null || true
+          find mln-artifacts/native-mln-android-arm64-v8a    -name "libmln-cabi.so"  -exec cp {} $N/android-arm64/ \; 2>/dev/null || true
+          find mln-artifacts/native-mln-android-x86_64       -name "libmln-cabi.so"  -exec cp {} $N/android-x64/  \; 2>/dev/null || true
+          find mln-artifacts/native-mln-ios-arm64            -name "libmln-cabi.a"   -exec cp {} $N/ios-arm64/    \; 2>/dev/null || true
+          find mln-artifacts/native-mln-maccatalyst          -name "libmln-cabi.a"   -exec cp {} $N/maccatalyst/  \; 2>/dev/null || true
 
           echo "Vulkan native libs arranged:"
           find $N -type f

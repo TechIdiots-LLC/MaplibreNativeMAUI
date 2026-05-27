@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
 
-project(mbgl-cabi LANGUAGES CXX C)
+project(mln-cabi LANGUAGES CXX C)
 set(CMAKE_CXX_STANDARD 20)
 
 # ── maplibre-native dependency ────────────────────────────────────────────────
@@ -20,43 +20,43 @@ endif()
 # ── Shared (Windows/Android/Linux/macOS) or Static (iOS/tvOS/macCatalyst) ────
 # Pass -DMBGL_STATIC=ON explicitly to force a static build (required for
 # macCatalyst where the lib is statically linked via __Internal P/Invoke).
-option(MBGL_STATIC "Build mbgl-cabi as a static library" OFF)
+option(MBGL_STATIC "Build mln-cabi as a static library" OFF)
 # Apple platforms (iOS, macCatalyst, macOS, tvOS) always use a static lib so that
 # the MAUI app can link it via P/Invoke. Static libs don't run the linker at
 # build time, which avoids cross-DSO typeinfo visibility issues with mbgl-core.
 if(MBGL_STATIC OR APPLE)
-    add_library(mbgl-cabi STATIC)
+    add_library(mln-cabi STATIC)
 else()
-    add_library(mbgl-cabi SHARED)
+    add_library(mln-cabi SHARED)
 endif()
 
-target_compile_definitions(mbgl-cabi PRIVATE
+target_compile_definitions(mln-cabi PRIVATE
     MBGL_CABI_EXPORT
     _USE_MATH_DEFINES
     NOMINMAX
 )
 
-target_include_directories(mbgl-cabi PRIVATE
+target_include_directories(mln-cabi PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}/include"
     "${CMAKE_CURRENT_LIST_DIR}/src"
 )
 
-target_sources(mbgl-cabi PRIVATE
+target_sources(mln-cabi PRIVATE
     src/mbgl_cabi.cpp
 )
 
 # ── Platform-specific frontend ────────────────────────────────────────────────
 if(WIN32)
-    target_sources(mbgl-cabi PRIVATE src/platform_frontend_windows.cpp)
-    target_compile_options(mbgl-cabi PRIVATE /wd4267)
-    target_include_directories(mbgl-cabi PRIVATE "${MAPLIBRE_NATIVE_DIR}/src")
+    target_sources(mln-cabi PRIVATE src/platform_frontend_windows.cpp)
+    target_compile_options(mln-cabi PRIVATE /wd4267)
+    target_include_directories(mln-cabi PRIVATE "${MAPLIBRE_NATIVE_DIR}/src")
 elseif(ANDROID)
-    target_sources(mbgl-cabi PRIVATE src/platform_frontend_android.cpp)
-    target_link_libraries(mbgl-cabi PRIVATE EGL android log)
-    target_include_directories(mbgl-cabi PRIVATE "${MAPLIBRE_NATIVE_DIR}/src")
+    target_sources(mln-cabi PRIVATE src/platform_frontend_android.cpp)
+    target_link_libraries(mln-cabi PRIVATE EGL android log)
+    target_include_directories(mln-cabi PRIVATE "${MAPLIBRE_NATIVE_DIR}/src")
     # Platform stub sources — symbols normally provided by MapLibreAndroid JNI SDK
     # that are absent in a standalone NDK build.
-    target_sources(mbgl-cabi PRIVATE
+    target_sources(mln-cabi PRIVATE
         "${MAPLIBRE_NATIVE_DIR}/platform/default/src/mbgl/text/local_glyph_rasterizer.cpp"
         "${MAPLIBRE_NATIVE_DIR}/platform/default/src/mbgl/util/logging_stderr.cpp"
         "${MAPLIBRE_NATIVE_DIR}/platform/android/src/test/collator_test_stub.cpp"
@@ -66,32 +66,32 @@ elseif(ANDROID)
     # MapLibre disables RTTI on Android/Linux. We must match that so polymorphic
     # classes in mbgl_cabi.cpp don't emit typeinfo that references non-existent
     # base class typeinfos in mbgl-core.a.
-    target_compile_options(mbgl-cabi PRIVATE
+    target_compile_options(mln-cabi PRIVATE
         -fno-rtti
     )
 
     # LTO and size optimization matching what maplibre provides for mbgl-core
     set(_CABI_OPT "$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>")
-    target_compile_options(mbgl-cabi PRIVATE
+    target_compile_options(mln-cabi PRIVATE
         $<${_CABI_OPT}:-Oz>
         $<${_CABI_OPT}:-flto>
     )
-    target_link_options(mbgl-cabi PRIVATE
+    target_link_options(mln-cabi PRIVATE
         $<${_CABI_OPT}:-flto>
         $<${_CABI_OPT}:-Wl,--icf=all>
     )
 elseif(APPLE)
-    target_sources(mbgl-cabi PRIVATE src/platform_frontend_apple.mm)
+    target_sources(mln-cabi PRIVATE src/platform_frontend_apple.mm)
     set_source_files_properties(src/platform_frontend_apple.mm PROPERTIES
         COMPILE_FLAGS "-x objective-c++")
-    target_include_directories(mbgl-cabi PRIVATE "${MAPLIBRE_NATIVE_DIR}/src")
+    target_include_directories(mln-cabi PRIVATE "${MAPLIBRE_NATIVE_DIR}/src")
     # metal-cpp headers (vendored inside maplibre-native)
-    target_include_directories(mbgl-cabi PRIVATE
+    target_include_directories(mln-cabi PRIVATE
         "${MAPLIBRE_NATIVE_DIR}/vendor/metal-cpp")
     find_library(METAL_LIB Metal REQUIRED)
     find_library(METALKIT_LIB MetalKit REQUIRED)
     find_library(QUARTZCORE_LIB QuartzCore REQUIRED)
-    target_link_libraries(mbgl-cabi PRIVATE ${METAL_LIB} ${METALKIT_LIB} ${QUARTZCORE_LIB})
+    target_link_libraries(mln-cabi PRIVATE ${METAL_LIB} ${METALKIT_LIB} ${QUARTZCORE_LIB})
 else()
     message(FATAL_ERROR "Unsupported platform")
 endif()
@@ -100,16 +100,16 @@ endif()
 # maplibre-native must be configured separately; we consume it via its cmake targets.
 # Preferred: add_subdirectory(maplibre-native) before this or use find_package.
 if(TARGET mbgl-core)
-    target_link_libraries(mbgl-cabi PRIVATE mbgl-core)
+    target_link_libraries(mln-cabi PRIVATE mbgl-core)
 else()
     message(WARNING "mbgl-core target not found — link maplibre-native before this project")
 endif()
 
 # ── Install / output ──────────────────────────────────────────────────────────
-set_target_properties(mbgl-cabi PROPERTIES
-    OUTPUT_NAME "mbgl-cabi"
+set_target_properties(mln-cabi PROPERTIES
+    OUTPUT_NAME "mln-cabi"
     POSITION_INDEPENDENT_CODE ON
 )
 
-install(TARGETS mbgl-cabi DESTINATION lib)
+install(TARGETS mln-cabi DESTINATION lib)
 install(FILES include/mbgl_cabi.h DESTINATION include)

@@ -8,8 +8,23 @@ env:
 
 jobs:
   build:
-    name: Windows x64 Vulkan
-    runs-on: windows-latest
+    name: Windows ${{ matrix.arch }} Vulkan
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+        include:
+          - arch: x64
+            runs-on: windows-latest
+            vcpkg-triplet: x64-windows
+            msvc-arch: x64
+            vs-arch: x64
+          - arch: arm64
+            runs-on: windows-11-arm
+            vcpkg-triplet: arm64-windows
+            msvc-arch: arm64
+            vs-arch: ARM64
 
     steps:
       - name: Enable Git long paths
@@ -22,7 +37,7 @@ jobs:
       - name: Set up MSVC developer tools
         uses: ilammy/msvc-dev-cmd@v1
         with:
-          arch: x64
+          arch: ${{ matrix.msvc-arch }}
 
       - name: Get vcpkg commit ID
         id: vcpkg-id
@@ -35,7 +50,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: dependencies/maplibre-native/platform/windows/vendor/vcpkg/archives
-          key: vcpkg-x64-windows-vulkan-${{ steps.vcpkg-id.outputs.commit_id }}
+          key: vcpkg-${{ matrix.vcpkg-triplet }}-vulkan-${{ steps.vcpkg-id.outputs.commit_id }}
 
       - name: Bootstrap vcpkg
         run: dependencies\maplibre-native\platform\windows\vendor\vcpkg\bootstrap-vcpkg.bat -disableMetrics
@@ -49,7 +64,7 @@ jobs:
           for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
             Write-Host "CMake configure attempt $attempt of $maxAttempts"
             cmake -B build `
-              -G "Visual Studio 17 2022" -A x64 `
+              -G "Visual Studio 17 2022" -A ${{ matrix.vs-arch }} `
               -DCMAKE_TOOLCHAIN_FILE="dependencies/maplibre-native/platform/windows/custom-toolchain.cmake" `
               -DMLN_WITH_OPENGL=OFF `
               -DMLN_WITH_EGL=OFF `
@@ -62,12 +77,12 @@ jobs:
             } else { exit $LASTEXITCODE }
           }
 
-      - name: Build mbgl-cabi
-        run: cmake --build build --target mbgl-cabi --config Release --parallel
+      - name: Build mln-cabi
+        run: cmake --build build --target mln-cabi --config Release --parallel
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: native-mln-windows-x64-vulkan
-          path: build/**/mbgl-cabi.dll
+          name: native-mln-windows-${{ matrix.arch }}-vulkan
+          path: build/**/mln-cabi.dll
           retention-days: 7

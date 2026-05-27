@@ -11,7 +11,7 @@ namespace Maui.MapLibre.Handlers;
 
 /// <summary>
 /// Windows-specific IMapLibreMapController implementation backed by the C ABI
-/// mbgl-cabi.dll via MbglMap / MbglFrontend / MbglRunLoop P/Invoke bindings.
+/// mln-cabi.dll via MbglMap / MbglFrontend / MbglRunLoop P/Invoke bindings.
 /// </summary>
 public class MapLibreMapController : IMapLibreMapController
 {

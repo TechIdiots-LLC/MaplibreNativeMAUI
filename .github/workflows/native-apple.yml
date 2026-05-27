@@ -46,13 +46,13 @@ jobs:
             ${{ matrix.extra-flags }} \
             -DMLN_WITH_METAL=ON
 
-      - name: Build mbgl-cabi
-        run: cmake --build build --target mbgl-cabi --config Release
+      - name: Build mln-cabi
+        run: cmake --build build --target mln-cabi --config Release
 
       - name: Locate built library
         id: find-lib
         run: |
-          LIB=$(find build -name "libmbgl-cabi.a" | head -1)
+          LIB=$(find build -name "libmln-cabi.a" | head -1)
           echo "path=$LIB" >> "$GITHUB_OUTPUT"
           echo "Found: $LIB"
 

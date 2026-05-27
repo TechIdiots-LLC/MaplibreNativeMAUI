@@ -6,8 +6,8 @@
  * source-generated LibraryImport P/Invokes, following the conventions in
  * docs/src/content/docs/development/bindings-csharp.md.
  *
- * Key differences from NativeMethods.cs (mbgl-cabi):
- *   - Library name:  "maplibre_native_c"  (vs "mbgl-cabi")
+ * Key differences from NativeMethods.cs (mln-cabi):
+ *   - Library name:  "maplibre_native_c"  (vs "mln-cabi")
  *   - All names use mln_ prefix            (vs mbgl_)
  *   - mln_runtime replaces RunLoop + Frontend as the top-level context
  *   - mln_render_session replaces Frontend  (attach to map, not created first)
@@ -392,9 +392,9 @@ public static partial class MlnMethods
 #if IOS || MACCATALYST
     private const string Lib = "__Internal";
 #elif ANDROID
-    private const string Lib = "mbgl-cabi";
+    private const string Lib = "mln-cabi";
 #else
-    private const string Lib = "mbgl-cabi";
+    private const string Lib = "mln-cabi";
 #endif
 
     // ── Diagnostics ───────────────────────────────────────────────────────────

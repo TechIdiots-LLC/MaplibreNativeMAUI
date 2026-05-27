@@ -1,6 +1,6 @@
 /**
  * MbglMapHost.cs — WPF HwndHost that embeds a MapLibre Native OpenGL map
- * using the same mbgl-cabi.dll C ABI as the MAUI path.
+ * using the same mln-cabi.dll C ABI as the MAUI path.
  *
  * Drop-in replacement for VistumblerCS's MaplibreMapHost (C++/CLI), but backed by
  * pure P/Invoke via Maui.MapLibre.Native — no C++/CLI or MAUI dependency.
@@ -22,7 +22,7 @@ using Maui.MapLibre.Native;
 namespace Maui.MapLibre.WPF;
 
 /// <summary>
-/// WPF HwndHost that embeds a MapLibre Native OpenGL map rendered by mbgl-cabi.dll.
+/// WPF HwndHost that embeds a MapLibre Native OpenGL map rendered by mln-cabi.dll.
 /// Handles its own OpenGL context, RunLoop, pan/zoom/double-tap input and optional
 /// navigation + attribution overlay popups.
 /// </summary>
