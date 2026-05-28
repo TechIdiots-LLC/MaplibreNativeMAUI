@@ -248,13 +248,14 @@ public class MapLibreMapController : IMapLibreMapController
     private const uint GF_BEGIN    = 0x0001;
     private const uint GF_END      = 0x0004;
 
-    [StructLayout(LayoutKind.Sequential)]
+    // Pack=8 matches the Win32 GESTUREINFO layout on x64 (sizeof = 40).
+    [StructLayout(LayoutKind.Sequential, Pack = 8)]
     private struct GESTUREINFO
     {
         public uint  cbSize;
         public uint  dwFlags;       // GF_BEGIN | GF_END | GF_INERTIA
         public uint  dwID;          // GID_ZOOM etc.
-        public short ptsLocationX;  // gesture centroid, screen coords
+        public short ptsLocationX;  // gesture centroid, screen coords (POINTS)
         public short ptsLocationY;
         public uint  dwInstanceID;
         public uint  dwSequenceID;
@@ -267,6 +268,17 @@ public class MapLibreMapController : IMapLibreMapController
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool CloseGestureInfoHandle(IntPtr hGestureInfo);
+
+    // Cursor helpers
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr LoadCursorW(IntPtr hInstance, IntPtr lpCursorName);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetCursor(IntPtr hCursor);
+
+    private const int IDC_ARROW   = 32512;  // standard arrow
+    private const int IDC_HAND    = 32649;  // pointing hand (hover)
+    private const int IDC_SIZEALL = 32646;  // four-direction arrow (drag)
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
     private struct WNDCLASSEXA
@@ -1410,6 +1422,21 @@ public class MapLibreMapController : IMapLibreMapController
     {
         switch (msg)
         {
+            case WM_SETCURSOR:
+            {
+                // Override the cursor for the client area so it reflects the current
+                // interaction state instead of inheriting whatever XAML last set.
+                if ((lParam.ToInt32() & 0xFFFF) == 1 /* HTCLIENT */)
+                {
+                    // Dragging: four-direction move arrow (communicates free pan)
+                    // Hover:    pointing hand (communicates interactivity)
+                    int idc = _dragging ? IDC_SIZEALL : IDC_HAND;
+                    SetCursor(LoadCursorW(IntPtr.Zero, (IntPtr)idc));
+                    return new IntPtr(1);  // non-zero suppresses DefWindowProc override
+                }
+                break;
+            }
+
             case WM_LBUTTONDOWN:
             {
                 SetCapture(hWnd);
