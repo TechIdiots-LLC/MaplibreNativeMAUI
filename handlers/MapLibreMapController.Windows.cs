@@ -248,19 +248,19 @@ public class MapLibreMapController : IMapLibreMapController
     private const uint GF_BEGIN    = 0x0001;
     private const uint GF_END      = 0x0004;
 
-    // Pack=8 matches the Win32 GESTUREINFO layout on x64 (sizeof = 40).
-    [StructLayout(LayoutKind.Sequential, Pack = 8)]
+    [StructLayout(LayoutKind.Sequential)]
     private struct GESTUREINFO
     {
-        public uint  cbSize;
-        public uint  dwFlags;       // GF_BEGIN | GF_END | GF_INERTIA
-        public uint  dwID;          // GID_ZOOM etc.
-        public short ptsLocationX;  // gesture centroid, screen coords (POINTS)
-        public short ptsLocationY;
-        public uint  dwInstanceID;
-        public uint  dwSequenceID;
-        public ulong ullArguments;  // GID_ZOOM: lower 32 bits = pixel distance between points
-        public uint  cbExtraArgs;
+        public uint   cbSize;
+        public uint   dwFlags;       // GF_BEGIN | GF_END | GF_INERTIA
+        public uint   dwID;          // GID_ZOOM etc.
+        public IntPtr hwndTarget;    // CRITICAL: was missing, misaligning everything below it!
+        public short  ptsLocationX;  // gesture centroid, screen coords (POINTS)
+        public short  ptsLocationY;
+        public uint   dwInstanceID;
+        public uint   dwSequenceID;
+        public ulong  ullArguments;  // GID_ZOOM: lower 32 bits = pixel distance between points
+        public uint   cbExtraArgs;
     }
 
     [DllImport("user32.dll", SetLastError = true)]
@@ -1199,7 +1199,7 @@ public class MapLibreMapController : IMapLibreMapController
             case WM_LBUTTONDOWN:
             {
                 int btnSizePx = (int)(NavButtonSize * _pixelRatio);
-                int y = (short)((lParam.ToInt32() >> 16) & 0xFFFF);
+                int y = (short)((unchecked((int)lParam.ToInt64()) >> 16) & 0xFFFF);
                 int btn = y / (btnSizePx + 1);
                 switch (btn)
                 {
@@ -1424,9 +1424,9 @@ public class MapLibreMapController : IMapLibreMapController
         {
             case WM_SETCURSOR:
             {
-                // Override the cursor for the client area so it reflects the current
-                // interaction state instead of inheriting whatever XAML last set.
-                if ((lParam.ToInt32() & 0xFFFF) == 1 /* HTCLIENT */)
+                // Override the cursor for the map client area.
+                // wParam is the HWND under the cursor; only set if over the map itself (not a child overlay).
+                if (wParam == hWnd && (unchecked((int)lParam.ToInt64()) & 0xFFFF) == 1 /* HTCLIENT */)
                 {
                     // Dragging: four-direction move arrow (communicates free pan)
                     // Hover:    pointing hand (communicates interactivity)
@@ -1441,8 +1441,8 @@ public class MapLibreMapController : IMapLibreMapController
             {
                 SetCapture(hWnd);
                 _dragging  = true;
-                _lastMouseX = (short)(lParam.ToInt32() & 0xFFFF);
-                _lastMouseY = (short)((lParam.ToInt32() >> 16) & 0xFFFF);
+                _lastMouseX = (short)(unchecked((int)lParam.ToInt64()) & 0xFFFF);
+                _lastMouseY = (short)((unchecked((int)lParam.ToInt64()) >> 16) & 0xFFFF);
                 // Convert physical px → logical for mbgl (it works in physical coords
                 // relative to its own viewport, so pass physical directly).
                 _map?.OnPanStart(_lastMouseX, _lastMouseY);
@@ -1451,8 +1451,8 @@ public class MapLibreMapController : IMapLibreMapController
             case WM_MOUSEMOVE:
             {
                 if (!_dragging) break;
-                int x  = (short)(lParam.ToInt32() & 0xFFFF);
-                int y  = (short)((lParam.ToInt32() >> 16) & 0xFFFF);
+                int x  = (short)(unchecked((int)lParam.ToInt64()) & 0xFFFF);
+                int y  = (short)((unchecked((int)lParam.ToInt64()) >> 16) & 0xFFFF);
                 int dx = x - _lastMouseX;
                 int dy = y - _lastMouseY;
                 _lastMouseX = x;
@@ -1473,8 +1473,8 @@ public class MapLibreMapController : IMapLibreMapController
             }
             case WM_LBUTTONDBLCLK:
             {
-                int x = (short)(lParam.ToInt32() & 0xFFFF);
-                int y = (short)((lParam.ToInt32() >> 16) & 0xFFFF);
+                int x = (short)(unchecked((int)lParam.ToInt64()) & 0xFFFF);
+                int y = (short)((unchecked((int)lParam.ToInt64()) >> 16) & 0xFFFF);
                 _map?.OnDoubleTap(x, y);
                 _renderNeedsUpdate = true;
                 return IntPtr.Zero;
@@ -1483,10 +1483,10 @@ public class MapLibreMapController : IMapLibreMapController
             {
                 // wParam hi-word is wheel delta; lo-word is key state.
                 // Cursor position is in screen coords in lParam.
-                int delta = (short)((wParam.ToInt32() >> 16) & 0xFFFF);
+                int delta = (short)((unchecked((int)wParam.ToInt64()) >> 16) & 0xFFFF);
                 // Convert screen cursor pos → popup client coords.
-                int screenX = (short)(lParam.ToInt32() & 0xFFFF);
-                int screenY = (short)((lParam.ToInt32() >> 16) & 0xFFFF);
+                int screenX = (short)(unchecked((int)lParam.ToInt64()) & 0xFFFF);
+                int screenY = (short)((unchecked((int)lParam.ToInt64()) >> 16) & 0xFFFF);
                 GetWindowRect(hWnd, out var wr);
                 int cx = screenX - wr.Left;
                 int cy = screenY - wr.Top;
