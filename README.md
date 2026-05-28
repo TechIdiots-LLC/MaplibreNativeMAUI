@@ -15,7 +15,7 @@ This library takes a **pure C ABI** approach rather than wrapping the platform-n
 MapLibre Native (C++)
        │
        ▼
-mbgl-cabi  (C++ native library — flat C ABI)
+mln-cabi  (C++ native library — flat C ABI)
        │  P/Invoke
        ▼
 Maui.MapLibre.Native  (C# typed wrappers: MbglMap, MbglStyle, MbglFrontend …)
@@ -24,13 +24,15 @@ Maui.MapLibre.Native  (C# typed wrappers: MbglMap, MbglStyle, MbglFrontend …)
 Maui.Maplibre.Handlers  (MAUI controls, handlers, sources, layers)
 ```
 
-The `mbgl-cabi` native library is compiled per-platform:
+The `mln-cabi` native library is compiled per-platform:
 
 | Platform | Renderer | CI |
 |---|---|---|
 | Android | OpenGL ES (EGL + ANativeWindow) | `native-android.yml` |
+| Android | Vulkan | `native-android-vulkan.yml` |
 | iOS / macCatalyst | Metal (MTKView) | `native-apple.yml` |
 | Windows | OpenGL (WGL) | `native-windows.yml` |
+| Windows | Vulkan | `native-windows-vulkan.yml` |
 
 MapLibre Native is included as a **git submodule** at `dependencies/maplibre-native`.
 
@@ -148,6 +150,8 @@ Declare layers as child elements of `MapLibreMap`. Each layer references a `Sour
 | `RasterLayer` | `raster` |
 | `HeatmapLayer` | `heatmap` |
 | `FillExtrusionLayer` | `fill-extrusion` |
+| `HillshadeLayer` | `hillshade` |
+| `ColorReliefLayer` | `color-relief` |
 
 ```xaml
 <layers:FillLayer SourceName="polygons"
@@ -212,6 +216,65 @@ The return value is a GeoJSON `FeatureCollection` string, or `null` if the rende
 
 ---
 
+## Style & Layer Inspection
+
+Once a style is loaded, you can inspect and modify it via the controller:
+
+```csharp
+// Enumerate the loaded style
+string   url     = controller.GetStyleUrl();
+string[] sources = controller.GetStyleSourceIds();
+string[] layers  = controller.GetStyleLayerIds();
+
+// Read layer properties (returns JSON-encoded value, or null if not set)
+string? color = controller.GetLayerPaintProperty("my-layer", "line-color");
+string? vis   = controller.GetLayerLayoutProperty("my-layer", "visibility");
+
+// Show / hide a layer
+bool visible = controller.GetLayerVisibility("my-layer");
+controller.SetLayerVisibility("my-layer", !visible);
+```
+
+---
+
+## Debug Overlays
+
+MapLibre Native has built-in debug overlays controlled by a bitmask:
+
+```csharp
+// Enable tile borders + collision boxes
+controller.SetDebugOptions(0x02 | 0x10);
+
+// Read current state
+int current = controller.GetDebugOptions();
+
+// Disable all
+controller.SetDebugOptions(0);
+```
+
+The `MbglDebugOptions` enum in `Maui.MapLibre.Native` names the individual bits (`TileBorders`, `ParseStatus`, `Timestamps`, `Collision`, `Overdraw`, `StencilClip`, `DepthBuffer`).
+
+---
+
+## WPF Usage
+
+For WPF apps (not MAUI), use `MlnMapHost` from `Maui.MapLibre.WPF`:
+
+```xaml
+xmlns:mlwpf="clr-namespace:Maui.MapLibre.WPF;assembly=Maui.MapLibre.WPF"
+
+<mlwpf:MlnMapHost x:Name="MapHost"
+                  StyleUrl="https://demotiles.maplibre.org/style.json"
+                  ShowNavigationControls="True"
+                  MapReady="MapHost_MapReady"
+                  StyleLoaded="MapHost_StyleLoaded"
+                  CameraIdle="MapHost_CameraIdle" />
+```
+
+`MlnMapHost` is a `HwndHost` that owns a child HWND rendered with OpenGL (WGL). It supports the same camera, source, layer, and query operations as the MAUI handler. See `sample/WpfExample` for a full working example.
+
+---
+
 ## Building from Source
 
 ### Prerequisites
@@ -236,7 +299,7 @@ git submodule update --init --recursive
 
 ### Build native library
 
-Each platform's CI workflow documents the exact CMake invocation. The native build output (`libmbgl-cabi.so` / `libmbgl-cabi.a` / `mbgl-cabi.dll`) must be placed under `bindings/` before packing.
+Each platform's CI workflow documents the exact CMake invocation. The native build output (`libmln-cabi.so` / `libmln-cabi.a` / `mln-cabi.dll`) must be placed under `bindings/` before packing.
 
 ```sh
 # Example: Windows
@@ -254,8 +317,10 @@ dotnet build sample/MauiSample.csproj -f net9.0-android
 
 ## License
 
-BSD 2-Clause — see [LICENSE](/LICENSE).
+This project is **BSD 2-Clause** licensed — see [LICENSE](/LICENSE).
 
-Portions copyright © 2025 Benjamin Trounson (original [maplibre-maui](https://github.com/btrounson/maplibre-maui), MIT License).
-
-This project links against [MapLibre Native](https://github.com/maplibre/maplibre-native), which is also BSD 2-Clause licensed.
+| Dependency | License | Notes |
+|---|---|---|
+| [MapLibre Native](https://github.com/maplibre/maplibre-native) | BSD 2-Clause | Linked natively via `mln-cabi` |
+| [maplibre-native-ffi](https://github.com/maplibre/maplibre-native-ffi) | BSD 2-Clause | Reference only — no code included; project structure and C ABI conventions (typed handles, status codes, log callback) informed the design of `mln-cabi` |
+| Original [maplibre-maui](https://github.com/btrounson/maplibre-maui) by Benjamin Trounson | MIT | Portions adapted |

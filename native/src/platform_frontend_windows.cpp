@@ -1,17 +1,24 @@
 /**
- * platform_frontend_windows.cpp — WGL OpenGL frontend for Windows.
+ * platform_frontend_windows.cpp — Windows frontend.
  *
- * Expects the caller (C# MaplibreMapHost) to:
- *   1. Create a Win32 child HWND with CS_OWNDC | CS_DBLCLKS
- *   2. Create a WGL context on that DC
- *   3. Pass the HDC and HGLRC as void* to mbgl_frontend_create_gl()
+ * When built with MLN_WITH_OPENGL (MLN_RENDER_BACKEND_OPENGL defined by mbgl-core):
+ *   WGL OpenGL frontend.
+ *   Expects the caller (C# MaplibreMapHost) to:
+ *     1. Create a Win32 child HWND with CS_OWNDC | CS_DBLCLKS
+ *     2. Create a WGL context on that DC
+ *     3. Pass the HDC and HGLRC as void* to mbgl_frontend_create_gl()
+ *   The render_callback is invoked after each frame so the caller can
+ *   call SwapBuffers on its own DC.
  *
- * The render_callback is invoked after each frame so the caller can
- * call SwapBuffers on its own DC.
+ * When built with any other backend (e.g. MLN_WITH_VULKAN):
+ *   Provides a stub that throws — Vulkan Windows frontend is not yet implemented.
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include "platform_frontend.hpp"
+
+#ifdef MLN_RENDER_BACKEND_OPENGL
+
 #include <mbgl/gl/renderable_resource.hpp>
 #include <mbgl/gl/renderer_backend.hpp>
 #include <mbgl/renderer/renderer.hpp>
@@ -136,7 +143,7 @@ private:
     NullMapObserver                           _nullObserver;
 };
 
-/* ── Factory (called by mbgl_cabi.cpp) ─────────────────────────────── */
+/* ── Factory (called by mln_cabi.cpp) ──────────────────────────────── */
 PlatformFrontend* createPlatformFrontend(
     void* surface_handle, void* gl_context,
     mbgl::Size sz, float pixelRatio,
@@ -148,3 +155,19 @@ PlatformFrontend* createPlatformFrontend(
         sz, pixelRatio, renderCb, renderUd
     );
 }
+
+#else  // non-OpenGL build (e.g. Vulkan) — stub until a Vulkan frontend is implemented
+
+#include <stdexcept>
+
+PlatformFrontend* createPlatformFrontend(
+    void* /*surface_handle*/, void* /*gl_context*/,
+    mbgl::Size /*sz*/, float /*pixelRatio*/,
+    mbgl_render_fn /*renderCb*/, void* /*renderUd*/)
+{
+    throw std::runtime_error(
+        "Windows Vulkan frontend is not yet implemented. "
+        "This build was compiled without MLN_RENDER_BACKEND_OPENGL.");
+}
+
+#endif  // MLN_RENDER_BACKEND_OPENGL

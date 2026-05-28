@@ -11,7 +11,7 @@ namespace Maui.MapLibre.Handlers;
 
 /// <summary>
 /// Windows-specific IMapLibreMapController implementation backed by the C ABI
-/// mbgl-cabi.dll via MbglMap / MbglFrontend / MbglRunLoop P/Invoke bindings.
+/// mln-cabi.dll via MbglMap / MbglFrontend / MbglRunLoop P/Invoke bindings.
 /// </summary>
 public class MapLibreMapController : IMapLibreMapController
 {
@@ -242,6 +242,44 @@ public class MapLibreMapController : IMapLibreMapController
     private const uint MK_LBUTTON         = 0x0001;
     private const int  WHEEL_DELTA        = 120;
 
+    // WM_GESTURE constants (pinch-to-zoom via Win32 gesture API)
+    private const uint WM_GESTURE  = 0x0119;
+    private const uint GID_ZOOM    = 3;
+    private const uint GF_BEGIN    = 0x0001;
+    private const uint GF_END      = 0x0004;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct GESTUREINFO
+    {
+        public uint   cbSize;
+        public uint   dwFlags;       // GF_BEGIN | GF_END | GF_INERTIA
+        public uint   dwID;          // GID_ZOOM etc.
+        public IntPtr hwndTarget;    // CRITICAL: was missing, misaligning everything below it!
+        public short  ptsLocationX;  // gesture centroid, screen coords (POINTS)
+        public short  ptsLocationY;
+        public uint   dwInstanceID;
+        public uint   dwSequenceID;
+        public ulong  ullArguments;  // GID_ZOOM: lower 32 bits = pixel distance between points
+        public uint   cbExtraArgs;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool GetGestureInfo(IntPtr hGestureInfo, ref GESTUREINFO pGestureInfo);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool CloseGestureInfoHandle(IntPtr hGestureInfo);
+
+    // Cursor helpers
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr LoadCursorW(IntPtr hInstance, IntPtr lpCursorName);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetCursor(IntPtr hCursor);
+
+    private const int IDC_ARROW   = 32512;  // standard arrow
+    private const int IDC_HAND    = 32649;  // pointing hand (hover)
+    private const int IDC_SIZEALL = 32646;  // four-direction arrow (drag)
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
     private struct WNDCLASSEXA
     {
@@ -298,6 +336,7 @@ public class MapLibreMapController : IMapLibreMapController
     private bool   _dragging;
     private int    _lastMouseX;
     private int    _lastMouseY;
+    private uint   _gesturePrevDist;  // previous per-frame distance for incremental WM_GESTURE zoom
 
     private static void EnsureGlWindowClassRegistered()
     {
@@ -342,7 +381,7 @@ public class MapLibreMapController : IMapLibreMapController
     // ── State ─────────────────────────────────────────────────────────────────
 
     private readonly IntPtr _parentHwnd;
-    private readonly string? _styleString;
+    private string? _styleString;
     private readonly float   _pixelRatio;
 
     private IntPtr       _effectiveParentHwnd = IntPtr.Zero;
@@ -612,8 +651,10 @@ public class MapLibreMapController : IMapLibreMapController
         {
             case "onDidFinishLoadingStyle":
                 _styleReady = true;
+                _locIndLayer = null;  // style reload invalidates all layer handles
                 _style = _map?.GetStyle();
                 _renderNeedsUpdate = true;
+                if (_pendingLocInd.HasValue) ApplyPendingLocationIndicator();
                 RefreshAttributionText();  // rebuild attribution from TileJSON sources
                 OnStyleLoadedReceived?.Invoke(new Maps.Style(null));
                 break;
@@ -755,6 +796,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     public void SetStyleString(string styleString)
     {
+        _styleString = styleString;
         if (_map == null) return;
         if (styleString.StartsWith('{'))
             _map.SetStyleJson(styleString);
@@ -1157,7 +1199,7 @@ public class MapLibreMapController : IMapLibreMapController
             case WM_LBUTTONDOWN:
             {
                 int btnSizePx = (int)(NavButtonSize * _pixelRatio);
-                int y = (short)((lParam.ToInt32() >> 16) & 0xFFFF);
+                int y = (short)((unchecked((int)lParam.ToInt64()) >> 16) & 0xFFFF);
                 int btn = y / (btnSizePx + 1);
                 switch (btn)
                 {
@@ -1380,12 +1422,27 @@ public class MapLibreMapController : IMapLibreMapController
     {
         switch (msg)
         {
+            case WM_SETCURSOR:
+            {
+                // Override the cursor for the map client area.
+                // wParam is the HWND under the cursor; only set if over the map itself (not a child overlay).
+                if (wParam == hWnd && (unchecked((int)lParam.ToInt64()) & 0xFFFF) == 1 /* HTCLIENT */)
+                {
+                    // Dragging: four-direction move arrow (communicates free pan)
+                    // Hover:    pointing hand (communicates interactivity)
+                    int idc = _dragging ? IDC_SIZEALL : IDC_HAND;
+                    SetCursor(LoadCursorW(IntPtr.Zero, (IntPtr)idc));
+                    return new IntPtr(1);  // non-zero suppresses DefWindowProc override
+                }
+                break;
+            }
+
             case WM_LBUTTONDOWN:
             {
                 SetCapture(hWnd);
                 _dragging  = true;
-                _lastMouseX = (short)(lParam.ToInt32() & 0xFFFF);
-                _lastMouseY = (short)((lParam.ToInt32() >> 16) & 0xFFFF);
+                _lastMouseX = (short)(unchecked((int)lParam.ToInt64()) & 0xFFFF);
+                _lastMouseY = (short)((unchecked((int)lParam.ToInt64()) >> 16) & 0xFFFF);
                 // Convert physical px → logical for mbgl (it works in physical coords
                 // relative to its own viewport, so pass physical directly).
                 _map?.OnPanStart(_lastMouseX, _lastMouseY);
@@ -1394,8 +1451,8 @@ public class MapLibreMapController : IMapLibreMapController
             case WM_MOUSEMOVE:
             {
                 if (!_dragging) break;
-                int x  = (short)(lParam.ToInt32() & 0xFFFF);
-                int y  = (short)((lParam.ToInt32() >> 16) & 0xFFFF);
+                int x  = (short)(unchecked((int)lParam.ToInt64()) & 0xFFFF);
+                int y  = (short)((unchecked((int)lParam.ToInt64()) >> 16) & 0xFFFF);
                 int dx = x - _lastMouseX;
                 int dy = y - _lastMouseY;
                 _lastMouseX = x;
@@ -1416,8 +1473,8 @@ public class MapLibreMapController : IMapLibreMapController
             }
             case WM_LBUTTONDBLCLK:
             {
-                int x = (short)(lParam.ToInt32() & 0xFFFF);
-                int y = (short)((lParam.ToInt32() >> 16) & 0xFFFF);
+                int x = (short)(unchecked((int)lParam.ToInt64()) & 0xFFFF);
+                int y = (short)((unchecked((int)lParam.ToInt64()) >> 16) & 0xFFFF);
                 _map?.OnDoubleTap(x, y);
                 _renderNeedsUpdate = true;
                 return IntPtr.Zero;
@@ -1426,17 +1483,53 @@ public class MapLibreMapController : IMapLibreMapController
             {
                 // wParam hi-word is wheel delta; lo-word is key state.
                 // Cursor position is in screen coords in lParam.
-                int delta = (short)((wParam.ToInt32() >> 16) & 0xFFFF);
+                int delta = (short)((unchecked((int)wParam.ToInt64()) >> 16) & 0xFFFF);
                 // Convert screen cursor pos → popup client coords.
-                int screenX = (short)(lParam.ToInt32() & 0xFFFF);
-                int screenY = (short)((lParam.ToInt32() >> 16) & 0xFFFF);
-                var pt = new POINT { X = screenX, Y = screenY };
-                // ScreenToClient not available here directly; use popup rect offset.
+                int screenX = (short)(unchecked((int)lParam.ToInt64()) & 0xFFFF);
+                int screenY = (short)((unchecked((int)lParam.ToInt64()) >> 16) & 0xFFFF);
                 GetWindowRect(hWnd, out var wr);
                 int cx = screenX - wr.Left;
                 int cy = screenY - wr.Top;
                 _map?.OnScroll((double)delta / WHEEL_DELTA, cx, cy);
                 _renderNeedsUpdate = true;
+                return IntPtr.Zero;
+            }
+
+            case WM_GESTURE:
+            {
+                // Handle pinch-to-zoom via the Win32 gesture API.  This fires for
+                // both touch screens and precision touchpads without going through
+                // WinUI 3's ManipulationDelta, which overflows on touchpad pinch
+                // (microsoft/microsoft-ui-xaml#8084).
+                var gi = new GESTUREINFO { cbSize = (uint)Marshal.SizeOf<GESTUREINFO>() };
+                if (GetGestureInfo(wParam, ref gi) && gi.dwID == GID_ZOOM)
+                {
+                    // ptsLocation is in screen coords — convert to popup client coords.
+                    GetWindowRect(hWnd, out var gwr);
+                    int gcx = gi.ptsLocationX - gwr.Left;
+                    int gcy = gi.ptsLocationY - gwr.Top;
+
+                    uint dist = (uint)(gi.ullArguments & 0xFFFFFFFFUL);
+
+                    if ((gi.dwFlags & GF_BEGIN) != 0)
+                    {
+                        // Record starting distance; no zoom change on the first frame.
+                        _gesturePrevDist = dist;
+                    }
+                    else if (_gesturePrevDist > 0 && dist > 0)
+                    {
+                        // Incremental per-frame scale — consistent with what the
+                        // native mbgl_map_on_pinch expects (log2 of a small ratio).
+                        double scale = (double)dist / _gesturePrevDist;
+                        _map?.OnPinch(scale, gcx, gcy);
+                        _renderNeedsUpdate = true;
+                        _gesturePrevDist = dist;
+                    }
+
+                    if ((gi.dwFlags & GF_END) != 0)
+                        _gesturePrevDist = 0;
+                }
+                CloseGestureInfoHandle(wParam);
                 return IntPtr.Zero;
             }
         }
@@ -1591,7 +1684,87 @@ public class MapLibreMapController : IMapLibreMapController
     public (double Lat, double Lon)[] LatLngsForPixels(IReadOnlyList<(double X, double Y)> pixels)
         => _map?.LatLngsForPixels(pixels) ?? [];
 
-    // ── Input forwarding (called by MapLibreMapHandler) ───────────────────────
+    // ── Debug overlays ────────────────────────────────────────────────────────────
+
+    public int  GetDebugOptions() => _map?.GetDebugOptions() ?? 0;
+    public void SetDebugOptions(int options) => _map?.SetDebugOptions(options);
+
+    // ── Style inspection ───────────────────────────────────────────────────
+
+    public string   GetStyleUrl()       => _style?.GetUrl()       ?? string.Empty;
+    public string[] GetStyleSourceIds() => _style?.GetSourceIds() ?? [];
+    public string[] GetStyleLayerIds()  => _style?.GetLayerIds()  ?? [];
+
+    // ── Layer read-back + visibility ──────────────────────────────────────────
+
+    public string? GetLayerPaintProperty(string layerId, string name)
+        => _style?.GetLayer(layerId)?.GetPaintProperty(name);
+
+    public string? GetLayerLayoutProperty(string layerId, string name)
+        => _style?.GetLayer(layerId)?.GetLayoutProperty(name);
+
+    public bool GetLayerVisibility(string layerId)
+        => _style?.GetLayer(layerId)?.GetVisibility() ?? false;
+
+    public void SetLayerVisibility(string layerId, bool visible)
+        => _style?.GetLayer(layerId)?.SetVisible(visible);
+
+    // ── Location indicator ("blue dot") ──────────────────────────────────────
+
+    public bool FollowLocation { get; set; } = true;
+    public bool ShowBearing    { get; set; } = true;
+
+    private const string LocIndLayerId = "mbgl_maui_location";
+    private MbglLayer?   _locIndLayer;
+    private record struct LocIndParams(double Lat, double Lon, float Bearing, float AccuracyM);
+    private LocIndParams? _pendingLocInd;
+
+    public void UpdateLocationIndicator(double lat, double lon, float bearing = 0, float accuracyMeters = 10)
+    {
+        bool isFirstFix = !_pendingLocInd.HasValue;
+        _pendingLocInd = new LocIndParams(lat, lon, bearing, Math.Max(5f, accuracyMeters));
+
+        if (FollowLocation)
+        {
+            if (isFirstFix) JumpTo(lat, lon, GetZoom() < 8 ? 14 : GetZoom());
+            else            EaseTo(lat, lon, GetZoom(), GetBearing(), GetPitch(), durationMs: 200);
+        }
+
+        if (!_styleReady || _style == null) return;
+        ApplyPendingLocationIndicator();
+    }
+
+    public void ClearLocationIndicator()
+    {
+        _pendingLocInd = null;
+        _locIndLayer   = null;
+        if (_styleReady && _style?.HasLayer(LocIndLayerId) == true)
+            _style.RemoveLayer(LocIndLayerId);
+        _renderNeedsUpdate = true;
+    }
+
+    private void ApplyPendingLocationIndicator()
+    {
+        if (_pendingLocInd == null || _style == null) return;
+        var p  = _pendingLocInd.Value;
+        var ic = System.Globalization.CultureInfo.InvariantCulture;
+
+        if (_locIndLayer == null)
+        {
+            if (_style.HasLayer(LocIndLayerId)) _style.RemoveLayer(LocIndLayerId);
+            _locIndLayer = _style.AddLocationIndicatorLayer(LocIndLayerId);
+            _locIndLayer.SetPaintProperty("accuracy-radius-color", "\"rgba(30,136,229,0.3)\"");
+            _locIndLayer.SetPaintProperty("accuracy-radius-border-color", "\"rgba(30,136,229,0.85)\"");
+        }
+
+        _locIndLayer.SetPaintProperty("location",
+            $"[{p.Lat.ToString(ic)},{p.Lon.ToString(ic)},0]");
+        _locIndLayer.SetPaintProperty("bearing",
+            (ShowBearing ? p.Bearing : 0f).ToString(ic));
+        _locIndLayer.SetPaintProperty("accuracy-radius", p.AccuracyM.ToString(ic));
+
+        _renderNeedsUpdate = true;
+    }
 
     public void OnPointerWheelChanged(double delta, double cx, double cy)
         => _map?.OnScroll(delta, cx, cy);

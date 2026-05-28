@@ -1,4 +1,4 @@
-name: Native Apple
+name: Native Apple Metal
 
 on:
   workflow_call:
@@ -19,14 +19,14 @@ jobs:
             cmake-sysroot: iphoneos
             cmake-archs: arm64
             extra-flags: ""
-            artifact: native-ios-arm64
+            artifact: native-mln-ios-arm64
 
           - name: macCatalyst arm64+x64
             cmake-system: Darwin
             cmake-sysroot: macosx
             cmake-archs: "x86_64;arm64"
             extra-flags: -DCMAKE_XCODE_ATTRIBUTE_SUPPORTS_MACCATALYST=YES -DMLN_WITH_GLFW=OFF
-            artifact: native-maccatalyst
+            artifact: native-mln-maccatalyst
 
     steps:
       - name: Enable Git long paths

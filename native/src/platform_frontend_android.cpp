@@ -1,10 +1,18 @@
 /**
- * platform_frontend_android.cpp — EGL frontend for Android.
+ * platform_frontend_android.cpp — Android frontend.
  *
- * surface_handle: ANativeWindow*
- * gl_context:     EGLContext (or NULL to create a new context sharing with the caller)
+ * When built with MLN_WITH_OPENGL (MLN_RENDER_BACKEND_OPENGL defined by mbgl-core):
+ *   Uses EGL + ANativeWindow for OpenGL ES rendering.
+ *   surface_handle: ANativeWindow*
+ *   gl_context:     EGLContext (or NULL to create a new context sharing with the caller)
+ *
+ * When built with any other backend (e.g. MLN_WITH_VULKAN):
+ *   Provides a stub that throws — Vulkan Android frontend is not yet implemented.
  */
 #include "platform_frontend.hpp"
+
+#ifdef MLN_RENDER_BACKEND_OPENGL
+
 #include <EGL/egl.h>
 #include <mbgl/gl/renderable_resource.hpp>
 #include <mbgl/gl/renderer_backend.hpp>
@@ -157,3 +165,19 @@ PlatformFrontend* createPlatformFrontend(
         sz, pixelRatio, renderCb, renderUd
     );
 }
+
+#else  // non-OpenGL build (e.g. Vulkan) — stub until a Vulkan frontend is implemented
+
+#include <stdexcept>
+
+PlatformFrontend* createPlatformFrontend(
+    void* /*surface_handle*/, void* /*context*/,
+    mbgl::Size /*sz*/, float /*pixelRatio*/,
+    mbgl_render_fn /*renderCb*/, void* /*renderUd*/)
+{
+    throw std::runtime_error(
+        "Android Vulkan frontend is not yet implemented. "
+        "This build was compiled without MLN_RENDER_BACKEND_OPENGL.");
+}
+
+#endif  // MLN_RENDER_BACKEND_OPENGL

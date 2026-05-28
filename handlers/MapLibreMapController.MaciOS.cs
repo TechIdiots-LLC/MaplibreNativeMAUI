@@ -39,7 +39,7 @@ public sealed class MapContainerView : UIView
 // -- Controller ----------------------------------------------------------------
 
 /// <summary>
-/// iOS / Mac Catalyst IMapLibreMapController backed by mbgl-cabi (Metal frontend).
+/// iOS / Mac Catalyst IMapLibreMapController backed by mln-cabi (Metal frontend).
 /// Platform view is a plain container UIView; the C++ Metal backend owns an MTKView
 /// which is retrieved via GetNativeView() and added as a subview on first layout.
 /// </summary>
@@ -474,6 +474,37 @@ public class MapLibreMapController : IMapLibreMapController
 
     public (double Lat, double Lon)[] LatLngsForPixels(IReadOnlyList<(double X, double Y)> pixels)
         => _map?.LatLngsForPixels(pixels) ?? [];
+
+    // ── Debug overlays ────────────────────────────────────────────────────────────
+
+    public int  GetDebugOptions() => _map?.GetDebugOptions() ?? 0;
+    public void SetDebugOptions(int options) => _map?.SetDebugOptions(options);
+
+    // ── Style inspection ───────────────────────────────────────────────────
+
+    public string   GetStyleUrl()       => _style?.GetUrl()       ?? string.Empty;
+    public string[] GetStyleSourceIds() => _style?.GetSourceIds() ?? [];
+    public string[] GetStyleLayerIds()  => _style?.GetLayerIds()  ?? [];
+
+    // ── Layer read-back + visibility ──────────────────────────────────────────
+
+    public string? GetLayerPaintProperty(string layerId, string name)
+        => _style?.GetLayer(layerId)?.GetPaintProperty(name);
+
+    public string? GetLayerLayoutProperty(string layerId, string name)
+        => _style?.GetLayer(layerId)?.GetLayoutProperty(name);
+
+    public bool GetLayerVisibility(string layerId)
+        => _style?.GetLayer(layerId)?.GetVisibility() ?? false;
+
+    public void SetLayerVisibility(string layerId, bool visible)
+        => _style?.GetLayer(layerId)?.SetVisible(visible);
+
+    // ── Location indicator (no-op on iOS/macCatalyst — platform uses its own blue-dot) ──
+    public bool FollowLocation { get; set; } = true;
+    public bool ShowBearing    { get; set; } = true;
+    public void UpdateLocationIndicator(double lat, double lon, float bearing = 0, float accuracyMeters = 10) { }
+    public void ClearLocationIndicator() { }
 
     // -- Cleanup ---------------------------------------------------------------
 

@@ -1,4 +1,4 @@
-name: Native Windows
+name: Native Windows Vulkan
 
 on:
   workflow_call:
@@ -8,7 +8,7 @@ env:
 
 jobs:
   build:
-    name: Windows ${{ matrix.arch }}
+    name: Windows ${{ matrix.arch }} Vulkan
     runs-on: ${{ matrix.runs-on }}
     strategy:
       fail-fast: false
@@ -51,7 +51,7 @@ jobs:
         continue-on-error: true
         with:
           path: dependencies/maplibre-native/platform/windows/vendor/vcpkg/archives
-          key: vcpkg-${{ matrix.vcpkg-triplet }}-${{ steps.vcpkg-id.outputs.commit_id }}
+          key: vcpkg-${{ matrix.vcpkg-triplet }}-vulkan-${{ steps.vcpkg-id.outputs.commit_id }}
 
       - name: Bootstrap vcpkg
         run: dependencies\maplibre-native\platform\windows\vendor\vcpkg\bootstrap-vcpkg.bat -disableMetrics
@@ -67,9 +67,9 @@ jobs:
             cmake -B build `
               -G "Visual Studio 17 2022" -A ${{ matrix.vs-arch }} `
               -DCMAKE_TOOLCHAIN_FILE="dependencies/maplibre-native/platform/windows/custom-toolchain.cmake" `
-              -DMLN_WITH_OPENGL=ON `
+              -DMLN_WITH_OPENGL=OFF `
               -DMLN_WITH_EGL=OFF `
-              -DMLN_WITH_VULKAN=OFF `
+              -DMLN_WITH_VULKAN=ON `
               "-DCMAKE_CXX_FLAGS=/wd4267"
             if ($LASTEXITCODE -eq 0) { break }
             if ($attempt -lt $maxAttempts) {
@@ -84,6 +84,6 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: native-windows-${{ matrix.arch }}
+          name: native-mln-windows-${{ matrix.arch }}-vulkan
           path: build/**/mln-cabi.dll
           retention-days: 7

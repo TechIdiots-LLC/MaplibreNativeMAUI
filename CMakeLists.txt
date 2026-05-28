@@ -10,9 +10,9 @@ set(MAPLIBRE_NATIVE_DIR "${CMAKE_CURRENT_LIST_DIR}/dependencies/maplibre-native"
 #   Android : $ANDROID_NDK/build/cmake/android.toolchain.cmake
 #   iOS/mac : handled by -DCMAKE_SYSTEM_NAME=iOS / Xcode generator
 if(WIN32)
-    set(MLN_WITH_OPENGL ON  CACHE BOOL "" FORCE)
-    set(MLN_WITH_EGL    OFF CACHE BOOL "" FORCE)
-    set(MLN_WITH_VULKAN OFF CACHE BOOL "" FORCE)
+    set(MLN_WITH_OPENGL ON  CACHE BOOL "Enable OpenGL renderer" )
+    set(MLN_WITH_EGL    OFF CACHE BOOL "Enable EGL"             )
+    set(MLN_WITH_VULKAN OFF CACHE BOOL "Enable Vulkan renderer" )
 endif()
 
 # ── maplibre-native (provides mbgl-core target) ───────────────────────────────

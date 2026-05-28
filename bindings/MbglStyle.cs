@@ -225,6 +225,16 @@ public sealed class MbglSource
 
     public void SetUrl(string url)
         => NativeMethods.GeoJsonSourceSetUrl(Handle, url);
+
+    /// <summary>Returns the TileJSON attribution string for this source, or empty string if unavailable.</summary>
+    public string GetAttribution()
+    {
+        var ptr = NativeMethods.SourceGetAttribution(Handle);
+        if (ptr == IntPtr.Zero) return string.Empty;
+        var result = Marshal.PtrToStringUTF8(ptr) ?? string.Empty;
+        NativeMethods.FreeString(ptr);
+        return result;
+    }
 }
 
 // ── Layer handle ──────────────────────────────────────────────────────────────

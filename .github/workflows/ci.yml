@@ -48,21 +48,43 @@ jobs:
     needs: version
     uses: ./.github/workflows/native-apple.yml
 
+  # ── Vulkan/Metal native builds ─────────────────────────────────────────────
+  build-windows-vulkan:
+    name: Build Windows Vulkan native
+    needs: version
+    uses: ./.github/workflows/native-windows-vulkan.yml
+
+  build-android-vulkan:
+    name: Build Android Vulkan native
+    needs: version
+    uses: ./.github/workflows/native-android-vulkan.yml
+
+  build-apple-metal:
+    name: Build Apple Metal native
+    needs: version
+    uses: ./.github/workflows/native-apple-metal.yml
+
   # ── NuGet pack (verify packability, no publish) ───────────────────────────
   pack:
     name: Pack NuGet
-    runs-on: macos-15
+    runs-on: macos-latest
     needs: [version, build-windows, build-android, build-apple]
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Pin .NET SDK to Xcode-16-compatible feature band
+        # macos-latest still ships with Xcode 16.4; the 9.0.200 feature band was
+        # published before WWDC 2025 so its iOS/macCatalyst workloads target Xcode 16.
+        # Once GitHub runners have Xcode 26.5 this step can be removed.
+        run: echo '{"sdk":{"version":"9.0.200","rollForward":"latestPatch"}}' > global.json
 
       - name: Set up .NET 8 and 9 SDKs
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
             8.0.x
-            9.0.x
+            9.0.200
 
       - name: Download all native artifacts
         uses: actions/download-artifact@v4
@@ -77,12 +99,12 @@ jobs:
           mkdir -p $N/android-arm64 $N/android-x64
           mkdir -p $N/ios-arm64 $N/maccatalyst
 
-            find native-artifacts/native-windows-x64 -name "mbgl-cabi.dll" -exec cp {} $N/win-x64/ \;
-            find native-artifacts/native-windows-arm64 -name "mbgl-cabi.dll" -exec cp {} $N/win-arm64/ \;
-            find native-artifacts/native-android-arm64-v8a -name "libmbgl-cabi.so" -exec cp {} $N/android-arm64/ \;
-            find native-artifacts/native-android-x86_64 -name "libmbgl-cabi.so" -exec cp {} $N/android-x64/ \;
-            find native-artifacts/native-ios-arm64 -name "libmbgl-cabi.a" -exec cp {} $N/ios-arm64/ \;
-            find native-artifacts/native-maccatalyst -name "libmbgl-cabi.a" -exec cp {} $N/maccatalyst/ \;
+            find native-artifacts/native-windows-x64 -name "mln-cabi.dll" -exec cp {} $N/win-x64/ \;
+            find native-artifacts/native-windows-arm64 -name "mln-cabi.dll" -exec cp {} $N/win-arm64/ \;
+            find native-artifacts/native-android-arm64-v8a -name "libmln-cabi.so" -exec cp {} $N/android-arm64/ \;
+            find native-artifacts/native-android-x86_64 -name "libmln-cabi.so" -exec cp {} $N/android-x64/ \;
+            find native-artifacts/native-ios-arm64 -name "libmln-cabi.a" -exec cp {} $N/ios-arm64/ \;
+            find native-artifacts/native-maccatalyst -name "libmln-cabi.a" -exec cp {} $N/maccatalyst/ \;
 
           echo "Native libs arranged:"
           find $N -type f
@@ -108,5 +130,247 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: nuget-packages-ci
+          path: artifacts/*.nupkg
+          retention-days: 3
+
+  # ── WPF NuGet pack (verify packability on Windows) ────────────────────────
+  pack-wpf:
+    name: Pack WPF NuGet + Windows samples
+    runs-on: windows-latest
+    needs: [version, build-windows]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 9 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Download Windows native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-windows-*
+          path: native-artifacts
+
+      - name: Stage native DLLs
+        shell: bash
+        run: |
+          mkdir -p bindings/native/win-x64 bindings/native/win-arm64
+          find native-artifacts/native-windows-x64  -name "mln-cabi.dll" -exec cp {} bindings/native/win-x64/ \;
+          find native-artifacts/native-windows-arm64 -name "mln-cabi.dll" -exec cp {} bindings/native/win-arm64/ \;
+          echo "Staged DLLs:"
+          find bindings/native -name "*.dll"
+
+      - name: Pack Maui.MapLibre.WPF
+        shell: bash
+        run: |
+          dotnet pack wpf/Maui.MapLibre.WPF.csproj \
+            -c Release \
+            -p:Version=${{ needs.version.outputs.version }} \
+            -o artifacts/
+
+      - name: Publish ConsoleExample (win-x64)
+        shell: bash
+        run: |
+          dotnet publish sample/ConsoleExample/ConsoleExample.csproj \
+            -c Release -r win-x64 --self-contained false \
+            -o publish/ConsoleExample-win-x64
+
+      - name: Publish ConsoleExample (win-arm64)
+        shell: bash
+        run: |
+          dotnet publish sample/ConsoleExample/ConsoleExample.csproj \
+            -c Release -r win-arm64 --self-contained false \
+            -o publish/ConsoleExample-win-arm64
+
+      - name: Publish WpfExample (win-x64)
+        shell: bash
+        run: |
+          dotnet publish sample/WpfExample/WpfExample.csproj \
+            -c Release -r win-x64 --self-contained false \
+            -o publish/WpfExample-win-x64
+
+      - name: Publish WpfExample (win-arm64)
+        shell: bash
+        run: |
+          dotnet publish sample/WpfExample/WpfExample.csproj \
+            -c Release -r win-arm64 --self-contained false \
+            -o publish/WpfExample-win-arm64
+
+      - name: Zip sample outputs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path samples -Force | Out-Null
+          @('ConsoleExample-win-x64','ConsoleExample-win-arm64','WpfExample-win-x64','WpfExample-win-arm64') | ForEach-Object {
+            Compress-Archive -Path "publish/$_/*" -DestinationPath "samples/$_.zip"
+          }
+
+      - name: Upload Windows samples (CI)
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-samples-ci
+          path: samples/*.zip
+          retention-days: 7
+
+  # ── Sample app builds (validate end-to-end compilation) ───────────────────
+  sample:
+    name: Sample — all platforms
+    runs-on: macos-latest
+    needs: [version, pack]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pin .NET SDK to Xcode-16-compatible feature band
+        run: echo '{"sdk":{"version":"9.0.200","rollForward":"latestPatch"}}' > global.json
+
+      - name: Set up .NET 8 and 9 SDKs
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.200
+
+      - name: Download NuGet packages
+        uses: actions/download-artifact@v4
+        with:
+          name: nuget-packages-ci
+          path: local-feed
+
+      - name: Add local NuGet feed
+        run: dotnet nuget add source $(pwd)/local-feed --name local-ci
+
+      - name: Restore workloads
+        # Restore fetches the latest manifests (including MAUI 9.0.120) so NuGet
+        # version resolution matches the packed Handlers NuGet.  iOS/macCatalyst
+        # BUILD steps are omitted below because Microsoft.iOS.Sdk 26.5.x (installed
+        # here) requires Xcode 26.5, but macos-latest ships Xcode 16.4.  Merely
+        # having the 26.5 manifests installed does not affect Android or Windows builds.
+        run: dotnet workload restore sample/MauiSample.csproj
+
+      - name: Build sample (Android)
+        run: |
+          dotnet build sample/MauiSample.csproj \
+            -f net9.0-android \
+            -c Release \
+            -p:EnableWindowsTargeting=true \
+            -p:UseLocalPackages=true
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: sample-android-apk
+          path: sample/bin/Release/net9.0-android/*Signed.apk
+          retention-days: 7
+
+      # iOS/macCatalyst builds require Xcode 26.5 (Microsoft.iOS.Sdk 26.5.x) which
+      # is not available on macos-latest (Xcode 16.4).  They are validated by the
+      # pack job (TFM restore) and native-apple.yml (native library compilation).
+      # Re-enable once GitHub Actions ships a macOS image with Xcode 26.5.
+
+  # ── Sample app build — Windows (separate job, needs a Windows runner) ──────
+  sample-windows:
+    name: Sample — Windows
+    runs-on: windows-latest
+    needs: [version, pack]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 8 and 9 SDKs
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+
+      - name: Download NuGet packages
+        uses: actions/download-artifact@v4
+        with:
+          name: nuget-packages-ci
+          path: local-feed
+
+      - name: Add local NuGet feed
+        run: dotnet nuget add source "${{ github.workspace }}\local-feed" --name local-ci
+
+      - name: Restore workloads
+        run: dotnet workload restore sample/MauiSample.csproj
+
+      - name: Publish sample (Windows)
+        run: |
+          dotnet publish sample/MauiSample.csproj `
+            -f net9.0-windows10.0.19041.0 `
+            -c Release `
+            -p:WindowsPackageType=None `
+            -p:UseLocalPackages=true `
+            -o publish/MauiSample-windows
+
+      - name: Upload Windows MAUI sample
+        uses: actions/upload-artifact@v4
+        with:
+          name: sample-windows-maui
+          path: publish/MauiSample-windows/
+          retention-days: 7
+
+  # ── Pack Maui.MapLibre.Native.Vulkan NuGet ────────────────────────────────
+  pack-vulkan:
+    name: Pack NuGet (Vulkan)
+    runs-on: macos-latest
+    needs: [version, build-windows-vulkan, build-android-vulkan, build-apple-metal]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Pin .NET SDK to Xcode-16-compatible feature band
+        run: echo '{"sdk":{"version":"9.0.200","rollForward":"latestPatch"}}' > global.json
+
+      - name: Set up .NET 8 and 9 SDKs
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.200
+
+      - name: Download all MLN native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-mln-*
+          path: mln-artifacts
+
+      - name: Arrange native libs for Vulkan bindings project
+        run: |
+          N=bindings/native-vulkan
+          mkdir -p $N/win-x64 $N/win-arm64
+          mkdir -p $N/android-arm64 $N/android-x64
+          mkdir -p $N/ios-arm64 $N/maccatalyst
+
+          find mln-artifacts/native-mln-windows-x64-vulkan   -name "mln-cabi.dll"    -exec cp {} $N/win-x64/      \; 2>/dev/null || true
+          find mln-artifacts/native-mln-windows-arm64-vulkan -name "mln-cabi.dll"    -exec cp {} $N/win-arm64/    \; 2>/dev/null || true
+          find mln-artifacts/native-mln-android-arm64-v8a    -name "libmln-cabi.so"  -exec cp {} $N/android-arm64/ \; 2>/dev/null || true
+          find mln-artifacts/native-mln-android-x86_64       -name "libmln-cabi.so"  -exec cp {} $N/android-x64/  \; 2>/dev/null || true
+          find mln-artifacts/native-mln-ios-arm64            -name "libmln-cabi.a"   -exec cp {} $N/ios-arm64/    \; 2>/dev/null || true
+          find mln-artifacts/native-mln-maccatalyst          -name "libmln-cabi.a"   -exec cp {} $N/maccatalyst/  \; 2>/dev/null || true
+
+          echo "Vulkan native libs arranged:"
+          find $N -type f
+
+      - name: Restore workloads
+        run: dotnet workload restore maplibre-maui.sln
+
+      - name: Pack Maui.MapLibre.Native.Vulkan
+        run: |
+          dotnet pack bindings/Maui.MapLibre.Native.Vulkan.csproj \
+            -c Release \
+            -p:Version=${{ needs.version.outputs.version }} \
+            -p:_MlnNativeDir=$(pwd)/bindings/native-vulkan/ \
+            -o artifacts/
+
+      - name: Upload NuGet Vulkan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages-vulkan-ci
           path: artifacts/*.nupkg
           retention-days: 3

@@ -155,6 +155,14 @@ public sealed class MbglMap : IDisposable
     public void CancelTransitions() => NativeMethods.MapCancelTransitions(Handle);
     public bool IsFullyLoaded => NativeMethods.MapIsFullyLoaded(Handle) != 0;
 
+    // ── Debug overlays ─────────────────────────────────────────────────────────────
+
+    /// <summary>Get the current debug overlay bitmask (<see cref="MbglDebugOptions"/>).</summary>
+    public int GetDebugOptions() => NativeMethods.MapGetDebugOptions(Handle);
+
+    /// <summary>Set the debug overlay bitmask. Pass <see cref="MbglDebugOptions.None"/> to disable all.</summary>
+    public void SetDebugOptions(int options) => NativeMethods.MapSetDebugOptions(Handle, options);
+
     // ── Tier 1 – gesture / interactive movement ───────────────────────────────
     public void SetGestureInProgress(bool inProgress)
         => NativeMethods.MapSetGestureInProgress(Handle, inProgress ? 1 : 0);

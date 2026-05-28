@@ -12,7 +12,7 @@ using Location = Microsoft.Maui.Devices.Sensors.Location;
 namespace Maui.MapLibre.Handlers;
 
 /// <summary>
-/// Android IMapLibreMapController backed by mbgl-cabi.so via EGL + ANativeWindow.
+/// Android IMapLibreMapController backed by mln-cabi.so via EGL + ANativeWindow.
 /// The platform view is a SurfaceView; the C++ EGL frontend manages its own
 /// EGL display, config, context, and window surface.
 /// </summary>
@@ -442,6 +442,37 @@ public class MapLibreMapController : IMapLibreMapController
 
     public (double Lat, double Lon)[] LatLngsForPixels(IReadOnlyList<(double X, double Y)> pixels)
         => _map?.LatLngsForPixels(pixels) ?? [];
+
+    // ── Debug overlays ────────────────────────────────────────────────────────────
+
+    public int  GetDebugOptions() => _map?.GetDebugOptions() ?? 0;
+    public void SetDebugOptions(int options) => _map?.SetDebugOptions(options);
+
+    // ── Style inspection ───────────────────────────────────────────────────
+
+    public string   GetStyleUrl()       => _style?.GetUrl()       ?? string.Empty;
+    public string[] GetStyleSourceIds() => _style?.GetSourceIds() ?? [];
+    public string[] GetStyleLayerIds()  => _style?.GetLayerIds()  ?? [];
+
+    // ── Layer read-back + visibility ──────────────────────────────────────────
+
+    public string? GetLayerPaintProperty(string layerId, string name)
+        => _style?.GetLayer(layerId)?.GetPaintProperty(name);
+
+    public string? GetLayerLayoutProperty(string layerId, string name)
+        => _style?.GetLayer(layerId)?.GetLayoutProperty(name);
+
+    public bool GetLayerVisibility(string layerId)
+        => _style?.GetLayer(layerId)?.GetVisibility() ?? false;
+
+    public void SetLayerVisibility(string layerId, bool visible)
+        => _style?.GetLayer(layerId)?.SetVisible(visible);
+
+    // ── Location indicator (no-op on Android — platform uses its own blue-dot) ──
+    public bool FollowLocation { get; set; } = true;
+    public bool ShowBearing    { get; set; } = true;
+    public void UpdateLocationIndicator(double lat, double lon, float bearing = 0, float accuracyMeters = 10) { }
+    public void ClearLocationIndicator() { }
 
     // -- Cleanup ---------------------------------------------------------------
 

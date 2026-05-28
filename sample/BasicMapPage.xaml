@@ -25,12 +25,18 @@
 
             <!-- Jump-to city buttons -->
             <Label Text="Jump to city:" FontAttributes="Bold" />
-            <FlexLayout Wrap="Wrap" JustifyContent="Start" Gap="8">
-                <Button Text="London"   Clicked="OnCityClicked" CommandParameter="London"   />
-                <Button Text="New York" Clicked="OnCityClicked" CommandParameter="New York" />
-                <Button Text="Tokyo"   Clicked="OnCityClicked" CommandParameter="Tokyo"   />
-                <Button Text="Sydney"  Clicked="OnCityClicked" CommandParameter="Sydney"  />
+            <FlexLayout Wrap="Wrap" JustifyContent="Start">
+                <Button Text="London"   Clicked="OnCityClicked" CommandParameter="London"   Margin="0,0,8,8" />
+                <Button Text="New York" Clicked="OnCityClicked" CommandParameter="New York" Margin="0,0,8,8" />
+                <Button Text="Tokyo"   Clicked="OnCityClicked" CommandParameter="Tokyo"   Margin="0,0,8,8" />
+                <Button Text="Sydney"  Clicked="OnCityClicked" CommandParameter="Sydney"  Margin="0,0,8,8" />
             </FlexLayout>
+
+            <!-- Debug overlay toggle -->
+            <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+                <Label Text="Debug Overlays:" FontAttributes="Bold" VerticalOptions="Center" />
+                <Switch x:Name="DebugSwitch" Toggled="OnDebugToggled" VerticalOptions="Center" />
+            </HorizontalStackLayout>
 
             <!-- Status line -->
             <Label Text="{Binding Status}" FontSize="12" TextColor="Gray" />

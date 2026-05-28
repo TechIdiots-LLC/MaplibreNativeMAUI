@@ -18,10 +18,10 @@
 
             <Label Text="GeoJSON Layers demo — polygon park + walking route" FontAttributes="Bold" />
 
-            <FlexLayout Wrap="Wrap" JustifyContent="Start" Gap="8">
-                <Button Text="Add Polygon"    Clicked="OnAddPolygon"    />
-                <Button Text="Remove Polygon" Clicked="OnRemovePolygon" />
-                <Button Text="Toggle Route"   Clicked="OnToggleRoute"   />
+            <FlexLayout Wrap="Wrap" JustifyContent="Start">
+                <Button Text="Add Polygon"    Clicked="OnAddPolygon"    Margin="0,0,8,8" />
+                <Button Text="Remove Polygon" Clicked="OnRemovePolygon" Margin="0,0,8,8" />
+                <Button Text="Toggle Route"   Clicked="OnToggleRoute"   Margin="0,0,8,8" />
             </FlexLayout>
 
             <Label Text="{Binding Status}" FontSize="12" TextColor="Gray" />

@@ -27,4 +27,12 @@ public partial class BasicMapPage : ContentPage
 
         _vm.Status = $"Jumped to {city} ({pos.Lat:F2}, {pos.Lon:F2})";
     }
+
+    private void OnDebugToggled(object sender, ToggledEventArgs e)
+    {
+        var controller = (Map.Handler as MapLibreMapHandler)?.Controller;
+        // TileBorders (0x02) | Collision (0x10)
+        controller?.SetDebugOptions(e.Value ? 0x12 : 0);
+        _vm.Status = e.Value ? "Debug overlays ON" : "Debug overlays OFF";
+    }
 }
