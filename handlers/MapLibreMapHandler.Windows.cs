@@ -27,7 +27,10 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
     {
         var window = MauiContext?.Services?.GetService<Microsoft.UI.Xaml.Window>();
 
-        float dpi  = window != null ? GetDpiForWindow(window) : 96.0f;
+        // GetDpiForWindow returns RasterizationScale (e.g. 1.0, 1.25, 1.5, 2.0).
+        // Fallback must be 1.0f (100% scale), NOT 96.0f — that is the raw DPI number
+        // and would set _pixelRatio=96, making every physical dimension 96× too large.
+        float dpi  = window != null ? GetDpiForWindow(window) : 1.0f;
         var   hwnd = WindowNative.GetWindowHandle(window);
 
         _controller = MapLibreMapFactory.Create(hwnd, dpi, new Dictionary<string, object>

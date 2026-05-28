@@ -510,7 +510,11 @@ public class MlnMapHost : HwndHost
         base.OnRenderSizeChanged(info);
         if (info.NewSize.Width < 1 || info.NewSize.Height < 1) return;
 
+        // Refresh _dpi here so moving the window to a monitor with different DPI
+        // (e.g., from a 100% laptop screen to a 200% 4K external display) keeps
+        // the physical pixel dimensions in sync.
         float dpi = GetDpiScale();
+        _dpi = dpi;
         int wP = Math.Max(1, (int)(info.NewSize.Width  * dpi));
         int hP = Math.Max(1, (int)(info.NewSize.Height * dpi));
 
@@ -783,7 +787,10 @@ public class MlnMapHost : HwndHost
             StaysOpen          = true,
             IsHitTestVisible   = true,
             PlacementTarget    = this,
-            Placement          = PlacementMode.AbsolutePoint,
+            // PlacementMode.Relative positions the popup relative to the PlacementTarget
+            // in logical (device-independent) pixels, so no manual DPI conversion is needed.
+            // AbsolutePoint + PointToScreen would double-scale offsets at DPI != 100%.
+            Placement          = PlacementMode.Relative,
             Child              = outerBorder,
         };
         HookPopupOpen(_navPopup);
@@ -824,10 +831,10 @@ public class MlnMapHost : HwndHost
     {
         if (_navPopup == null || !_initialized) return;
         const int margin = 10;
-        var pt = GetAbsolutePosition(ActualWidth - 29 - margin, margin);
-        _navDesired = pt;
-        _navPopup.HorizontalOffset = pt.X;
-        _navPopup.VerticalOffset   = pt.Y;
+        // With PlacementMode.Relative, offsets are in logical pixels relative to the
+        // PlacementTarget (this HwndHost). No PointToScreen conversion needed.
+        _navPopup.HorizontalOffset = ActualWidth - 29 - margin;
+        _navPopup.VerticalOffset   = margin;
     }
 
     private void UpdateNavPopupOpen()
@@ -871,7 +878,7 @@ public class MlnMapHost : HwndHost
             StaysOpen          = true,
             IsHitTestVisible   = false,
             PlacementTarget    = this,
-            Placement          = PlacementMode.AbsolutePoint,
+            Placement          = PlacementMode.Relative,
             Child              = _attributionBorder,
         };
         UpdateAttributionPopupOpen();
@@ -890,11 +897,10 @@ public class MlnMapHost : HwndHost
     private void PositionAttributionPopup()
     {
         if (_attributionPopup == null || !_initialized) return;
-        // Bottom-right, 6px from edge — measure text block first if possible
-        var pt = GetAbsolutePosition(4, ActualHeight - 22);
-        _attributionDesired = pt;
-        _attributionPopup.HorizontalOffset = pt.X;
-        _attributionPopup.VerticalOffset   = pt.Y;
+        // With PlacementMode.Relative, offsets are in logical pixels relative to the
+        // PlacementTarget (this HwndHost). Place attribution at bottom-left.
+        _attributionPopup.HorizontalOffset = 4;
+        _attributionPopup.VerticalOffset   = ActualHeight - 22;
     }
 
     private void UpdateAttributionPopupOpen()
