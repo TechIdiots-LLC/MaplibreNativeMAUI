@@ -1,5 +1,12 @@
 # Changelog
 
+## master
+### ✨ Features and improvements
+- _...Add new stuff here..._
+
+### 🐞 Bug fixes
+- _...Add new stuff here..._
+
 ## 1.2.0
 ### ✨ Features and improvements
 - **C ABI typed handles** — `mbgl_map_t*`, `mbgl_frontend_t*`, `mbgl_runloop_t*` are now distinct opaque types; eliminates handle mix-up bugs at compile time
@@ -27,12 +34,10 @@
 - **CI vcpkg cache abort** — `actions/cache@v4` restore failure on Windows native builds was killing all downstream steps. Added `continue-on-error: true` to the cache step in `native-windows.yml` and `native-windows-vulkan.yml` so a cache miss falls through to a clean vcpkg build
 - **CI NuGet local feed path** — `dotnet nuget add source local-feed` used a relative path that NuGet resolved against the user profile instead of the workspace. Fixed to use `"${{ github.workspace }}\local-feed"` (absolute path)
 
-## master
+## 2.0.1
 ### ✨ Features and improvements
-- _...Add new stuff here..._
 
 ### 🐞 Bug fixes
-- _...Add new stuff here..._
 
 ## 1.1.1
 ### 🐞 Bug fixes
