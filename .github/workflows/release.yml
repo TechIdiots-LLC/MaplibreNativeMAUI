@@ -233,6 +233,7 @@ jobs:
           dotnet publish sample/MauiSample.csproj \
             -f net9.0-windows10.0.19041.0 \
             -c Release -r win-x64 \
+            -p:TargetFrameworks=net9.0-windows10.0.19041.0 \
             -p:WindowsPackageType=None \
             -p:UseLocalPackages=true \
             -o publish/MauiSample-win-x64
@@ -243,6 +244,7 @@ jobs:
           dotnet publish sample/MauiSample.csproj \
             -f net9.0-windows10.0.19041.0 \
             -c Release -r win-arm64 \
+            -p:TargetFrameworks=net9.0-windows10.0.19041.0 \
             -p:WindowsPackageType=None \
             -p:UseLocalPackages=true \
             -o publish/MauiSample-win-arm64
