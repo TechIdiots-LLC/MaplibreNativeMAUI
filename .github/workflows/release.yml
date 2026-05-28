@@ -194,8 +194,7 @@ jobs:
           path: local-feed
 
       - name: Add local NuGet feed
-        shell: bash
-        run: dotnet nuget add source "$(pwd)/local-feed" --name local-release
+        run: dotnet nuget add source "${{ github.workspace }}\local-feed" --name local-release
 
       - name: Restore MAUI workloads
         run: dotnet workload restore sample/MauiSample.csproj
