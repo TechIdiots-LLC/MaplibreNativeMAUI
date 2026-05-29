@@ -10,7 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- MbglMapHost + transitive Maui.MapLibre.Native (native DLL) -->
+    <!-- MbglMapHost + transitive MapLibreNative.Maui (native DLL) -->
     <ProjectReference Include="..\..\wpf\MapLibreNative.Maui.WPF.csproj" />
   </ItemGroup>
 

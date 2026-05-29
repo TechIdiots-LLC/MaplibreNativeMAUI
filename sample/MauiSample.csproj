@@ -66,7 +66,7 @@
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(UseLocalPackages)' == 'true'">
-	  <PackageReference Include="Maui.Maplibre.Handlers" Version="*-*" />
+	  <PackageReference Include="MapLibreNative.Maui.Handlers" Version="*-*" />
 	</ItemGroup>
 
 	<!-- Exclude sibling sample projects that live under this directory.
