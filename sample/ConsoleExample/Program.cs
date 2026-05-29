@@ -1,5 +1,5 @@
-/**
- * ConsoleExample — static map render to PNG using Maui.MapLibre.Native directly.
+﻿/**
+ * ConsoleExample — static map render to PNG using MapLibreNative.Maui directly.
  *
  * Creates a hidden Win32 window as an OpenGL context host, renders one frame of
  * a world-view map in static mode, reads back the pixels and saves them as a PNG.
@@ -10,7 +10,7 @@
  * Usage:  dotnet run
  * Output: map_output.png written to the executable directory.
  */
-using Maui.MapLibre.Native;
+using MapLibreNative.Maui;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -103,7 +103,7 @@ class Program
     [STAThread]
     static void Main()
     {
-        Console.WriteLine("Maui.MapLibre.Native — console static render example");
+        Console.WriteLine("MapLibreNative.Maui — console static render example");
         Console.WriteLine($"Rendering {Width}×{Height} map centred on Seattle...");
 
         // ── Create a hidden window as an OpenGL context host ──────────────────

@@ -1,4 +1,4 @@
-namespace Maui.MapLibre.Handlers.Maps;
+﻿namespace MapLibreNative.Maui.Handlers.Maps;
 
 public class Style
 {

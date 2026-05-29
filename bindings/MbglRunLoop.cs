@@ -1,7 +1,7 @@
-/**
+﻿/**
  * MbglRunLoop.cs — Typed wrapper around mbgl_runloop_t.
  */
-namespace Maui.MapLibre.Native;
+namespace MapLibreNative.Maui;
 
 /// <summary>Wraps <c>mbgl_runloop_t*</c>. Must be created and disposed on the map thread.</summary>
 public sealed class MbglRunLoop : IDisposable

@@ -1,4 +1,4 @@
-namespace Maui.MapLibre.Handlers.EventArgs;
+﻿namespace MapLibreNative.Maui.Handlers.EventArgs;
 
 public class CameraTrackingChangedEventArgs : System.EventArgs
 {

@@ -1,4 +1,4 @@
-﻿namespace Maui.MapLibre.Handlers.Geometry;
+﻿namespace MapLibreNative.Maui.Handlers.Geometry;
 
 public class LatLngBounds(LatLng ne, LatLng sw)
 {

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * NativeMethods.Mln.cs — Sketch P/Invoke layer for maplibre-native-ffi.
  *
  * This file is a sketch/exploration for the ffi-upstream branch. It mirrors the
@@ -19,7 +19,7 @@
  */
 using System.Runtime.InteropServices;
 
-namespace Maui.MapLibre.Native.Upstream;
+namespace MapLibreNative.Maui.Vulkan;
 
 // ── Status ────────────────────────────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
-using Maui.MapLibre.Handlers.Geometry;
+﻿using MapLibreNative.Maui.Handlers.Geometry;
 
-namespace Maui.MapLibre.Handlers.EventArgs;
+namespace MapLibreNative.Maui.Handlers.EventArgs;
 
 public class MapClickEventArgs : System.EventArgs
 {

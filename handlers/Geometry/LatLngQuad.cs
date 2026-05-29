@@ -1,4 +1,4 @@
-namespace Maui.MapLibre.Handlers.Geometry;
+﻿namespace MapLibreNative.Maui.Handlers.Geometry;
 
 public class LatLngQuad(LatLng topRight, LatLng topLeft, LatLng bottomRight, LatLng bottomLeft)
 {

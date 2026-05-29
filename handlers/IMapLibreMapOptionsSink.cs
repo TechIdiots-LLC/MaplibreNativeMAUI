@@ -1,6 +1,6 @@
-using Maui.MapLibre.Handlers.Geometry;
+﻿using MapLibreNative.Maui.Handlers.Geometry;
 
-namespace Maui.MapLibre.Handlers;
+namespace MapLibreNative.Maui.Handlers;
 
 public interface IMapLibreMapOptionsSink
 {

@@ -1,6 +1,6 @@
-using Maui.MapLibre.Handlers.EventArgs;
+﻿using MapLibreNative.Maui.Handlers.EventArgs;
 
-namespace Maui.MapLibre.Handlers.Annotation;
+namespace MapLibreNative.Maui.Handlers.Annotation;
 
 public class StyleView : ContentView
 {

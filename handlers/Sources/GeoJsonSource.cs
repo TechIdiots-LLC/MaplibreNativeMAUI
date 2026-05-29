@@ -1,6 +1,6 @@
-using GeoJSON.Text.Feature;
+﻿using GeoJSON.Text.Feature;
 
-namespace Maui.MapLibre.Handlers.Sources;
+namespace MapLibreNative.Maui.Handlers.Sources;
 
 public class GeoJsonSource : SourceView
 {

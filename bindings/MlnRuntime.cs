@@ -1,4 +1,4 @@
-/**
+﻿/**
  * MlnRuntime.cs — Typed wrapper for mln_runtime* (maplibre-native-ffi).
  *
  * Sketch for the ffi-upstream branch. Replaces MbglRunLoop.cs.
@@ -13,7 +13,7 @@
  */
 using System.Runtime.InteropServices;
 
-namespace Maui.MapLibre.Native.Upstream;
+namespace MapLibreNative.Maui.Vulkan;
 
 /// <summary>
 /// Wraps <c>mln_runtime*</c>. One instance per owner thread.

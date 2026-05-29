@@ -1,16 +1,16 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <!--
       Pure C# class library — no platform UI dependencies.
-      Consumed by Maui.Maplibre.Handlers on all platforms.
+      Consumed by MapLibreNative.Maui.Handlers on all platforms.
     -->
     <TargetFrameworks>net9.0-android;net9.0-ios;net9.0-maccatalyst;net9.0-windows10.0.19041.0</TargetFrameworks>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <RootNamespace>Maui.MapLibre.Native</RootNamespace>
+    <RootNamespace>MapLibreNative.Maui</RootNamespace>
     <AssemblyName>MapLibreNative.Maui</AssemblyName>
     <PackageId>MapLibreNative.Maui</PackageId>
   </PropertyGroup>

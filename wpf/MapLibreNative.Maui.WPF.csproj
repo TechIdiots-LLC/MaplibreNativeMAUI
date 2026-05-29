@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <!--
@@ -12,9 +12,9 @@
     <UseWPF>true</UseWPF>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- AnyCPU — NuGet delivers the right win-x64 or win-arm64 mln-cabi.dll
-         from Maui.MapLibre.Native based on the consuming app's publish RID. -->
+         from MapLibreNative.Maui based on the consuming app's publish RID. -->
     <PlatformTarget>AnyCPU</PlatformTarget>
-    <RootNamespace>Maui.MapLibre.WPF</RootNamespace>
+    <RootNamespace>MapLibreNative.Maui.WPF</RootNamespace>
     <AssemblyName>MapLibreNative.Maui.WPF</AssemblyName>
 
     <!-- NuGet package metadata -->

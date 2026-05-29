@@ -1,11 +1,11 @@
-/**
+﻿/**
  * MbglStyle.cs — Typed wrapper around mbgl_style_t (non-owning, valid for the
  * lifetime of its parent MbglMap).
  */
 using System.Runtime.InteropServices;
 using System.Text.Json;
 
-namespace Maui.MapLibre.Native;
+namespace MapLibreNative.Maui;
 
 /// <summary>
 /// Provides access to sources and layers.  This is a <em>non-owning</em> handle

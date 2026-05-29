@@ -1,9 +1,9 @@
-#nullable enable
+﻿#nullable enable
 
 using Android.Views;
 using Microsoft.Maui.Handlers;
 
-namespace Maui.MapLibre.Handlers;
+namespace MapLibreNative.Maui.Handlers;
 
 public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, SurfaceView>
 {

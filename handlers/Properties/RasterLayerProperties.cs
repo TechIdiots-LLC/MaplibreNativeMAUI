@@ -1,4 +1,4 @@
-namespace Maui.MapLibre.Handlers.Properties;
+﻿namespace MapLibreNative.Maui.Handlers.Properties;
 
 public class RasterLayerProperties : ILayerProperties
 {

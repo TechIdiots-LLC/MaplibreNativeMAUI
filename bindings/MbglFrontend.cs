@@ -1,9 +1,9 @@
-/**
+﻿/**
  * MbglFrontend.cs — Typed wrapper around mbgl_frontend_t.
  */
 using System.Runtime.InteropServices;
 
-namespace Maui.MapLibre.Native;
+namespace MapLibreNative.Maui;
 
 /// <summary>
 /// Wraps <c>mbgl_frontend_t*</c>.

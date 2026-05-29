@@ -1,4 +1,4 @@
-﻿using Maui.MapLibre.Handlers;
+﻿using MapLibreNative.Maui.Handlers;
 using Microsoft.Extensions.Logging;
 
 namespace MauiSample;

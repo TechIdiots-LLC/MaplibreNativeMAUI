@@ -1,7 +1,7 @@
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using GeoJSON.Text.Feature;
 using GeoJSON.Text.Geometry;
-using Maui.MapLibre.Handlers.Properties;
+using MapLibreNative.Maui.Handlers.Properties;
 
 namespace MauiSample;
 

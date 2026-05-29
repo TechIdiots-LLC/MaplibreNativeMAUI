@@ -1,4 +1,4 @@
-/**
+﻿/**
  * NativeMethods.cs — P/Invoke declarations for mln_cabi native library.
  *
  * All handles (RunLoop, Map, Frontend, Style, Source, Layer) are opaque IntPtr.
@@ -6,7 +6,7 @@
  */
 using System.Runtime.InteropServices;
 
-namespace Maui.MapLibre.Native;
+namespace MapLibreNative.Maui;
 
 /// <summary>Return status from every mutating C ABI function. Non-zero means failure;
 /// call <see cref="NativeMethods.GetLastError"/> for a diagnostic message.</summary>

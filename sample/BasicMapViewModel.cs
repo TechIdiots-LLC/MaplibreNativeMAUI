@@ -1,7 +1,7 @@
-using CommunityToolkit.Mvvm.ComponentModel;
-using Maui.MapLibre.Handlers.Maps;
-using Map = Maui.MapLibre.Handlers.Maps.Map;
-using Style = Maui.MapLibre.Handlers.Maps.Style;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
+using MapLibreNative.Maui.Handlers.Maps;
+using Map = MapLibreNative.Maui.Handlers.Maps.Map;
+using Style = MapLibreNative.Maui.Handlers.Maps.Style;
 
 namespace MauiSample;
 

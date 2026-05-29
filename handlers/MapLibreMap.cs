@@ -1,13 +1,13 @@
 ﻿using System.Text.Json;
 using System.Windows.Input;
 using GeoJSON.Text.Feature;
-using Maui.MapLibre.Handlers.EventArgs;
-using Maui.MapLibre.Handlers.Geometry;
-using Maui.MapLibre.Handlers.Properties;
-using Map = Maui.MapLibre.Handlers.Maps.Map;
-using Style = Maui.MapLibre.Handlers.Maps.Style;
+using MapLibreNative.Maui.Handlers.EventArgs;
+using MapLibreNative.Maui.Handlers.Geometry;
+using MapLibreNative.Maui.Handlers.Properties;
+using Map = MapLibreNative.Maui.Handlers.Maps.Map;
+using Style = MapLibreNative.Maui.Handlers.Maps.Style;
 
-namespace Maui.MapLibre.Handlers;
+namespace MapLibreNative.Maui.Handlers;
 
 // All the code in this file is included in all platforms.
 public class MapLibreMap : StackLayout

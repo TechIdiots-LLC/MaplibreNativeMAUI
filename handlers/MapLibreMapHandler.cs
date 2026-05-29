@@ -1,4 +1,4 @@
-﻿namespace Maui.MapLibre.Handlers;
+﻿namespace MapLibreNative.Maui.Handlers;
 
 public partial class MapLibreMapHandler 
 {

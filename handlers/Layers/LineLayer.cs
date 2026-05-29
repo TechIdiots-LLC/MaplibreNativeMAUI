@@ -1,7 +1,7 @@
-using Maui.MapLibre.Handlers.Annotation;
-using Maui.MapLibre.Handlers.Properties;
+﻿using MapLibreNative.Maui.Handlers.Annotation;
+using MapLibreNative.Maui.Handlers.Properties;
 
-namespace Maui.MapLibre.Handlers.Layers;
+namespace MapLibreNative.Maui.Handlers.Layers;
 
 public class LineLayer : LayerView<LineLayerProperties>
 {

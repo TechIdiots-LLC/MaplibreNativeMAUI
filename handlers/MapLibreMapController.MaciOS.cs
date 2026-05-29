@@ -1,16 +1,16 @@
-#if IOS || MACCATALYST
+﻿#if IOS || MACCATALYST
 using CoreGraphics;
 using Foundation;
 using ObjCRuntime;
 using UIKit;
 using System.Text.Json;
-using Maui.MapLibre.Native;
-using Maui.MapLibre.Handlers.Geometry;
-using Map    = Maui.MapLibre.Handlers.Maps.Map;
-using Style  = Maui.MapLibre.Handlers.Maps.Style;
+using MapLibreNative.Maui;
+using MapLibreNative.Maui.Handlers.Geometry;
+using Map    = MapLibreNative.Maui.Handlers.Maps.Map;
+using Style  = MapLibreNative.Maui.Handlers.Maps.Style;
 using Location = Microsoft.Maui.Devices.Sensors.Location;
 
-namespace Maui.MapLibre.Handlers;
+namespace MapLibreNative.Maui.Handlers;
 
 // -- Container UIView --------------------------------------------------------
 

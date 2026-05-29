@@ -1,6 +1,6 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 
-namespace Maui.MapLibre.Handlers.Properties;
+namespace MapLibreNative.Maui.Handlers.Properties;
 
 public class FillExtrusionLayerProperties(
     int? fillExtrusionOpacity, 

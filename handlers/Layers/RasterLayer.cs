@@ -1,6 +1,6 @@
-using Maui.MapLibre.Handlers.Properties;
+﻿using MapLibreNative.Maui.Handlers.Properties;
 
-namespace Maui.MapLibre.Handlers.Layers;
+namespace MapLibreNative.Maui.Handlers.Layers;
 
 public class RasterLayer : LayerView<RasterLayerProperties>
 {

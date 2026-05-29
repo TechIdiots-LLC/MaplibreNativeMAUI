@@ -1,6 +1,6 @@
-using Style = Maui.MapLibre.Handlers.Maps.Style;
+﻿using Style = MapLibreNative.Maui.Handlers.Maps.Style;
 
-namespace Maui.MapLibre.Handlers.EventArgs;
+namespace MapLibreNative.Maui.Handlers.EventArgs;
 
 public class StyleLoadedEventArgs : System.EventArgs
 {

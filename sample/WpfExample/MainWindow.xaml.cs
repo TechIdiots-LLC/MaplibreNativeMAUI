@@ -1,5 +1,5 @@
-/**
- * MainWindow.xaml.cs — WPF example using Maui.MapLibre.WPF.MlnMapHost.
+﻿/**
+ * MainWindow.xaml.cs — WPF example using MapLibreNative.Maui.WPF.MlnMapHost.
  *
  * Demonstrates:
  *  • Loading a MapLibre style via the StyleUrl dependency property

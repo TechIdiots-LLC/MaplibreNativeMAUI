@@ -1,4 +1,4 @@
-/**
+﻿/**
  * MbglMap.cs — Typed C# wrapper around the native mbgl_map_t handle.
  *
  * Lifetime: must be disposed on the same thread as its MbglRunLoop.
@@ -6,7 +6,7 @@
  */
 using System.Runtime.InteropServices;
 
-namespace Maui.MapLibre.Native;
+namespace MapLibreNative.Maui;
 
 /// <summary>Wraps <c>mbgl_map_t*</c>. Dispose on the render thread.</summary>
 public sealed class MbglMap : IDisposable

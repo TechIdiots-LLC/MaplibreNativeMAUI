@@ -1,6 +1,6 @@
-using Maui.MapLibre.Handlers.Annotation;
+﻿using MapLibreNative.Maui.Handlers.Annotation;
 
-namespace Maui.MapLibre.Handlers.Sources;
+namespace MapLibreNative.Maui.Handlers.Sources;
 
 public class SourceView : StyleView
 {

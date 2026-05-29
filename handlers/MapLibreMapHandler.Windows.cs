@@ -1,4 +1,4 @@
-#if WINDOWS
+﻿#if WINDOWS
 using Microsoft.Maui.Handlers;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
@@ -7,7 +7,7 @@ using Microsoft.UI.Xaml.Input;
 using WinRT.Interop;
 using Windows.System;
 
-namespace Maui.MapLibre.Handlers;
+namespace MapLibreNative.Maui.Handlers;
 
 public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.Xaml.Controls.Grid>
 {

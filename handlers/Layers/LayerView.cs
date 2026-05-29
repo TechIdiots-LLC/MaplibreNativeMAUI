@@ -1,6 +1,6 @@
-using Maui.MapLibre.Handlers.Annotation;
+﻿using MapLibreNative.Maui.Handlers.Annotation;
 
-namespace Maui.MapLibre.Handlers.Layers;
+namespace MapLibreNative.Maui.Handlers.Layers;
 
 public class LayerView<T>: StyleView
 {

@@ -1,6 +1,6 @@
-using Map = Maui.MapLibre.Handlers.Maps.Map;
+﻿using Map = MapLibreNative.Maui.Handlers.Maps.Map;
 
-namespace Maui.MapLibre.Handlers.EventArgs;
+namespace MapLibreNative.Maui.Handlers.EventArgs;
 
 public class MapReadyEventArgs : System.EventArgs
 {

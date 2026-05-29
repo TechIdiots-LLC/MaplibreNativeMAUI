@@ -1,4 +1,4 @@
-/**
+﻿/**
  * MlnMap.cs — Typed wrapper for mln_map* (maplibre-native-ffi).
  *
  * Sketch for the ffi-upstream branch. Replaces MbglMap.cs + MbglFrontend.cs.
@@ -14,7 +14,7 @@
  */
 using System.Runtime.InteropServices;
 
-namespace Maui.MapLibre.Native.Upstream;
+namespace MapLibreNative.Maui.Vulkan;
 
 /// <summary>
 /// Wraps <c>mln_map*</c>. Must be created and disposed on the runtime owner thread.

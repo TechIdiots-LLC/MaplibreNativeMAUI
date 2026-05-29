@@ -1,5 +1,5 @@
-#if WINDOWS
-namespace Maui.MapLibre.Handlers;
+﻿#if WINDOWS
+namespace MapLibreNative.Maui.Handlers;
 
 public partial class MapLibreMapFactory
 {
