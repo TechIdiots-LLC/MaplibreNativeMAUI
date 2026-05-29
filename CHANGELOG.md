@@ -7,8 +7,31 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 3.0.0
+### ⚠️ Breaking changes
+- **Package rename** — All NuGet packages renamed from `Maui.MapLibre.*` to `MapLibreNative.Maui.*` because the `Maui.MapLibre` prefix is reserved on NuGet.org by another party. Update `PackageReference` entries:
+  - `Maui.MapLibre.Native` → `MapLibreNative.Maui`
+  - `Maui.MapLibre.Native.Vulkan` → `MapLibreNative.Maui.Vulkan`
+  - `Maui.MapLibre.WPF` → `MapLibreNative.Maui.WPF`
+  - `Maui.Maplibre.Handlers` → `MapLibreNative.Maui.Handlers`
+- **Namespace rename** — All C# namespaces updated to match the new package names. Update `using` directives and XAML `clr-namespace:` / `assembly=` references accordingly:
+  - `Maui.MapLibre.Native` → `MapLibreNative.Maui`
+  - `Maui.MapLibre.Native.Upstream` → `MapLibreNative.Maui.Vulkan`
+  - `Maui.MapLibre.WPF` → `MapLibreNative.Maui.WPF`
+  - `Maui.MapLibre.Handlers` (and sub-namespaces) → `MapLibreNative.Maui.Handlers`
+
+### ✨ Features and improvements
+- **WPF attribution plain text** — `MlnMapHost` now strips HTML tags and decodes HTML entities (`&copy;` → ©, `&amp;`, `&lt;`, `&gt;`, `&quot;`, `&nbsp;`, `&reg;`, `&trade;`) before displaying the attribution string, so the popup shows readable text instead of raw markup
+- **WPF attribution bounds** — Attribution popup `MaxWidth` is constrained to the map width minus margins; if the text would overflow the right edge the popup is repositioned to stay within the control bounds
+- **WPF popup follow-window** — Navigation and attribution popups now reopen via `Dispatcher.BeginInvoke(DispatcherPriority.Render)` on `LocationChanged` so they track the window when it is dragged to a new screen position
+- **CI concurrency** — Release workflow now cancels any in-progress run for the same branch when a new push arrives
+
+### 🐞 Bug fixes
+- **CI NuGet push error handling** — Pack/push steps now emit explicit success/failure messages and propagate exit codes correctly
+
 ## 2.0.2
 ### ✨ Features and improvements
+- **WPF custom cursors** — `MlnMapHost` handles `WM_SETCURSOR` to show a hand cursor (`IDC_HAND`) while hovering and a move cursor (`IDC_SIZEALL`) while dragging the map
 
 ### 🐞 Bug fixes
 
@@ -41,8 +64,13 @@
 
 ## 2.0.1
 ### ✨ Features and improvements
+- **C ABI typed handles** — `mbgl_map_t*`, `mbgl_frontend_t*`, `mbgl_runloop_t*` are now distinct opaque types; eliminates handle mix-up bugs at compile time (see 1.2.0 for full details, landed here)
+- **Status codes, debug options, log callback** — see 1.2.0 feature list; all shipped in this release
 
 ### 🐞 Bug fixes
+- **Windows MAUI DPI fallback** — `GetDpiForWindow` returns a scale factor (e.g. `1.25`), not raw DPI; the fallback when no window is available was incorrectly `96.0f` (which set `_pixelRatio` to 96×), corrected to `1.0f`
+- **WPF popup DPI scaling** — Navigation and attribution popups switched from `PlacementMode.AbsolutePoint` + `PointToScreen` to `PlacementMode.Relative`; `AbsolutePoint` double-scaled logical offsets at DPI settings above 100%
+- **WPF DPI on resize** — `_dpi` is now refreshed inside `OnRenderSizeChanged` so moving the window to a monitor with a different DPI (e.g. laptop screen → 4K external) keeps physical pixel dimensions in sync
 
 ## 1.1.1
 ### 🐞 Bug fixes
