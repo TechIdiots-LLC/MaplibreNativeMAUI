@@ -86,17 +86,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Pin .NET SDK to Xcode-16-compatible feature band
-        # macos-latest still ships with Xcode 16.4; the 9.0.200 feature band was
-        # published before WWDC 2025 so its iOS/macCatalyst workloads target Xcode 16.
-        run: echo '{"sdk":{"version":"9.0.200","rollForward":"latestPatch"}}' > global.json
-
       - name: Set up .NET 8 and 9 SDKs
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
             8.0.x
-            9.0.200
+            9.0.x
 
       - name: Download all native artifacts
         uses: actions/download-artifact@v4
@@ -283,15 +278,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Pin .NET SDK to Xcode-16-compatible feature band
-        run: echo '{"sdk":{"version":"9.0.200","rollForward":"latestPatch"}}' > global.json
-
       - name: Set up .NET 8 and 9 SDKs
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
             8.0.x
-            9.0.200
+            9.0.x
 
       - name: Download MLN native artifacts (Windows + Android)
         uses: actions/download-artifact@v4
