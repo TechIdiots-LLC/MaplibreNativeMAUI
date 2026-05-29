@@ -384,6 +384,17 @@ public class MlnMapHost : HwndHost
     private const int WM_LBUTTONDBLCLK = 0x0203;
     private const int WM_MOUSEMOVE     = 0x0200;
     private const int WM_MOUSEWHEEL    = 0x020A;
+    private const int WM_SETCURSOR     = 0x0020;
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr LoadCursorW(IntPtr hInstance, IntPtr lpCursorName);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetCursor(IntPtr hCursor);
+
+    private const int IDC_ARROW   = 32512;
+    private const int IDC_HAND    = 32649;
+    private const int IDC_SIZEALL = 32646;
 
     // ── Navigation popup ──────────────────────────────────────────────────────
 
@@ -681,6 +692,18 @@ public class MlnMapHost : HwndHost
 
             switch (msg)
             {
+                case WM_SETCURSOR:
+                {
+                    if (hwnd == _childHwnd && (lParam.ToInt64() & 0xFFFF) == 1 /* HTCLIENT */)
+                    {
+                        int idc = _isDragging ? IDC_SIZEALL : IDC_HAND;
+                        SetCursor(LoadCursorW(IntPtr.Zero, (IntPtr)idc));
+                        handled = true;
+                        return new IntPtr(1);
+                    }
+                    break;
+                }
+
                 case WM_LBUTTONDOWN:
                     _isDragging = true;
                     _lastMouseX = cx; _lastMouseY = cy;
