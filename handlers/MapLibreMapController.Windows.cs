@@ -127,6 +127,9 @@ public class MapLibreMapController : IMapLibreMapController
     private static extern bool TextOutW(IntPtr hdc, int x, int y, string text, int count);
 
     private const uint DT_LEFT      = 0x00000000;
+    private const uint DT_CENTER    = 0x00000001;
+    private const uint DT_VCENTER   = 0x00000004;
+    private const uint DT_SINGLELINE = 0x00000020;
     private const uint DT_WORDBREAK = 0x00000010;
     private const uint DT_CALCRECT  = 0x00000400;
     private const uint DT_NOPREFIX  = 0x00000800;
@@ -420,6 +423,9 @@ public class MapLibreMapController : IMapLibreMapController
     private string _lastMeasuredAttrText = string.Empty;
     private int    _lastMeasuredAttrInnerW;
     private (int cx, int cy) _cachedAttrMeasure;
+    // Collapse state
+    private bool _attrCollapsed;
+    private System.Threading.Timer? _attrCollapseTimer;
 
     // Pumps the libuv run loop on the UI thread. Without this, async HTTP responses
     // for style/tile downloads are never delivered and StyleLoaded never fires.
@@ -654,6 +660,7 @@ public class MapLibreMapController : IMapLibreMapController
                 _locIndLayer = null;  // style reload invalidates all layer handles
                 _style = _map?.GetStyle();
                 _renderNeedsUpdate = true;
+                _attrCollapsed = false;  // new style: show full text
                 if (_pendingLocInd.HasValue) ApplyPendingLocationIndicator();
                 RefreshAttributionText();  // rebuild attribution from TileJSON sources
                 OnStyleLoadedReceived?.Invoke(new Maps.Style(null));
@@ -666,6 +673,7 @@ public class MapLibreMapController : IMapLibreMapController
                 OnDidBecomeIdleReceived?.Invoke();
                 break;
             case "onCameraIsChanging":
+                CollapseAttribution();
                 OnCameraMoveReceived?.Invoke();
                 break;
             case "onCameraDidChange":
@@ -1134,17 +1142,23 @@ public class MapLibreMapController : IMapLibreMapController
             int maxAttrW = Math.Max(120, mapW - marginPx * 2);
             int innerW   = maxAttrW - padH * 2;
 
-            // Only re-measure via GDI when text or available width actually changes.
-            if (_attrText != _lastMeasuredAttrText || innerW != _lastMeasuredAttrInnerW)
+            // Use displayed text (full or collapsed ⓘ) for measurement.
+            string measureText  = _attrCollapsed ? "ⓘ" : _attrText;
+            uint   measureFlags = _attrCollapsed
+                ? DT_CENTER | DT_SINGLELINE | DT_CALCRECT | DT_NOPREFIX
+                : DT_LEFT   | DT_WORDBREAK  | DT_CALCRECT | DT_NOPREFIX;
+
+            // Only re-measure via GDI when displayed text or available width changes.
+            if (measureText != _lastMeasuredAttrText || innerW != _lastMeasuredAttrInnerW)
             {
                 var hdc     = GetDC(IntPtr.Zero);
                 var oldFont = SelectObject(hdc, _attrFont != IntPtr.Zero ? _attrFont : IntPtr.Zero);
                 var calcRc  = new RECT { Left = 0, Top = 0, Right = innerW, Bottom = 0 };
-                DrawTextW(hdc, _attrText, _attrText.Length, ref calcRc, DT_LEFT | DT_WORDBREAK | DT_CALCRECT | DT_NOPREFIX);
+                DrawTextW(hdc, measureText, measureText.Length, ref calcRc, measureFlags);
                 SelectObject(hdc, oldFont);
                 ReleaseDC(IntPtr.Zero, hdc);
-                _cachedAttrMeasure     = (calcRc.Right, calcRc.Bottom);
-                _lastMeasuredAttrText  = _attrText;
+                _cachedAttrMeasure      = (calcRc.Right, calcRc.Bottom);
+                _lastMeasuredAttrText   = measureText;
                 _lastMeasuredAttrInnerW = innerW;
             }
 
@@ -1178,6 +1192,7 @@ public class MapLibreMapController : IMapLibreMapController
         _attrWndProc = null;
         _lastNavRect  = default;
         _lastAttrRect = default;
+        _attrCollapseTimer?.Dispose(); _attrCollapseTimer = null;
     }
 
     // ── Nav overlay WndProc ────────────────────────────────────────────────────
@@ -1281,6 +1296,10 @@ public class MapLibreMapController : IMapLibreMapController
             case WM_PAINT:
                 PaintAttribution(hWnd);
                 return IntPtr.Zero;
+            case WM_LBUTTONUP:
+                if (_attrCollapsed) ExpandAttribution();
+                else                CollapseAttribution();
+                return IntPtr.Zero;
             case WM_NCHITTEST: return HTCLIENT;
         }
         return DefWindowProcA(hWnd, msg, wParam, lParam);
@@ -1311,7 +1330,11 @@ public class MapLibreMapController : IMapLibreMapController
             SetTextColor(hdc, 0x00555555);
             var oldFont = SelectObject(hdc, _attrFont != IntPtr.Zero ? _attrFont : IntPtr.Zero);
             var textRc  = new RECT { Left = padH, Top = padV, Right = rc.Right - padH, Bottom = rc.Bottom - padV };
-            DrawTextW(hdc, _attrText, _attrText.Length, ref textRc, DT_LEFT | DT_WORDBREAK | DT_NOPREFIX);
+            string paintText = _attrCollapsed ? "ⓘ" : _attrText;
+            uint   dtFlags   = _attrCollapsed
+                ? DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX
+                : DT_LEFT   | DT_WORDBREAK | DT_NOPREFIX;
+            DrawTextW(hdc, paintText, paintText.Length, ref textRc, dtFlags);
             SelectObject(hdc, oldFont);
         }
         finally { EndPaint(hWnd, ref ps); }
@@ -1366,10 +1389,12 @@ public class MapLibreMapController : IMapLibreMapController
             sb.Append(StripHtmlTags(part));
         }
         _attrText = sb.ToString();
-        if (_attrHwnd != IntPtr.Zero && _showAttrControl)
+        if (_attrText.Length > 0)
         {
-            PositionOverlays();
-            InvalidateRect(_attrHwnd, IntPtr.Zero, false);
+            ExpandAttribution();
+        }
+        else if (_attrHwnd != IntPtr.Zero)
+        {
             ShowOverlays();
         }
     }
@@ -1413,7 +1438,41 @@ public class MapLibreMapController : IMapLibreMapController
     {
         _showAttrControl   = show;
         _customAttribution = customAttribution;
+        _attrCollapsed     = false;  // reset collapse when attribution settings change
         RefreshAttributionText();
+    }
+
+    private void ExpandAttribution()
+    {
+        _attrCollapsed = false;
+        if (_attrHwnd != IntPtr.Zero && _showAttrControl)
+        {
+            PositionOverlays();
+            InvalidateRect(_attrHwnd, IntPtr.Zero, false);
+            ShowOverlays();
+        }
+        ScheduleAutoCollapse();
+    }
+
+    private void CollapseAttribution()
+    {
+        _attrCollapseTimer?.Dispose();
+        _attrCollapseTimer = null;
+        if (_attrCollapsed) return;
+        _attrCollapsed = true;
+        if (_attrHwnd != IntPtr.Zero && _showAttrControl && _attrText.Length > 0)
+        {
+            PositionOverlays();
+            InvalidateRect(_attrHwnd, IntPtr.Zero, false);
+        }
+    }
+
+    private void ScheduleAutoCollapse()
+    {
+        _attrCollapseTimer?.Dispose();
+        _attrCollapseTimer = new System.Threading.Timer(
+            _ => CollapseAttribution(), null,
+            TimeSpan.FromSeconds(5), Timeout.InfiniteTimeSpan);
     }
 
     // ── Popup WndProc (mouse input) ────────────────────────────────────────────

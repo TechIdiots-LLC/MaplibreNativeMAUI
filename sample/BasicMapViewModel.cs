@@ -1,4 +1,5 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using MapLibreNative.Maui.Handlers.Maps;
 using Map = MapLibreNative.Maui.Handlers.Maps.Map;
 using Style = MapLibreNative.Maui.Handlers.Maps.Style;
@@ -28,14 +29,28 @@ public partial class BasicMapViewModel : ObservableObject
     [ObservableProperty]
     private string _status = "Loading...";
 
+    [ObservableProperty]
+    private string _customStyleUrl = string.Empty;
+
     partial void OnSelectedStyleNameChanged(string value)
     {
         if (Styles.TryGetValue(value, out var url))
             StyleUrl = url;
     }
 
+    [RelayCommand]
+    private void ApplyCustomUrl()
+    {
+        var url = CustomStyleUrl?.Trim();
+        if (!string.IsNullOrEmpty(url))
+        {
+            StyleUrl = url;
+            Status   = "Loading custom style\u2026";
+        }
+    }
+
     public void OnMapReady(Map _)      => Status = "Map ready — pick a city or switch styles";
-    public void OnStyleLoaded(Style _) => Status = $"Style: {SelectedStyleName}";
+    public void OnStyleLoaded(Style _) => Status = $"Style: {(string.IsNullOrEmpty(SelectedStyleName) ? "custom" : SelectedStyleName)}";
 
     /// <summary>Known city destinations: (lat, lon, zoom).</summary>
     public static readonly Dictionary<string, (double Lat, double Lon, double Zoom)> Cities = new()
