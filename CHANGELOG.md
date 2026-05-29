@@ -7,6 +7,11 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 2.0.2
+### ✨ Features and improvements
+
+### 🐞 Bug fixes
+
 ## 1.2.0
 ### ✨ Features and improvements
 - **C ABI typed handles** — `mbgl_map_t*`, `mbgl_frontend_t*`, `mbgl_runloop_t*` are now distinct opaque types; eliminates handle mix-up bugs at compile time
