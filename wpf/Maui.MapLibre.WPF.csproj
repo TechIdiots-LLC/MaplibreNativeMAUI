@@ -15,11 +15,11 @@
          from Maui.MapLibre.Native based on the consuming app's publish RID. -->
     <PlatformTarget>AnyCPU</PlatformTarget>
     <RootNamespace>Maui.MapLibre.WPF</RootNamespace>
-    <AssemblyName>Maui.MapLibre.WPF</AssemblyName>
+    <AssemblyName>MapLibreNative.Maui.WPF</AssemblyName>
 
     <!-- NuGet package metadata -->
-    <PackageId>Maui.MapLibre.WPF</PackageId>
-    <Description>WPF HwndHost control backed by MapLibre Native (mln-cabi). Provides a MapLibre map view for WPF applications without requiring a MAUI dependency. Consumers must also reference Maui.MapLibre.Native (pulled in automatically as a dependency).</Description>
+    <PackageId>MapLibreNative.Maui.WPF</PackageId>
+    <Description>WPF HwndHost control backed by MapLibre Native (mln-cabi). Provides a MapLibre map view for WPF applications without requiring a MAUI dependency. Consumers must also reference MapLibreNative.Maui (pulled in automatically as a dependency).</Description>
     <PackageTags>maplibre;map;wpf;windows;hwndhhost</PackageTags>
   </PropertyGroup>
 

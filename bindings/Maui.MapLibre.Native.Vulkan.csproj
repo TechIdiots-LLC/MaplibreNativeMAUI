@@ -11,7 +11,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>Maui.MapLibre.Native.Upstream</RootNamespace>
-    <AssemblyName>Maui.MapLibre.Native.Vulkan</AssemblyName>
+    <AssemblyName>MapLibreNative.Maui.Vulkan</AssemblyName>
+    <PackageId>MapLibreNative.Maui.Vulkan</PackageId>
   </PropertyGroup>
 
   <!-- Exclude the old mln-cabi source files — this package is maplibre_native_c only. -->

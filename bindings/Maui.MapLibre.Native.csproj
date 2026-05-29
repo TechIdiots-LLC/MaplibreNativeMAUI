@@ -11,7 +11,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>Maui.MapLibre.Native</RootNamespace>
-    <AssemblyName>Maui.MapLibre.Native</AssemblyName>
+    <AssemblyName>MapLibreNative.Maui</AssemblyName>
+    <PackageId>MapLibreNative.Maui</PackageId>
   </PropertyGroup>
 
   <!--

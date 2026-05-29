@@ -18,10 +18,10 @@ MapLibre Native (C++)
 mln-cabi  (C++ native library — flat C ABI)
        │  P/Invoke
        ▼
-Maui.MapLibre.Native  (C# typed wrappers: MbglMap, MbglStyle, MbglFrontend …)
+MapLibreNative.Maui  (C# typed wrappers: MbglMap, MbglStyle, MbglFrontend …)
        │
        ▼
-Maui.Maplibre.Handlers  (MAUI controls, handlers, sources, layers)
+MapLibreNative.Maui.Handlers  (MAUI controls, handlers, sources, layers)
 ```
 
 The `mln-cabi` native library is compiled per-platform:
@@ -46,9 +46,9 @@ MapLibre Native is included as a **git submodule** at `dependencies/maplibre-nat
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-             xmlns:maplibre="clr-namespace:Maui.MapLibre.Handlers;assembly=Maui.Maplibre.Handlers"
-             xmlns:layers="clr-namespace:Maui.MapLibre.Handlers.Layers;assembly=Maui.Maplibre.Handlers"
-             xmlns:sources="clr-namespace:Maui.MapLibre.Handlers.Sources;assembly=Maui.Maplibre.Handlers"
+             xmlns:maplibre="clr-namespace:Maui.MapLibre.Handlers;assembly=MapLibreNative.Maui.Handlers"
+             xmlns:layers="clr-namespace:Maui.MapLibre.Handlers.Layers;assembly=MapLibreNative.Maui.Handlers"
+             xmlns:sources="clr-namespace:Maui.MapLibre.Handlers.Sources;assembly=MapLibreNative.Maui.Handlers"
              x:Class="MyApp.MainPage">
 
     <maplibre:MapLibreMap StyleUrl="https://demotiles.maplibre.org/style.json"
@@ -252,16 +252,16 @@ int current = controller.GetDebugOptions();
 controller.SetDebugOptions(0);
 ```
 
-The `MbglDebugOptions` enum in `Maui.MapLibre.Native` names the individual bits (`TileBorders`, `ParseStatus`, `Timestamps`, `Collision`, `Overdraw`, `StencilClip`, `DepthBuffer`).
+The `MbglDebugOptions` enum in `MapLibreNative.Maui` names the individual bits (`TileBorders`, `ParseStatus`, `Timestamps`, `Collision`, `Overdraw`, `StencilClip`, `DepthBuffer`).
 
 ---
 
 ## WPF Usage
 
-For WPF apps (not MAUI), use `MlnMapHost` from `Maui.MapLibre.WPF`:
+For WPF apps (not MAUI), use `MlnMapHost` from `MapLibreNative.Maui.WPF`:
 
-```xaml
-xmlns:mlwpf="clr-namespace:Maui.MapLibre.WPF;assembly=Maui.MapLibre.WPF"
+```xml
+xmlns:mlwpf="clr-namespace:Maui.MapLibre.WPF;assembly=MapLibreNative.Maui.WPF"
 
 <mlwpf:MlnMapHost x:Name="MapHost"
                   StyleUrl="https://demotiles.maplibre.org/style.json"
