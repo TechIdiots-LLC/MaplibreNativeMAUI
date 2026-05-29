@@ -2,9 +2,9 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MauiSample", "sample\MauiSample.csproj", "{237069E8-7C3D-4573-BFBD-6D4ACFA7A3CF}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Maui.Maplibre.Handlers", "handlers\Maui.Maplibre.Handlers.csproj", "{341281A5-1F1A-43D6-8732-9D23445ED105}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MapLibreNative.Maui.Handlers", "handlers\MapLibreNative.Maui.Handlers.csproj", "{341281A5-1F1A-43D6-8732-9D23445ED105}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Maui.MapLibre.WPF", "wpf\Maui.MapLibre.WPF.csproj", "{E3D4F5A6-B7C8-4D9E-0F1A-2B3C4D5E6F7A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MapLibreNative.Maui.WPF", "wpf\MapLibreNative.Maui.WPF.csproj", "{E3D4F5A6-B7C8-4D9E-0F1A-2B3C4D5E6F7A}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConsoleExample", "sample\ConsoleExample\ConsoleExample.csproj", "{C1B62E0A-F48D-4A9C-BE1D-73A2B5C0D4E7}"
 EndProject

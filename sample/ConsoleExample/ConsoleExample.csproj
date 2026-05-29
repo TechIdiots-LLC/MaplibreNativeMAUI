@@ -13,8 +13,4 @@
     <UseWPF>true</UseWPF>
   </PropertyGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\..\bindings\Maui.MapLibre.Native.csproj" />
-  </ItemGroup>
-
 </Project>

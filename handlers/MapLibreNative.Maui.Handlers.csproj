@@ -29,7 +29,7 @@
                         Or $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'
                         Or $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'
                         Or $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
-        <ProjectReference Include="..\bindings\Maui.MapLibre.Native.csproj" />
+        <ProjectReference Include="..\bindings\MapLibreNative.Maui.csproj" />
     </ItemGroup>
 
   <!-- Reference to MaciOS Binding project -->

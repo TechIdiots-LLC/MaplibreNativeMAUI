@@ -111,9 +111,9 @@ jobs:
       - name: Restore workloads
         run: dotnet workload restore maplibre-maui.sln
 
-      - name: Pack Maui.MapLibre.Native
+      - name: Pack MapLibreNative.Maui
         run: |
-          dotnet pack bindings/Maui.MapLibre.Native.csproj \
+          dotnet pack bindings/MapLibreNative.Maui.csproj \
             -c Release \
             -p:Version=${{ needs.version.outputs.version }} \
             -p:_MbglNativeDir=$(pwd)/bindings/native/ \

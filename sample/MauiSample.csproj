@@ -62,7 +62,7 @@
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(UseLocalPackages)' != 'true'">
-	  <ProjectReference Include="..\handlers\Maui.Maplibre.Handlers.csproj" />
+	  <ProjectReference Include="..\handlers\MapLibreNative.Maui.Handlers.csproj" />
 	</ItemGroup>
 
 	<ItemGroup Condition="'$(UseLocalPackages)' == 'true'">

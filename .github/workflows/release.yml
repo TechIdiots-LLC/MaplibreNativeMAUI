@@ -125,17 +125,17 @@ jobs:
       - name: Restore workloads
         run: dotnet workload restore maplibre-maui.sln
 
-      - name: Pack Maui.MapLibre.Native
+      - name: Pack MapLibreNative.Maui
         run: |
-          dotnet pack bindings/Maui.MapLibre.Native.csproj \
+          dotnet pack bindings/MapLibreNative.Maui.csproj \
             -c Release \
             -p:Version=${{ needs.version-check.outputs.version }} \
             -p:_MbglNativeDir=$(pwd)/bindings/native/ \
             -o artifacts/
 
-      - name: Pack Maui.Maplibre.Handlers
+      - name: Pack MapLibreNative.Maui.Handlers
         run: |
-          dotnet pack handlers/Maui.Maplibre.Handlers.csproj \
+          dotnet pack handlers/MapLibreNative.Maui.Handlers.csproj \
             -c Release \
             -p:Version=${{ needs.version-check.outputs.version }} \
             -o artifacts/
@@ -179,10 +179,10 @@ jobs:
           echo "Staged DLLs:"
           find bindings/native -name "*.dll"
 
-      - name: Pack Maui.MapLibre.WPF
+      - name: Pack MapLibreNative.Maui.WPF
         shell: bash
         run: |
-          dotnet pack wpf/Maui.MapLibre.WPF.csproj \
+          dotnet pack wpf/MapLibreNative.Maui.WPF.csproj \
             -c Release \
             -p:Version=${{ needs.version-check.outputs.version }} \
             -o artifacts/
@@ -321,9 +321,9 @@ jobs:
       - name: Restore workloads
         run: dotnet workload restore maplibre-maui.sln
 
-      - name: Pack Maui.MapLibre.Native.Vulkan
+      - name: Pack MapLibreNative.Maui.Vulkan
         run: |
-          dotnet pack bindings/Maui.MapLibre.Native.Vulkan.csproj \
+          dotnet pack bindings/MapLibreNative.Maui.Vulkan.csproj \
             -c Release \
             -p:Version=${{ needs.version-check.outputs.version }} \
             -p:_MlnNativeDir=$(pwd)/bindings/native-vulkan/ \
