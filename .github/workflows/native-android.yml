@@ -1,4 +1,4 @@
-name: Native Android
+name: Native Android (OpenGL)
 
 on:
   workflow_call:

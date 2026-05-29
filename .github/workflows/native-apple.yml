@@ -1,4 +1,4 @@
-name: Native Apple
+name: Native Apple (Metal)
 
 on:
   workflow_call:

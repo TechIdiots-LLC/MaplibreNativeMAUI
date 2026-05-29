@@ -1,4 +1,4 @@
-name: Native Windows
+name: Native Windows (OpenGL)
 
 on:
   workflow_call:
