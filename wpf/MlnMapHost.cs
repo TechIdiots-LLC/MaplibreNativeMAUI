@@ -13,6 +13,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Documents;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
@@ -491,7 +492,7 @@ public class MlnMapHost : HwndHost
                     _navPopup.IsOpen = false;
                     Dispatcher.BeginInvoke(DispatcherPriority.Render, () => _navPopup.IsOpen = wasOpen);
                 }
-                if (_attributionPopup != null && !string.IsNullOrEmpty(_attrText) && IsVisible)
+                if (_attributionPopup != null && _attributionText?.Inlines.Count > 0 && IsVisible)
                 {
                     var wasOpen = _attributionPopup.IsOpen;
                     _attributionPopup.IsOpen = false;
@@ -653,7 +654,7 @@ public class MlnMapHost : HwndHost
             case "onDidBecomeIdle":
                 Dispatcher.BeginInvoke(() =>
                 {
-                    if (_attrText.Length == 0) RefreshAttribution();
+                    if (_attributionText == null || _attributionText.Inlines.Count == 0) RefreshAttribution();
                     DidBecomeIdle?.Invoke(this, EventArgs.Empty);
                 });
                 break;
@@ -893,8 +894,6 @@ public class MlnMapHost : HwndHost
 
     // ── Attribution popup ─────────────────────────────────────────────────────
 
-    private string _attrText = string.Empty;
-
     private void InitAttributionPopup()
     {
         _attributionText = new TextBlock
@@ -917,7 +916,7 @@ public class MlnMapHost : HwndHost
         {
             AllowsTransparency = true,
             StaysOpen          = true,
-            IsHitTestVisible   = false,
+            IsHitTestVisible   = true,
             PlacementTarget    = this,
             Placement          = PlacementMode.Relative,
             Child              = _attributionBorder,
@@ -929,39 +928,112 @@ public class MlnMapHost : HwndHost
     {
         if (_style == null) return;
         var parts = _style.GetSourceAttributions();
-        // Strip HTML tags and decode HTML entities for clean text display
-        var cleaned = parts.Select(StripHtmlAndDecode).Where(s => !string.IsNullOrWhiteSpace(s));
-        _attrText = string.Join(" | ", cleaned);
-        if (_attributionText != null) _attributionText.Text = _attrText;
+
+        var allInlines = new List<Inline>();
+        var first = true;
+        foreach (var part in parts)
+        {
+            var inlines = ParseHtmlToInlines(part);
+            if (inlines.Count == 0) continue;
+            if (!first) allInlines.Add(new Run(" | "));
+            allInlines.AddRange(inlines);
+            first = false;
+        }
+
+        if (_attributionText != null)
+        {
+            _attributionText.Inlines.Clear();
+            _attributionText.Inlines.AddRange(allInlines);
+        }
+
         PositionAttributionPopup();
         UpdateAttributionPopupOpen();
     }
 
     /// <summary>
-    /// Strips HTML tags from attribution strings and decodes common HTML entities.
-    /// Converts "&lt;a href=...&gt;Text&lt;/a&gt;" to "Text".
+    /// Parses an HTML attribution string into WPF inline elements.
+    /// Anchor elements become clickable <see cref="Hyperlink"/> inlines;
+    /// plain text between anchors becomes <see cref="Run"/> inlines.
+    /// Handles both quoted and unquoted href attributes.
     /// </summary>
-    private static string StripHtmlAndDecode(string html)
+    private static List<Inline> ParseHtmlToInlines(string html)
     {
-        if (string.IsNullOrWhiteSpace(html)) return string.Empty;
-        
-        // Strip HTML tags: remove everything between < and >
-        var withoutTags = System.Text.RegularExpressions.Regex.Replace(html, "<[^>]+>", string.Empty);
-        
-        // Decode common HTML entities
-        var decoded = withoutTags
-            .Replace("&amp;", "&")
-            .Replace("&lt;", "<")
-            .Replace("&gt;", ">")
+        var inlines = new List<Inline>();
+        if (string.IsNullOrWhiteSpace(html)) return inlines;
+
+        var pos = 0;
+        foreach (System.Text.RegularExpressions.Match m in
+            System.Text.RegularExpressions.Regex.Matches(html,
+                @"<a\b([^>]*)>(.*?)</a>",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase |
+                System.Text.RegularExpressions.RegexOptions.Singleline))
+        {
+            // Plain text before this anchor
+            if (m.Index > pos)
+            {
+                var plain = DecodeHtmlEntities(html[pos..m.Index]);
+                if (!string.IsNullOrEmpty(plain))
+                    inlines.Add(new Run(plain));
+            }
+
+            // Inner text (strip nested tags, then decode entities)
+            var innerText = DecodeHtmlEntities(
+                System.Text.RegularExpressions.Regex.Replace(
+                    m.Groups[2].Value, @"<[^>]+>", string.Empty)).Trim();
+
+            if (!string.IsNullOrWhiteSpace(innerText))
+            {
+                // Extract href — handles both quoted and unquoted attribute values
+                var hrefMatch = System.Text.RegularExpressions.Regex.Match(
+                    m.Groups[1].Value,
+                    @"href=[""']?([^""'\s>]+)[""']?",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+                if (hrefMatch.Success &&
+                    Uri.TryCreate(hrefMatch.Groups[1].Value, UriKind.Absolute, out var uri))
+                {
+                    var capturedUri = uri;
+                    var link = new Hyperlink(new Run(innerText));
+                    link.Click += (_, _) =>
+                    {
+                        try { System.Diagnostics.Process.Start(
+                            new System.Diagnostics.ProcessStartInfo(capturedUri.AbsoluteUri)
+                            { UseShellExecute = true }); }
+                        catch { /* ignore if browser launch fails */ }
+                    };
+                    inlines.Add(link);
+                }
+                else
+                {
+                    inlines.Add(new Run(innerText));
+                }
+            }
+
+            pos = m.Index + m.Length;
+        }
+
+        // Trailing plain text after the last anchor
+        if (pos < html.Length)
+        {
+            var plain = DecodeHtmlEntities(html[pos..]);
+            if (!string.IsNullOrEmpty(plain))
+                inlines.Add(new Run(plain));
+        }
+
+        return inlines;
+    }
+
+    private static string DecodeHtmlEntities(string text) =>
+        text
+            .Replace("&amp;",  "&")
+            .Replace("&lt;",   "<")
+            .Replace("&gt;",   ">")
             .Replace("&quot;", "\"")
-            .Replace("&#39;", "'")
+            .Replace("&#39;",  "'")
             .Replace("&nbsp;", " ")
             .Replace("&copy;", "©")
-            .Replace("&reg;", "®")
-            .Replace("&trade;", "™");
-        
-        return decoded.Trim();
-    }
+            .Replace("&reg;",  "®")
+            .Replace("&trade;","™");
 
     private void PositionAttributionPopup()
     {
@@ -1000,7 +1072,7 @@ public class MlnMapHost : HwndHost
     private void UpdateAttributionPopupOpen()
     {
         if (_attributionPopup == null) return;
-        _attributionPopup.IsOpen = _initialized && IsVisible && !string.IsNullOrEmpty(_attrText);
+        _attributionPopup.IsOpen = _initialized && IsVisible && _attributionText?.Inlines.Count > 0;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
