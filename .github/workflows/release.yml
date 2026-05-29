@@ -391,9 +391,17 @@ jobs:
 
       - name: Push NuGet packages to NuGet.org
         run: |
+          EXIT_CODE=0
           for pkg in artifacts/*.nupkg; do
-            dotnet nuget push "$pkg" \
+            echo "Pushing $pkg..."
+            if dotnet nuget push "$pkg" \
               --api-key "${{ secrets.NUGET_API_KEY }}" \
               --source https://api.nuget.org/v3/index.json \
-              --skip-duplicate
+              --skip-duplicate; then
+              echo "✓ Successfully pushed or already exists: $(basename $pkg)"
+            else
+              echo "✗ FAILED to push: $(basename $pkg)"
+              EXIT_CODE=1
+            fi
           done
+          exit $EXIT_CODE
