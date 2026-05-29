@@ -730,6 +730,13 @@ public class MapLibreMapController : IMapLibreMapController
         SetWindowPos(_childHwnd, IntPtr.Zero, x, y, w, h, SWP_NOACTIVATE | SWP_NOZORDER);
         PositionOverlays();  // keep overlay windows tracking the map
 
+        // Re-assert overlay z-order above the GL popup. WinUI can re-sort popup
+        // windows on resize, restore from fullscreen, or activation changes.
+        if (_navHwnd  != IntPtr.Zero)
+            SetWindowPos(_navHwnd,  _childHwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        if (_attrHwnd != IntPtr.Zero)
+            SetWindowPos(_attrHwnd, _childHwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+
         if (_logPositionCount < 5)
         {
             _logPositionCount++;
