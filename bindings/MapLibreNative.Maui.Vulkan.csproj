@@ -3,25 +3,24 @@
   <PropertyGroup>
     <!--
       Vulkan (Windows/Android) + Metal (iOS/macCatalyst) bindings.
-      Consumed by handler code that bootstraps Vulkan/Metal surfaces via NativeMethods.Mln.
+      Drop-in replacement for MapLibreNative.Maui that ships Vulkan-enabled native DLLs.
+      Exposes the identical C# API and namespace as MapLibreNative.Maui.
     -->
     <TargetFrameworks>net9.0-android;net9.0-ios;net9.0-maccatalyst;net9.0-windows10.0.19041.0</TargetFrameworks>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <RootNamespace>MapLibreNative.Maui.Vulkan</RootNamespace>
+    <RootNamespace>MapLibreNative.Maui</RootNamespace>
     <AssemblyName>MapLibreNative.Maui.Vulkan</AssemblyName>
     <PackageId>MapLibreNative.Maui.Vulkan</PackageId>
   </PropertyGroup>
 
-  <!-- Exclude the old mln-cabi source files — this package is maplibre_native_c only. -->
+  <!-- Exclude the maplibre-native-ffi exploration files — this package uses the same mln-cabi ABI as MapLibreNative.Maui. -->
   <ItemGroup>
-    <Compile Remove="NativeMethods.cs" />
-    <Compile Remove="MbglFrontend.cs" />
-    <Compile Remove="MbglMap.cs" />
-    <Compile Remove="MbglRunLoop.cs" />
-    <Compile Remove="MbglStyle.cs" />
+    <Compile Remove="NativeMethods.Mln.cs" />
+    <Compile Remove="MlnMap.cs" />
+    <Compile Remove="MlnRuntime.cs" />
   </ItemGroup>
 
   <!--

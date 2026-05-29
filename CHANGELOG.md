@@ -14,9 +14,9 @@
   - `Maui.MapLibre.Native.Vulkan` → `MapLibreNative.Maui.Vulkan`
   - `Maui.MapLibre.WPF` → `MapLibreNative.Maui.WPF`
   - `Maui.Maplibre.Handlers` → `MapLibreNative.Maui.Handlers`
-- **Namespace rename** — All C# namespaces updated to match the new package names. Update `using` directives and XAML `clr-namespace:` / `assembly=` references accordingly:
+- **Namespace rename** — All C# namespaces updated. Update `using` directives and XAML `clr-namespace:` / `assembly=` references accordingly:
   - `Maui.MapLibre.Native` → `MapLibreNative.Maui`
-  - `Maui.MapLibre.Native.Upstream` → `MapLibreNative.Maui.Vulkan`
+  - `Maui.MapLibre.Native.Upstream` → `MapLibreNative.Maui` (Vulkan package now shares the same namespace as the base package)
   - `Maui.MapLibre.WPF` → `MapLibreNative.Maui.WPF`
   - `Maui.MapLibre.Handlers` (and sub-namespaces) → `MapLibreNative.Maui.Handlers`
 
