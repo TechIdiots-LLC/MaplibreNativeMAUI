@@ -53,10 +53,13 @@ public class MapLibreMapController : IMapLibreMapController
     private bool          _styleReady;
 
     private readonly SurfaceCallback _surfaceCb;
-    private SurfaceView     _surfaceView = null!;
-    private TextView        _attrView    = null!;
+    private SurfaceView     _surfaceView      = null!;
+    private TextView        _attrView         = null!;  // expanded full text
+    private TextView        _attrButton       = null!;  // collapsed ⓘ button
     private bool            _showAttrControl  = true;
     private string?         _customAttribution;
+    private int             _attrCollapseGen;            // generation counter for auto-collapse timer
+    private bool            _attrLoaded;                 // true once attribution content has been fetched
 
     public FrameLayout View { get; private set; } = null!;
 
@@ -114,6 +117,22 @@ public class MapLibreMapController : IMapLibreMapController
         attrParams.SetMargins(0, 0, 8, 8);
         container.AddView(_attrView, attrParams);
 
+        // Collapsed ⓘ button — same corner, shown when full text is hidden
+        _attrButton = new TextView(ctx);
+        _attrButton.Text = "ⓘ";
+        _attrButton.SetTextSize(Android.Util.ComplexUnitType.Sp, 13f);
+        _attrButton.SetTextColor(Android.Graphics.Color.Argb(220, 50, 50, 50));
+        _attrButton.SetBackgroundColor(Android.Graphics.Color.Argb(180, 255, 255, 255));
+        _attrButton.SetPadding(8, 4, 8, 4);
+        _attrButton.Visibility = ViewStates.Gone;
+        _attrButton.Click += (_, _) => ExpandAttribution();
+        var btnParams = new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WrapContent,
+            ViewGroup.LayoutParams.WrapContent,
+            GravityFlags.Bottom | GravityFlags.End);
+        btnParams.SetMargins(0, 0, 8, 8);
+        container.AddView(_attrButton, btnParams);
+
         View = container;
     }
 
@@ -170,14 +189,18 @@ public class MapLibreMapController : IMapLibreMapController
             case "onDidFinishLoadingStyle":
                 _styleReady = true;
                 _style = _map?.GetStyle();
+                _attrLoaded = false;  // new style — sources may have different attribution
                 RefreshAttribution();
                 OnStyleLoadedReceived?.Invoke(new Style(null));
                 break;
             case "onDidBecomeIdle":
-                if (_attrView.Text?.Length == 0) RefreshAttribution();
+                // TileJSON sources may finish loading after onDidFinishLoadingStyle;
+                // only retry while we still have no content.
+                if (!_attrLoaded) RefreshAttribution();
                 OnDidBecomeIdleReceived?.Invoke();
                 break;
             case "onCameraIsChanging":
+                CollapseAttribution();
                 OnCameraMoveReceived?.Invoke();
                 break;
             case "onCameraDidChange":
@@ -241,7 +264,12 @@ public class MapLibreMapController : IMapLibreMapController
 
     private void RefreshAttribution()
     {
-        if (_style == null) { _attrView.Visibility = ViewStates.Gone; return; }
+        if (_style == null)
+        {
+            _attrView.Visibility   = ViewStates.Gone;
+            _attrButton.Visibility = ViewStates.Gone;
+            return;
+        }
 
         var parts = new System.Collections.Generic.List<string>(_style.GetSourceAttributions());
         if (!string.IsNullOrWhiteSpace(_customAttribution))
@@ -249,13 +277,44 @@ public class MapLibreMapController : IMapLibreMapController
 
         if (parts.Count == 0 || !_showAttrControl)
         {
-            _attrView.Visibility = ViewStates.Gone;
+            _attrView.Visibility   = ViewStates.Gone;
+            _attrButton.Visibility = ViewStates.Gone;
             return;
         }
 
-        var spanned = BuildAttributionSpanned(parts);
-        _attrView.TextFormatted = spanned;
-        _attrView.Visibility = ViewStates.Visible;
+        _attrLoaded = true;
+        _attrView.TextFormatted = BuildAttributionSpanned(parts);
+        ExpandAttribution();
+    }
+
+    private void ExpandAttribution()
+    {
+        if (!_showAttrControl || !_attrLoaded) return;
+        _attrView.Visibility   = ViewStates.Visible;
+        _attrButton.Visibility = ViewStates.Gone;
+        ScheduleAutoCollapse();
+    }
+
+    private void CollapseAttribution()
+    {
+        // If neither view is showing, there is nothing to collapse.
+        if (_attrView.Visibility   == ViewStates.Gone &&
+            _attrButton.Visibility == ViewStates.Gone) return;
+        ++_attrCollapseGen;  // cancel any pending auto-collapse
+        _attrView.Visibility   = ViewStates.Gone;
+        _attrButton.Visibility = (_attrLoaded && _showAttrControl)
+            ? ViewStates.Visible : ViewStates.Gone;
+    }
+
+    private void ScheduleAutoCollapse()
+    {
+        int gen = ++_attrCollapseGen;
+        // PostDelayed runs on the view's UI thread; generation counter prevents
+        // stale callbacks from firing after Expand was called again.
+        _attrView.PostDelayed(() =>
+        {
+            if (_attrCollapseGen == gen) CollapseAttribution();
+        }, 5000);
     }
 
     private static ISpanned BuildAttributionSpanned(
