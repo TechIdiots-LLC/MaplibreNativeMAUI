@@ -105,6 +105,12 @@ public class MapLibreMapController : IMapLibreMapController
     [DllImport("user32.dll")]
     private static extern bool InvalidateRect(IntPtr hWnd, IntPtr lpRect, bool bErase);
 
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetTimer(IntPtr hWnd, IntPtr nIDEvent, uint uElapse, IntPtr lpTimerFunc);
+
+    [DllImport("user32.dll")]
+    private static extern bool KillTimer(IntPtr hWnd, IntPtr uIDEvent);
+
     [DllImport("gdi32.dll")]
     private static extern IntPtr CreateSolidBrush(uint crColor);
 
@@ -518,6 +524,10 @@ public class MapLibreMapController : IMapLibreMapController
 
         _initialized = true;
         ShowOverlays();  // re-evaluate now that _initialized is true
+
+        // Win32 timer fires WM_TIMER even during modal resize loops where the
+        // DispatcherTimer is paused, ensuring overlays stay above the GL popup.
+        SetTimer(_childHwnd, (IntPtr)OverlayZTimerId, 50, IntPtr.Zero);
         System.Diagnostics.Debug.WriteLine(
             $"[MapLibre.Win] TryInitialize done. childHwnd=0x{_childHwnd.ToInt64():X} " +
             $"size={physW}x{physH} pixelRatio={_pixelRatio} visible={IsWindowVisible(_childHwnd)}");
@@ -729,13 +739,7 @@ public class MapLibreMapController : IMapLibreMapController
 
         SetWindowPos(_childHwnd, IntPtr.Zero, x, y, w, h, SWP_NOACTIVATE | SWP_NOZORDER);
         PositionOverlays();  // keep overlay windows tracking the map
-
-        // Re-assert overlay z-order above the GL popup. WinUI can re-sort popup
-        // windows on resize, restore from fullscreen, or activation changes.
-        if (_navHwnd  != IntPtr.Zero)
-            SetWindowPos(_navHwnd,  _childHwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-        if (_attrHwnd != IntPtr.Zero)
-            SetWindowPos(_attrHwnd, _childHwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        RaiseOverlays();     // re-assert overlays above GL popup (can be scrambled on resize/restore)
 
         if (_logPositionCount < 5)
         {
@@ -1191,6 +1195,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     private void DestroyOverlays()
     {
+        if (_childHwnd != IntPtr.Zero) KillTimer(_childHwnd, (IntPtr)OverlayZTimerId);
         if (_navFont  != IntPtr.Zero) { DeleteObject(_navFont);  _navFont  = IntPtr.Zero; }
         if (_attrFont != IntPtr.Zero) { DeleteObject(_attrFont); _attrFont = IntPtr.Zero; }
         if (_navHwnd  != IntPtr.Zero) { DestroyWindow(_navHwnd);  _navHwnd  = IntPtr.Zero; }
@@ -1208,6 +1213,8 @@ public class MapLibreMapController : IMapLibreMapController
     private const uint WM_ERASEBKGND = 0x0014;
     private const uint WM_NCHITTEST  = 0x0084;
     private const uint WM_SETCURSOR  = 0x0020;
+    private const uint WM_TIMER      = 0x0113;
+    private const uint OverlayZTimerId = 42;
     private static readonly IntPtr HTCLIENT = new(1);
 
     private IntPtr NavOverlayWndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
@@ -1484,10 +1491,23 @@ public class MapLibreMapController : IMapLibreMapController
 
     // ── Popup WndProc (mouse input) ────────────────────────────────────────────
 
+    /// <summary>Re-asserts overlay HWNDs above the GL popup in z-order.</summary>
+    private void RaiseOverlays()
+    {
+        if (_navHwnd  != IntPtr.Zero)
+            SetWindowPos(_navHwnd,  _childHwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        if (_attrHwnd != IntPtr.Zero)
+            SetWindowPos(_attrHwnd, _childHwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    }
+
     private IntPtr PopupWndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
         switch (msg)
         {
+            case WM_TIMER when (uint)wParam.ToInt64() == OverlayZTimerId:
+                RaiseOverlays();
+                return IntPtr.Zero;
+
             case WM_SETCURSOR:
             {
                 // Override the cursor for the map client area.
