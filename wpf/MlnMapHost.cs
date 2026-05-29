@@ -479,7 +479,25 @@ public class MlnMapHost : HwndHost
                 if (_attributionPopup != null) _attributionPopup.IsOpen = false;
             };
             parentWin.Activated      += (_, _) => { UpdateNavPopupOpen(); UpdateAttributionPopupOpen(); };
-            parentWin.LocationChanged += (_, _) => { PositionNavPopup(); PositionAttributionPopup(); };
+            parentWin.LocationChanged += (_, _) => 
+            { 
+                // Force immediate reposition when window moves
+                PositionNavPopup(); 
+                PositionAttributionPopup(); 
+                // Re-open popups to force WPF to recalculate their screen positions
+                if (_navPopup != null && ShowNavigationControls && IsVisible)
+                {
+                    var wasOpen = _navPopup.IsOpen;
+                    _navPopup.IsOpen = false;
+                    Dispatcher.BeginInvoke(DispatcherPriority.Render, () => _navPopup.IsOpen = wasOpen);
+                }
+                if (_attributionPopup != null && !string.IsNullOrEmpty(_attrText) && IsVisible)
+                {
+                    var wasOpen = _attributionPopup.IsOpen;
+                    _attributionPopup.IsOpen = false;
+                    Dispatcher.BeginInvoke(DispatcherPriority.Render, () => _attributionPopup.IsOpen = wasOpen);
+                }
+            };
         }
 
         _renderTimer?.Start();
@@ -911,10 +929,35 @@ public class MlnMapHost : HwndHost
     {
         if (_style == null) return;
         var parts = _style.GetSourceAttributions();
-        _attrText = string.Join(" | ", parts);
+        // Strip HTML tags and decode HTML entities for clean text display
+        var cleaned = parts.Select(StripHtmlAndDecode).Where(s => !string.IsNullOrWhiteSpace(s));
+        _attrText = string.Join(" | ", cleaned);
         if (_attributionText != null) _attributionText.Text = _attrText;
         PositionAttributionPopup();
         UpdateAttributionPopupOpen();
+    }
+
+    /// <summary>
+    /// Strips HTML tags from attribution strings and decodes common HTML entities.
+    /// Converts "&lt;a href=...&gt;Text&lt;/a&gt;" to "Text".
+    /// </summary>
+    private static string StripHtmlAndDecode(string html)
+    {
+        if (string.IsNullOrWhiteSpace(html)) return string.Empty;
+        
+        // Strip HTML tags: remove everything between < and >
+        var withoutTags = System.Text.RegularExpressions.Regex.Replace(html, "<[^>]+>", string.Empty);
+        
+        // Decode common HTML entities
+        var decoded = withoutTags
+            .Replace("&amp;", "&")
+            .Replace("&lt;", "<")
+            .Replace("&gt;", ">")
+            .Replace("&quot;", "\"")
+            .Replace("&#39;", "'")
+            .Replace("&nbsp;", " ");
+        
+        return decoded.Trim();
     }
 
     private void PositionAttributionPopup()
