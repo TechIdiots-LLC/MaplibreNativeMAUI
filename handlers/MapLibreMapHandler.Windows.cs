@@ -13,7 +13,6 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
 {
     private MapLibreMapController _controller = null!;
     private string _styleUrl = string.Empty;
-    private Microsoft.UI.Xaml.Window? _hostWindow;
 
     // Input tracking
     private bool   _isDragging;
@@ -53,29 +52,9 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
 
         _controller.Init();
 
-        // MAUI's View.SizeChanged does not fire on window maximize/restore, so the
-        // map overlays (nav/attribution) would keep their stale position until a
-        // manual resize. The host Window.SizeChanged does fire — use it to force a
-        // re-measure and re-align the GL popup once layout settles.
-        _hostWindow = window;
-        if (_hostWindow != null)
-            _hostWindow.SizeChanged += OnHostWindowSizeChanged;
-
         var view = _controller.View;
         AttachInputEvents(view);
         return view;
-    }
-
-    private void OnHostWindowSizeChanged(object sender, Microsoft.UI.Xaml.WindowSizeChangedEventArgs e)
-    {
-        var view = _controller?.View;
-        if (view == null) return;
-        // Invalidate layout so View.ActualHeight reflects the new window size, then
-        // re-align after the arrange pass completes (Low priority runs post-layout).
-        view.InvalidateMeasure();
-        view.DispatcherQueue?.TryEnqueue(
-            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
-            () => _controller?.OnHostWindowResized());
     }
 
     // ── Input events ──────────────────────────────────────────────────────────
@@ -188,13 +167,6 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
         // the XAML Unloaded event fires asynchronously or is skipped entirely
         // (e.g. Shell tab switches on WinUI 3 with some MAUI versions).
         _controller.Shutdown();
-
-        // Unhook the host-window size handler.
-        if (_hostWindow != null)
-        {
-            _hostWindow.SizeChanged -= OnHostWindowSizeChanged;
-            _hostWindow = null;
-        }
 
         // Unhook input events so they can't fire after the controller is gone.
         platformView.PointerWheelChanged -= OnPointerWheelChanged;
