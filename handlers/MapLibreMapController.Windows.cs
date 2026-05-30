@@ -1049,9 +1049,12 @@ public class MapLibreMapController : IMapLibreMapController
             _effectiveParentHwnd, IntPtr.Zero, GetModuleHandleW(IntPtr.Zero), IntPtr.Zero);
         if (_navHwnd != IntPtr.Zero)
         {
-            // Place nav overlay just above the GL child in z-order (not TOPMOST —
+            // Place nav overlay above the GL child in z-order (not TOPMOST —
             // that would render above every other app window on the desktop).
-            SetWindowPos(_navHwnd, _childHwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            // SetWindowPos inserts the window *below* hWndInsertAfter, so anchoring
+            // to _childHwnd would push the overlay behind the map. Use HWND_TOP to
+            // bring it to the front of the owned-window group (above the GL popup).
+            SetWindowPos(_navHwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
             SetWindowLongPtr(_navHwnd, GWLP_WNDPROC,
                 Marshal.GetFunctionPointerForDelegate(_navWndProc));
             // Create the GDI font for nav buttons once.
@@ -1072,8 +1075,9 @@ public class MapLibreMapController : IMapLibreMapController
         {
             // 92% opacity — matches maplibre-gl-js attribution style.
             SetLayeredWindowAttributes(_attrHwnd, 0, 235, LWA_ALPHA);
-            // Place attr overlay just above the GL child (and nav) in z-order.
-            SetWindowPos(_attrHwnd, _childHwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            // Bring attr overlay to the front of the owned-window group (above the
+            // GL popup). See nav note above re: SetWindowPos insert-below semantics.
+            SetWindowPos(_attrHwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
             SetWindowLongPtr(_attrHwnd, GWLP_WNDPROC,
                 Marshal.GetFunctionPointerForDelegate(_attrWndProc));
             int fontH = -(int)(_pixelRatio * AttrFontSizePt);
@@ -1494,10 +1498,13 @@ public class MapLibreMapController : IMapLibreMapController
     /// <summary>Re-asserts overlay HWNDs above the GL popup in z-order.</summary>
     private void RaiseOverlays()
     {
+        // HWND_TOP places each overlay at the front of the owned-window group, i.e.
+        // above the GL popup. Anchoring to _childHwnd would insert them *below* it
+        // (SetWindowPos places hwnd after hWndInsertAfter), hiding them behind the map.
         if (_navHwnd  != IntPtr.Zero)
-            SetWindowPos(_navHwnd,  _childHwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            SetWindowPos(_navHwnd,  HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         if (_attrHwnd != IntPtr.Zero)
-            SetWindowPos(_attrHwnd, _childHwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            SetWindowPos(_attrHwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     }
 
     private IntPtr PopupWndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
