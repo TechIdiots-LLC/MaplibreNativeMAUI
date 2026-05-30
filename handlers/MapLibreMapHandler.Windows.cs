@@ -60,26 +60,38 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
         _hostWindow = window;
         if (_hostWindow != null)
             _hostWindow.SizeChanged += OnHostWindowSizeChanged;
+        DiagLog($"CreatePlatformView window={(window != null)} dpi={dpi}");
 
         var view = _controller.View;
         AttachInputEvents(view);
         return view;
     }
-
     private void OnHostWindowSizeChanged(object sender, Microsoft.UI.Xaml.WindowSizeChangedEventArgs e)
     {
-        // On maximize/restore MAUI does NOT re-arrange the page's map View on its
-        // own (only a tab switch does), so View.SizeChanged never fires and the
-        // map/nav layout stays stuck at the old, too-short height. Force a
-        // synchronous re-layout of the whole window content root: this re-runs
-        // MAUI's measure/arrange down to the map Grid, which fires its SizeChanged
-        // and triggers the real GL/overlay resize that re-shows the nav panel.
+        var view = _controller?.View;
+        double before = view?.ActualHeight ?? -1;
         if (sender is Microsoft.UI.Xaml.Window w &&
             w.Content is Microsoft.UI.Xaml.FrameworkElement root)
         {
             root.InvalidateMeasure();
             root.UpdateLayout();
+            DiagLog($"HostSizeChanged size={e.Size.Width}x{e.Size.Height} " +
+                    $"rootActual={root.ActualWidth}x{root.ActualHeight} " +
+                    $"viewBefore={before} viewAfter={view?.ActualHeight ?? -1}");
         }
+        else
+        {
+            DiagLog($"HostSizeChanged size={e.Size.Width}x{e.Size.Height} (no root) viewBefore={before}");
+        }
+    }
+
+    private static readonly string _diagPath =
+        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "maplibre_maui_diag.log");
+    private static void DiagLog(string msg)
+    {
+        try { System.IO.File.AppendAllText(_diagPath, $"{DateTime.Now:HH:mm:ss.fff} {msg}\r\n"); }
+        catch { /* ignore */ }
+        System.Diagnostics.Debug.WriteLine($"[MapLibre.Diag] {msg}");
     }
 
     // ── Input events ──────────────────────────────────────────────────────────
