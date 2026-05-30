@@ -728,6 +728,8 @@ public class MapLibreMapController : IMapLibreMapController
         if (!_initialized) return;
         OnViewSizeChanged(new Microsoft.Maui.Graphics.Size(View.ActualWidth, View.ActualHeight));
     }
+
+    private void UpdateChildWindowPosition()
     {
         if (_childHwnd == IntPtr.Zero || !View.IsLoaded) return;
 
