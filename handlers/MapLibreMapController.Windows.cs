@@ -1112,7 +1112,11 @@ public class MapLibreMapController : IMapLibreMapController
         if (_navHwnd  != IntPtr.Zero)
         {
             // Also hide the nav panel when the map is too short to fit it.
-            bool navVisible = _showNavControls && _initialized && NavFitsCurrentHeight();
+            bool navFits    = NavFitsCurrentHeight();
+            bool navVisible = _showNavControls && _initialized && navFits;
+            // Keep _lastNavFits in sync so PositionOverlays() transition guard
+            // correctly detects future fit→!fit and !fit→fit changes.
+            _lastNavFits = navFits;
             uint style = (uint)GetWindowLongA(_navHwnd, GWL_STYLE);
             SetWindowLongPtr(_navHwnd, GWL_STYLE,
                 (IntPtr)(navVisible ? (style | WS_VISIBLE) : (style & ~WS_VISIBLE)));
