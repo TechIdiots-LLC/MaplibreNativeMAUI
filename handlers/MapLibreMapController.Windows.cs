@@ -407,7 +407,7 @@ public class MapLibreMapController : IMapLibreMapController
     private IntPtr _navHwnd   = IntPtr.Zero;
     private WndProcDelegate? _navWndProc;   // keep-alive
     private bool   _showNavControls = true;
-    // Attribution — bottom-right corner, auto-width text band
+    // Attribution — bottom-left corner, auto-width text band
     private IntPtr _attrHwnd  = IntPtr.Zero;
     private WndProcDelegate? _attrWndProc;  // keep-alive
     private bool   _showAttrControl = true;
@@ -421,6 +421,10 @@ public class MapLibreMapController : IMapLibreMapController
     private const int AttrPadH        = 6;    // horizontal text padding
     private const int AttrPadV        = 3;    // vertical text padding
     private const int AttrFontSizePt  = 11;
+    // Below this map height (logical px) the nav panel is hidden so its buttons
+    // don't spill past the map edge or stack over the attribution on short maps.
+    // Nav panel = 3×29 px buttons + 2×1 px dividers + ~10 px top margin ≈ 99 px.
+    private const int MinMapHeightForNav = 100;
     private const string OverlayClass = "MapLibreOverlay";
     // Cached overlay positions — skip SetWindowPos when nothing changed (prevents repaint flicker)
     private (int x, int y, int w, int h) _lastNavRect;
@@ -1094,16 +1098,13 @@ public class MapLibreMapController : IMapLibreMapController
     {
         if (_navHwnd  != IntPtr.Zero)
         {
-            uint showFlag = (_showNavControls && _initialized)
-                ? WS_VISIBLE : 0;
+            // Also hide the nav panel when the map is too short to fit it.
+            bool navVisible = _showNavControls && _initialized && NavFitsCurrentHeight();
             uint style = (uint)GetWindowLongA(_navHwnd, GWL_STYLE);
             SetWindowLongPtr(_navHwnd, GWL_STYLE,
-                (IntPtr)((_showNavControls && _initialized)
-                    ? (style | WS_VISIBLE)
-                    : (style & ~WS_VISIBLE)));
+                (IntPtr)(navVisible ? (style | WS_VISIBLE) : (style & ~WS_VISIBLE)));
             SetWindowPos(_navHwnd, IntPtr.Zero, 0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW_OR_HIDE(
-                    _showNavControls && _initialized));
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW_OR_HIDE(navVisible));
         }
         if (_attrHwnd != IntPtr.Zero)
         {
@@ -1123,6 +1124,19 @@ public class MapLibreMapController : IMapLibreMapController
     private static extern int GetWindowLongA(IntPtr hWnd, int nIndex);
     private const int GWL_STYLE = -16;
 
+    /// <summary>
+    /// Whether the map area is tall enough to display the nav panel. On short
+    /// maps the panel is hidden so it doesn't overflow the edge or collide with
+    /// the attribution band (matches the WPF host behavior).
+    /// </summary>
+    private bool NavFitsCurrentHeight()
+    {
+        if (_childHwnd == IntPtr.Zero) return false;
+        GetWindowRect(_childHwnd, out var wr);
+        int mapH = wr.Bottom - wr.Top;
+        return mapH >= (int)(MinMapHeightForNav * _pixelRatio);
+    }
+
     /// <summary>Position overlays relative to the GL popup window.</summary>
     private void PositionOverlays()
     {
@@ -1133,8 +1147,9 @@ public class MapLibreMapController : IMapLibreMapController
 
         int marginPx  = (int)(NavPanelMargin * _pixelRatio);
         int btnSizePx = (int)(NavButtonSize  * _pixelRatio);
+        bool navFits  = mapH >= (int)(MinMapHeightForNav * _pixelRatio);
 
-        if (_navHwnd != IntPtr.Zero && _showNavControls)
+        if (_navHwnd != IntPtr.Zero && _showNavControls && navFits)
         {
             int panelH = btnSizePx * 3 + 2;  // +2 for separator lines
             int navX   = wr.Left + mapW - btnSizePx - marginPx;
@@ -1179,7 +1194,7 @@ public class MapLibreMapController : IMapLibreMapController
 
             int attrW = _cachedAttrMeasure.cx + padH * 2;
             int attrH = _cachedAttrMeasure.cy + padV * 2;
-            int attrX = wr.Left + mapW - attrW - marginPx;
+            int attrX = wr.Left + marginPx;                       // bottom-left, avoids nav overlap
             int attrY = wr.Top  + mapH - attrH - marginPx;
             var ar = (attrX, attrY, attrW, attrH);
             if (ar != _lastAttrRect)
@@ -1189,6 +1204,10 @@ public class MapLibreMapController : IMapLibreMapController
                 InvalidateRect(_attrHwnd, IntPtr.Zero, true);
             }
         }
+
+        // Re-evaluate nav visibility — the map may have shrunk below the
+        // minimum height (or grown back) since the last call.
+        ShowOverlays();
     }
 
     [StructLayout(LayoutKind.Sequential)]
