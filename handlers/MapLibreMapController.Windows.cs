@@ -716,19 +716,6 @@ public class MapLibreMapController : IMapLibreMapController
         _map?.TriggerRepaint();
     }
 
-    /// <summary>
-    /// Re-aligns the GL popup and overlays after a host-window state change
-    /// (maximize ↔ restore, monitor move) that MAUI's View.SizeChanged does not
-    /// report. The caller must invalidate layout first so View.ActualHeight is
-    /// fresh; otherwise the nav panel keeps its stale position until a manual
-    /// resize forces a re-measure.
-    /// </summary>
-    public void OnHostWindowResized()
-    {
-        if (!_initialized) return;
-        OnViewSizeChanged(new Microsoft.Maui.Graphics.Size(View.ActualWidth, View.ActualHeight));
-    }
-
     private void UpdateChildWindowPosition()
     {
         if (_childHwnd == IntPtr.Zero || !View.IsLoaded) return;
@@ -1112,11 +1099,7 @@ public class MapLibreMapController : IMapLibreMapController
         if (_navHwnd  != IntPtr.Zero)
         {
             // Also hide the nav panel when the map is too short to fit it.
-            bool navFits    = NavFitsCurrentHeight();
-            bool navVisible = _showNavControls && _initialized && navFits;
-            // Keep _lastNavFits in sync so PositionOverlays() transition guard
-            // correctly detects future fit→!fit and !fit→fit changes.
-            _lastNavFits = navFits;
+            bool navVisible = _showNavControls && _initialized && NavFitsCurrentHeight();
             uint style = (uint)GetWindowLongA(_navHwnd, GWL_STYLE);
             SetWindowLongPtr(_navHwnd, GWL_STYLE,
                 (IntPtr)(navVisible ? (style | WS_VISIBLE) : (style & ~WS_VISIBLE)));
@@ -1222,16 +1205,10 @@ public class MapLibreMapController : IMapLibreMapController
             }
         }
 
-        // Re-evaluate nav visibility only when the fit state actually flips. A resize
-        // can run this while the GL window still reports a stale height, so the 50ms
-        // overlay timer also calls PositionOverlays() to self-heal once height settles.
-        if (navFits != _lastNavFits)
-        {
-            _lastNavFits = navFits;
-            ShowOverlays();
-        }
+        // Re-evaluate nav visibility — the map may have shrunk below the
+        // minimum height (or grown back) since the last call.
+        ShowOverlays();
     }
-    private bool _lastNavFits = true;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct SIZE { public int cx; public int cy; }
@@ -1554,8 +1531,7 @@ public class MapLibreMapController : IMapLibreMapController
         switch (msg)
         {
             case WM_TIMER when (uint)wParam.ToInt64() == OverlayZTimerId:
-                PositionOverlays();  // self-heal size/visibility (e.g. map grew tall enough for nav)
-                RaiseOverlays();     // re-assert overlays above the GL popup
+                RaiseOverlays();
                 return IntPtr.Zero;
 
             case WM_SETCURSOR:
