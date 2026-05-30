@@ -68,21 +68,25 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
     }
     private void OnHostWindowSizeChanged(object sender, Microsoft.UI.Xaml.WindowSizeChangedEventArgs e)
     {
-        var view = _controller?.View;
-        double before = view?.ActualHeight ?? -1;
-        if (sender is Microsoft.UI.Xaml.Window w &&
-            w.Content is Microsoft.UI.Xaml.FrameworkElement root)
-        {
-            root.InvalidateMeasure();
-            root.UpdateLayout();
-            DiagLog($"HostSizeChanged size={e.Size.Width}x{e.Size.Height} " +
-                    $"rootActual={root.ActualWidth}x{root.ActualHeight} " +
-                    $"viewBefore={before} viewAfter={view?.ActualHeight ?? -1}");
-        }
-        else
-        {
-            DiagLog($"HostSizeChanged size={e.Size.Width}x{e.Size.Height} (no root) viewBefore={before}");
-        }
+        if (sender is not Microsoft.UI.Xaml.Window w) return;
+
+        // The window is already at its new size here, but the framework has not yet
+        // arranged window.Content to fill it (root still reports the old size), so a
+        // synchronous re-layout is a no-op. Defer to Low priority so it runs AFTER
+        // the window's own layout pass — by then the root has the new size and
+        // re-measuring propagates it down to the map Grid, firing View.SizeChanged.
+        w.DispatcherQueue?.TryEnqueue(
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+            () =>
+            {
+                if (w.Content is not Microsoft.UI.Xaml.FrameworkElement root) return;
+                double before = _controller?.View?.ActualHeight ?? -1;
+                root.InvalidateMeasure();
+                root.UpdateLayout();
+                DiagLog($"PostLayout size={e.Size.Width}x{e.Size.Height} " +
+                        $"rootActual={root.ActualWidth}x{root.ActualHeight} " +
+                        $"viewBefore={before} viewAfter={_controller?.View?.ActualHeight ?? -1}");
+            });
     }
 
     private static readonly string _diagPath =
