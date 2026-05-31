@@ -47,19 +47,19 @@ jobs:
 
   # ── Native builds (reuse per-platform CI workflows) ───────────────────────
   build-windows:
-    name: Build Windows native
+    name: Build Windows OpenGL native
     needs: version-check
     if: needs.version-check.outputs.published == 'false'
     uses: ./.github/workflows/native-windows.yml
 
   build-android:
-    name: Build Android native
+    name: Build Android OpenGL native
     needs: version-check
     if: needs.version-check.outputs.published == 'false'
     uses: ./.github/workflows/native-android.yml
 
   build-apple:
-    name: Build Apple native
+    name: Build Apple Metal native
     needs: version-check
     if: needs.version-check.outputs.published == 'false'
     uses: ./.github/workflows/native-apple.yml
@@ -76,12 +76,6 @@ jobs:
     if: needs.version-check.outputs.published == 'false'
     uses: ./.github/workflows/native-android-vulkan.yml
 
-  build-apple-metal:
-    name: Build Apple Metal native
-    needs: version-check
-    if: needs.version-check.outputs.published == 'false'
-    uses: ./.github/workflows/native-apple-metal.yml
-
   # ── NuGet packaging ───────────────────────────────────────────────────────
   pack:
     name: Pack NuGet
@@ -92,17 +86,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Pin .NET SDK to Xcode-16-compatible feature band
-        # macos-latest still ships with Xcode 16.4; the 9.0.200 feature band was
-        # published before WWDC 2025 so its iOS/macCatalyst workloads target Xcode 16.
-        run: echo '{"sdk":{"version":"9.0.200","rollForward":"latestPatch"}}' > global.json
-
       - name: Set up .NET 8 and 9 SDKs
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
             8.0.x
-            9.0.200
+            9.0.x
 
       - name: Download all native artifacts
         uses: actions/download-artifact@v4
@@ -283,26 +272,35 @@ jobs:
   pack-vulkan:
     name: Pack Vulkan NuGet
     runs-on: macos-latest
-    needs: [version-check, build-windows-vulkan, build-android-vulkan, build-apple-metal]
+    needs: [version-check, build-windows-vulkan, build-android-vulkan, build-apple]
     if: needs.version-check.outputs.published == 'false'
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Pin .NET SDK to Xcode-16-compatible feature band
-        run: echo '{"sdk":{"version":"9.0.200","rollForward":"latestPatch"}}' > global.json
 
       - name: Set up .NET 8 and 9 SDKs
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
             8.0.x
-            9.0.200
+            9.0.x
 
-      - name: Download Vulkan/Metal native artifacts
+      - name: Download MLN native artifacts (Windows + Android)
         uses: actions/download-artifact@v4
         with:
           pattern: native-mln-*
+          path: mln-artifacts
+
+      - name: Download Apple native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-ios-arm64
+          path: mln-artifacts
+
+      - name: Download Apple macCatalyst native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-maccatalyst
           path: mln-artifacts
 
       - name: Arrange native libs for Vulkan bindings project
@@ -316,8 +314,8 @@ jobs:
           find mln-artifacts/native-mln-windows-arm64-vulkan -name "mln-cabi.dll"   -exec cp {} $N/win-arm64/     \; 2>/dev/null || true
           find mln-artifacts/native-mln-android-arm64-v8a    -name "libmln-cabi.so" -exec cp {} $N/android-arm64/ \; 2>/dev/null || true
           find mln-artifacts/native-mln-android-x86_64       -name "libmln-cabi.so" -exec cp {} $N/android-x64/   \; 2>/dev/null || true
-          find mln-artifacts/native-mln-ios-arm64            -name "libmln-cabi.a"  -exec cp {} $N/ios-arm64/     \; 2>/dev/null || true
-          find mln-artifacts/native-mln-maccatalyst          -name "libmln-cabi.a"  -exec cp {} $N/maccatalyst/   \; 2>/dev/null || true
+          find mln-artifacts/native-ios-arm64               -name "libmln-cabi.a"  -exec cp {} $N/ios-arm64/     \; 2>/dev/null || true
+          find mln-artifacts/native-maccatalyst              -name "libmln-cabi.a"  -exec cp {} $N/maccatalyst/   \; 2>/dev/null || true
 
           echo "Vulkan native libs arranged:"
           find $N -type f

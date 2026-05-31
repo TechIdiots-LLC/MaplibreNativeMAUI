@@ -9,13 +9,24 @@
  *  • Listening to MapReady / StyleLoaded / CameraIdle events
  */
 using System.Windows;
+using System.Windows.Input;
 
 namespace WpfExample;
 
 public partial class MainWindow : Window
 {
     private bool   _markerVisible;
+    private bool _firstStyleLoad = true;
     private double _currentZoom = 9;
+
+    // ── Preset styles (same set as the MAUI sample) ────────────────────────────
+    private static readonly Dictionary<string, string> Styles = new()
+    {
+        ["MapLibre Demo"]    = "https://demotiles.maplibre.org/style.json",
+        ["OpenFreeMap Lib."] = "https://tiles.openfreemap.org/styles/liberty",
+        ["OpenFreeMap Pos."] = "https://tiles.openfreemap.org/styles/positron",
+        ["OpenFreeMap Brt."] = "https://tiles.openfreemap.org/styles/bright",
+    };
 
     const string MarkerSourceId = "example-marker";
     const string MarkerLayerId  = "example-marker-layer";
@@ -35,7 +46,12 @@ public partial class MainWindow : Window
         }
         """;
 
-    public MainWindow() => InitializeComponent();
+    public MainWindow()
+    {
+        InitializeComponent();
+        StylePicker.ItemsSource   = Styles.Keys;
+        StylePicker.SelectedIndex = 0;
+    }
 
     // ── Map lifecycle events ───────────────────────────────────────────────────
 
@@ -44,14 +60,41 @@ public partial class MainWindow : Window
 
     private void MapHost_StyleLoaded(object sender, EventArgs e)
     {
-        StatusText.Text = "Style loaded.";
-        // Start centred on Seattle
-        MapHost.CenterOn(47.6062, -122.3321, zoom: 9);
+        var name = StylePicker.SelectedItem as string ?? "custom";
+        StatusText.Text = $"Style loaded: {name}.";
+        // Centre on Seattle only for the very first load
+        if (_firstStyleLoad) { _firstStyleLoad = false; MapHost.CenterOn(47.6062, -122.3321, zoom: 9); }
     }
 
     private void MapHost_CameraIdle(object sender, EventArgs e)
         => StatusText.Text = $"Camera idle.";
 
+    // ── Style switcher ────────────────────────────────────────────────────────────────────────
+
+    private void StylePicker_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (StylePicker.SelectedItem is not string name) return;
+        if (!Styles.TryGetValue(name, out var url)) return;
+        UrlEntry.Text    = url;
+        MapHost.StyleUrl = url;
+        StatusText.Text  = $"Loading style: {name}…";
+    }
+
+    private void BtnApplyUrl_Click(object sender, RoutedEventArgs e) => ApplyCustomUrl();
+
+    private void UrlEntry_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Return) ApplyCustomUrl();
+    }
+
+    private void ApplyCustomUrl()
+    {
+        var url = UrlEntry.Text?.Trim();
+        if (string.IsNullOrEmpty(url)) return;
+        StylePicker.SelectedIndex = -1;  // clear preset selection
+        MapHost.StyleUrl = url;
+        StatusText.Text  = "Loading custom style…";
+    }
     // ── Fly-to buttons ─────────────────────────────────────────────────────────
 
     private void BtnSeattle_Click(object sender, RoutedEventArgs e)

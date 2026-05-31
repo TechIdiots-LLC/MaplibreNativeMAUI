@@ -13,6 +13,17 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
 {
     private MapLibreMapController _controller = null!;
     private string _styleUrl = string.Empty;
+    private Microsoft.UI.Xaml.Window? _hostWindow;
+
+    private static int _instanceCounter;
+    private readonly int _instanceId = System.Threading.Interlocked.Increment(ref _instanceCounter);
+    private static readonly string _hdiagPath =
+        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "maplibre_maui_diag.log");
+    private void HDiag(string msg)
+    {
+        try { System.IO.File.AppendAllText(_hdiagPath, $"{DateTime.Now:HH:mm:ss.fff} [hnd#{_instanceId}] {msg}\r\n"); }
+        catch { /* ignore */ }
+    }
 
     // Input tracking
     private bool   _isDragging;
@@ -52,9 +63,47 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
 
         _controller.Init();
 
+        // On window maximize/restore MAUI does not re-arrange the page on its own,
+        // so the map View keeps its old (too-short) height and the nav panel stays
+        // hidden until a tab switch. The host Window.SizeChanged DOES fire — use it
+        // to force a re-layout so View.SizeChanged runs the real resize.
+        _hostWindow = window;
+        if (_hostWindow != null)
+            _hostWindow.SizeChanged += OnHostWindowSizeChanged;
+
         var view = _controller.View;
         AttachInputEvents(view);
+        HDiag("CreatePlatformView (handler connected)");
         return view;
+    }
+
+    private void OnHostWindowSizeChanged(object sender, Microsoft.UI.Xaml.WindowSizeChangedEventArgs e)
+    {
+        if (sender is not Microsoft.UI.Xaml.Window w) return;
+
+        HDiag($"HostSizeChanged {e.Size.Width}x{e.Size.Height}");
+
+        // The window is already at its new size here, but the framework has not yet
+        // arranged window.Content to fill it (root still reports the old size), so a
+        // synchronous re-layout is a no-op. Defer to Low priority so it runs AFTER
+        // the window's own layout pass — by then the root has the new size and
+        // re-measuring propagates it down to the map Grid, firing View.SizeChanged
+        // which performs the real GL/overlay resize and re-shows the nav panel.
+        w.DispatcherQueue?.TryEnqueue(
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+            () =>
+            {
+                if (w.Content is Microsoft.UI.Xaml.FrameworkElement root)
+                {
+                    root.InvalidateMeasure();
+                    root.UpdateLayout();
+                    HDiag($"PostLayout rootActual={root.ActualWidth}x{root.ActualHeight}");
+                    // Re-position GL child and overlays now that XAML coordinates are
+                    // stable. Needed after window restore from fullscreen where
+                    // OnViewSizeChanged fires before the layout pass settles.
+                    _controller?.RefreshPosition();
+                }
+            });
     }
 
     // ── Input events ──────────────────────────────────────────────────────────
@@ -161,12 +210,20 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
 
     protected override void DisconnectHandler(Microsoft.UI.Xaml.Controls.Grid platformView)
     {
+        HDiag("DisconnectHandler (handler disconnected - e.g. tab switch away)");
         // Shutdown the GL popup and native mbgl resources BEFORE base removes the
         // platform view from the visual tree. This guarantees the dispatcher timer
         // is stopped and the HWND is destroyed even in navigation patterns where
         // the XAML Unloaded event fires asynchronously or is skipped entirely
         // (e.g. Shell tab switches on WinUI 3 with some MAUI versions).
         _controller.Shutdown();
+
+        // Unhook the host-window size handler.
+        if (_hostWindow != null)
+        {
+            _hostWindow.SizeChanged -= OnHostWindowSizeChanged;
+            _hostWindow = null;
+        }
 
         // Unhook input events so they can't fire after the controller is gone.
         platformView.PointerWheelChanged -= OnPointerWheelChanged;

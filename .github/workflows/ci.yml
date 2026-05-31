@@ -34,17 +34,17 @@ jobs:
 
   # ── Native builds (reuse per-platform workflows) ──────────────────────────
   build-windows:
-    name: Build Windows native
+    name: Build Windows OpenGL native
     needs: version
     uses: ./.github/workflows/native-windows.yml
 
   build-android:
-    name: Build Android native
+    name: Build Android OpenGL native
     needs: version
     uses: ./.github/workflows/native-android.yml
 
   build-apple:
-    name: Build Apple native
+    name: Build Apple Metal native
     needs: version
     uses: ./.github/workflows/native-apple.yml
 
@@ -59,11 +59,6 @@ jobs:
     needs: version
     uses: ./.github/workflows/native-android-vulkan.yml
 
-  build-apple-metal:
-    name: Build Apple Metal native
-    needs: version
-    uses: ./.github/workflows/native-apple-metal.yml
-
   # ── NuGet pack (verify packability, no publish) ───────────────────────────
   pack:
     name: Pack NuGet
@@ -73,18 +68,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Pin .NET SDK to Xcode-16-compatible feature band
-        # macos-latest still ships with Xcode 16.4; the 9.0.200 feature band was
-        # published before WWDC 2025 so its iOS/macCatalyst workloads target Xcode 16.
-        # Once GitHub runners have Xcode 26.5 this step can be removed.
-        run: echo '{"sdk":{"version":"9.0.200","rollForward":"latestPatch"}}' > global.json
-
       - name: Set up .NET 8 and 9 SDKs
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
             8.0.x
-            9.0.200
+            9.0.x
 
       - name: Download all native artifacts
         uses: actions/download-artifact@v4
@@ -121,7 +110,7 @@ jobs:
 
       - name: Pack Maui.Maplibre.Handlers
         run: |
-          dotnet pack handlers/Maui.Maplibre.Handlers.csproj \
+          dotnet pack handlers/MapLibreNative.Maui.Handlers.csproj \
             -c Release \
             -p:Version=${{ needs.version.outputs.version }} \
             -o artifacts/
@@ -137,7 +126,7 @@ jobs:
   pack-wpf:
     name: Pack WPF NuGet + Windows samples
     runs-on: windows-latest
-    needs: [version, build-windows]
+    needs: [version, build-windows, pack]
 
     steps:
       - uses: actions/checkout@v4
@@ -165,10 +154,19 @@ jobs:
       - name: Pack Maui.MapLibre.WPF
         shell: bash
         run: |
-          dotnet pack wpf/Maui.MapLibre.WPF.csproj \
+          dotnet pack wpf/MapLibreNative.Maui.WPF.csproj \
             -c Release \
             -p:Version=${{ needs.version.outputs.version }} \
             -o artifacts/
+
+      - name: Download NuGet packages (for local feed)
+        uses: actions/download-artifact@v4
+        with:
+          name: nuget-packages-ci
+          path: local-feed
+
+      - name: Add local NuGet feed
+        run: dotnet nuget add source "${{ github.workspace }}\local-feed" --name local-ci
 
       - name: Publish ConsoleExample (win-x64)
         shell: bash
@@ -222,15 +220,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Pin .NET SDK to Xcode-16-compatible feature band
-        run: echo '{"sdk":{"version":"9.0.200","rollForward":"latestPatch"}}' > global.json
-
       - name: Set up .NET 8 and 9 SDKs
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
             8.0.x
-            9.0.200
+            9.0.x
 
       - name: Download NuGet packages
         uses: actions/download-artifact@v4
@@ -317,27 +312,36 @@ jobs:
   pack-vulkan:
     name: Pack NuGet (Vulkan)
     runs-on: macos-latest
-    needs: [version, build-windows-vulkan, build-android-vulkan, build-apple-metal]
+    needs: [version, build-windows-vulkan, build-android-vulkan, build-apple]
 
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: false
 
-      - name: Pin .NET SDK to Xcode-16-compatible feature band
-        run: echo '{"sdk":{"version":"9.0.200","rollForward":"latestPatch"}}' > global.json
-
       - name: Set up .NET 8 and 9 SDKs
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
             8.0.x
-            9.0.200
+            9.0.x
 
-      - name: Download all MLN native artifacts
+      - name: Download MLN native artifacts (Windows + Android)
         uses: actions/download-artifact@v4
         with:
           pattern: native-mln-*
+          path: mln-artifacts
+
+      - name: Download Apple native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-ios-arm64
+          path: mln-artifacts
+
+      - name: Download Apple macCatalyst native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-maccatalyst
           path: mln-artifacts
 
       - name: Arrange native libs for Vulkan bindings project
@@ -351,8 +355,8 @@ jobs:
           find mln-artifacts/native-mln-windows-arm64-vulkan -name "mln-cabi.dll"    -exec cp {} $N/win-arm64/    \; 2>/dev/null || true
           find mln-artifacts/native-mln-android-arm64-v8a    -name "libmln-cabi.so"  -exec cp {} $N/android-arm64/ \; 2>/dev/null || true
           find mln-artifacts/native-mln-android-x86_64       -name "libmln-cabi.so"  -exec cp {} $N/android-x64/  \; 2>/dev/null || true
-          find mln-artifacts/native-mln-ios-arm64            -name "libmln-cabi.a"   -exec cp {} $N/ios-arm64/    \; 2>/dev/null || true
-          find mln-artifacts/native-mln-maccatalyst          -name "libmln-cabi.a"   -exec cp {} $N/maccatalyst/  \; 2>/dev/null || true
+          find mln-artifacts/native-ios-arm64               -name "libmln-cabi.a"   -exec cp {} $N/ios-arm64/    \; 2>/dev/null || true
+          find mln-artifacts/native-maccatalyst              -name "libmln-cabi.a"   -exec cp {} $N/maccatalyst/  \; 2>/dev/null || true
 
           echo "Vulkan native libs arranged:"
           find $N -type f
@@ -362,7 +366,7 @@ jobs:
 
       - name: Pack Maui.MapLibre.Native.Vulkan
         run: |
-          dotnet pack bindings/Maui.MapLibre.Native.Vulkan.csproj \
+          dotnet pack bindings/MapLibreNative.Maui.Vulkan.csproj \
             -c Release \
             -p:Version=${{ needs.version.outputs.version }} \
             -p:_MlnNativeDir=$(pwd)/bindings/native-vulkan/ \

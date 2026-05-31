@@ -14,6 +14,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
+using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
@@ -405,10 +406,13 @@ public class MlnMapHost : HwndHost
 
     // ── Attribution popup ─────────────────────────────────────────────────────
 
-    private Popup?     _attributionPopup;
-    private TextBlock? _attributionText;
-    private Border?    _attributionBorder;
-    private Point?     _attributionDesired;
+    private Popup?           _attributionPopup;
+    private TextBlock?       _attributionText;
+    private Border?          _attributionBorder;
+    private Point?           _attributionDesired;
+    private Popup?           _attrButtonPopup;    // collapsed ⓘ button
+    private DispatcherTimer? _attrCollapseTimer;
+    private bool             _attrLoaded;         // true once attribution content has been fetched
 
     // ── HwndHost overrides ────────────────────────────────────────────────────
 
@@ -478,8 +482,15 @@ public class MlnMapHost : HwndHost
             {
                 if (_navPopup         != null) _navPopup.IsOpen         = false;
                 if (_attributionPopup != null) _attributionPopup.IsOpen = false;
+                if (_attrButtonPopup  != null) _attrButtonPopup.IsOpen  = false;
+                _attrCollapseTimer?.Stop();
             };
-            parentWin.Activated      += (_, _) => { UpdateNavPopupOpen(); UpdateAttributionPopupOpen(); };
+            parentWin.Activated += (_, _) =>
+            {
+                UpdateNavPopupOpen();
+                UpdateAttributionPopupOpen();
+                if (_attrLoaded) CollapseAttribution();  // show ⓘ button after re-focus
+            };
             parentWin.LocationChanged += (_, _) => 
             { 
                 // Force immediate reposition when window moves
@@ -492,11 +503,17 @@ public class MlnMapHost : HwndHost
                     _navPopup.IsOpen = false;
                     Dispatcher.BeginInvoke(DispatcherPriority.Render, () => _navPopup.IsOpen = wasOpen);
                 }
-                if (_attributionPopup != null && _attributionText?.Inlines.Count > 0 && IsVisible)
+                if (_attrLoaded && _initialized && IsVisible)
                 {
-                    var wasOpen = _attributionPopup.IsOpen;
-                    _attributionPopup.IsOpen = false;
-                    Dispatcher.BeginInvoke(DispatcherPriority.Render, () => _attributionPopup.IsOpen = wasOpen);
+                    bool attrWasOpen = _attributionPopup?.IsOpen == true;
+                    bool btnWasOpen  = _attrButtonPopup?.IsOpen  == true;
+                    if (_attributionPopup != null) _attributionPopup.IsOpen = false;
+                    if (_attrButtonPopup  != null) _attrButtonPopup.IsOpen  = false;
+                    Dispatcher.BeginInvoke(DispatcherPriority.Render, () =>
+                    {
+                        if (_attributionPopup != null) _attributionPopup.IsOpen = attrWasOpen;
+                        if (_attrButtonPopup  != null) _attrButtonPopup.IsOpen  = btnWasOpen;
+                    });
                 }
             };
         }
@@ -512,6 +529,9 @@ public class MlnMapHost : HwndHost
 
         if (_navPopup         != null) { _navPopup.IsOpen         = false; _navPopup         = null; }
         if (_attributionPopup != null) { _attributionPopup.IsOpen = false; _attributionPopup = null; }
+        if (_attrButtonPopup  != null) { _attrButtonPopup.IsOpen  = false; _attrButtonPopup  = null; }
+        _attrCollapseTimer?.Stop(); _attrCollapseTimer = null;
+        _attrLoaded        = false;
         _attributionText   = null;
         _attributionBorder = null;
 
@@ -646,6 +666,7 @@ public class MlnMapHost : HwndHost
                     _locIndLayer = null;  // invalidated by style reload
                     _style = _map?.GetStyle();
                     _renderNeedsUpdate = true;
+                    _attrLoaded = false;  // new style — attribution sources may differ
                     if (_pendingLocInd.HasValue) ApplyPendingLocationIndicator();
                     RefreshAttribution();
                     StyleLoaded?.Invoke(this, EventArgs.Empty);
@@ -654,9 +675,12 @@ public class MlnMapHost : HwndHost
             case "onDidBecomeIdle":
                 Dispatcher.BeginInvoke(() =>
                 {
-                    if (_attributionText == null || _attributionText.Inlines.Count == 0) RefreshAttribution();
+                    if (!_attrLoaded) RefreshAttribution();
                     DidBecomeIdle?.Invoke(this, EventArgs.Empty);
                 });
+                break;
+            case "onCameraIsChanging":
+                Dispatcher.BeginInvoke(CollapseAttribution);
                 break;
             case "onCameraDidChange":
                 Dispatcher.BeginInvoke(() =>
@@ -921,6 +945,31 @@ public class MlnMapHost : HwndHost
             Placement          = PlacementMode.Relative,
             Child              = _attributionBorder,
         };
+
+        // ── Collapsed ⓘ button ───────────────────────────────────────────────
+        var btnText   = new TextBlock { Text = "\u24d8", FontSize = 12, Foreground = Brushes.Black };
+        var btnBorder = new Border
+        {
+            Background   = new SolidColorBrush(Color.FromArgb(200, 255, 255, 255)),
+            CornerRadius = new CornerRadius(2),
+            Padding      = new Thickness(6, 2, 6, 2),
+            Cursor       = Cursors.Hand,
+            Child        = btnText,
+        };
+        btnBorder.MouseLeftButtonUp += (_, _) => ExpandAttribution();
+        _attrButtonPopup = new Popup
+        {
+            AllowsTransparency = true,
+            StaysOpen          = true,
+            IsHitTestVisible   = true,
+            PlacementTarget    = this,
+            Placement          = PlacementMode.Relative,
+            Child              = btnBorder,
+        };
+
+        _attrCollapseTimer       = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        _attrCollapseTimer.Tick += (_, _) => { _attrCollapseTimer.Stop(); CollapseAttribution(); };
+
         UpdateAttributionPopupOpen();
     }
 
@@ -946,8 +995,36 @@ public class MlnMapHost : HwndHost
             _attributionText.Inlines.AddRange(allInlines);
         }
 
-        PositionAttributionPopup();
-        UpdateAttributionPopupOpen();
+        if (allInlines.Count > 0)
+        {
+            _attrLoaded = true;
+            PositionAttributionPopup();
+            ExpandAttribution();
+        }
+        else
+        {
+            UpdateAttributionPopupOpen();
+        }
+    }
+
+    private void ExpandAttribution()
+    {
+        _attrCollapseTimer?.Stop();
+        if (_attributionPopup == null || !_attrLoaded) return;
+        if (_initialized && IsVisible)
+        {
+            _attributionPopup.IsOpen = true;
+            if (_attrButtonPopup != null) _attrButtonPopup.IsOpen = false;
+        }
+        _attrCollapseTimer?.Start();
+    }
+
+    private void CollapseAttribution()
+    {
+        _attrCollapseTimer?.Stop();
+        if (_attributionPopup != null) _attributionPopup.IsOpen = false;
+        if (_attrButtonPopup != null && _attrLoaded && _initialized && IsVisible)
+            _attrButtonPopup.IsOpen = true;
     }
 
     /// <summary>
@@ -1067,12 +1144,24 @@ public class MlnMapHost : HwndHost
         // PlacementTarget (this HwndHost). Place attribution at bottom with constraint.
         _attributionPopup.HorizontalOffset = leftMargin;
         _attributionPopup.VerticalOffset   = ActualHeight - bottomMargin;
+
+        // Position the collapsed ⓘ button at the same corner
+        if (_attrButtonPopup != null)
+        {
+            _attrButtonPopup.HorizontalOffset = leftMargin;
+            _attrButtonPopup.VerticalOffset   = ActualHeight - bottomMargin;
+        }
     }
 
     private void UpdateAttributionPopupOpen()
     {
-        if (_attributionPopup == null) return;
-        _attributionPopup.IsOpen = _initialized && IsVisible && _attributionText?.Inlines.Count > 0;
+        bool active = _initialized && IsVisible && _attrLoaded;
+        if (!active)
+        {
+            if (_attributionPopup != null) _attributionPopup.IsOpen = false;
+            if (_attrButtonPopup  != null) _attrButtonPopup.IsOpen  = false;
+            _attrCollapseTimer?.Stop();
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

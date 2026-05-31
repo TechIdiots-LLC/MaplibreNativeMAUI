@@ -1,11 +1,12 @@
 ﻿#nullable enable
 
 using Android.Views;
+using Android.Widget;
 using Microsoft.Maui.Handlers;
 
 namespace MapLibreNative.Maui.Handlers;
 
-public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, SurfaceView>
+public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, FrameLayout>
 {
     private MapLibreMapController _controller = null!;
 
@@ -13,7 +14,7 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, SurfaceView>
 
     public MapLibreMapHandler() : base(PropertyMapper) { }
 
-    protected override SurfaceView CreatePlatformView()
+    protected override FrameLayout CreatePlatformView()
     {
         var dpi = (float)(Platform.CurrentActivity?.Resources?.DisplayMetrics?.Density ?? 1f);
         _controller = MapLibreMapFactory.Create(dpi, VirtualView?.StyleUrl);

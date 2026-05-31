@@ -4,6 +4,7 @@ using Foundation;
 using ObjCRuntime;
 using UIKit;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using MapLibreNative.Maui;
 using MapLibreNative.Maui.Handlers.Geometry;
 using Map    = MapLibreNative.Maui.Handlers.Maps.Map;
@@ -25,9 +26,11 @@ public sealed class MapContainerView : UIView
     {
         base.LayoutSubviews();
 
-        // Keep any MTKView subview filling the container.
+        // Keep the Metal view (frame-based) filling the container;
+        // skip views that use Auto Layout (TranslatesAutoresizingMaskIntoConstraints = false).
         foreach (var sv in Subviews)
-            sv.Frame = Bounds;
+            if (sv.TranslatesAutoresizingMaskIntoConstraints)
+                sv.Frame = Bounds;
 
         var scale = UIScreen.MainScreen.Scale;
         int w = Math.Max(1, (int)(Bounds.Width  * scale));
@@ -73,6 +76,12 @@ public class MapLibreMapController : IMapLibreMapController
     private MbglMap?      _map;
     private MbglStyle?    _style;
     private bool          _styleReady;
+    private UITextView    _attrView    = null!;  // expanded full text
+    private UIButton      _attrButton  = null!;  // collapsed ⓘ button
+    private bool          _showAttrControl  = true;
+    private string?       _customAttribution;
+    private int           _attrCollapseGen;       // generation counter for auto-collapse timer
+    private bool          _attrLoaded;            // true once attribution content has been fetched
 
     public MapContainerView View { get; }
 
@@ -100,6 +109,42 @@ public class MapLibreMapController : IMapLibreMapController
         _styleString = styleString;
 
         View = new MapContainerView { OnResized = OnViewResized };
+
+        // Attribution overlay — bottom-right corner, OSM licence compliance.
+        _attrView = new UITextView
+        {
+            BackgroundColor  = UIColor.FromRGBA(255, 255, 255, 180),
+            Editable         = false,
+            ScrollEnabled    = false,
+            Selectable       = true,
+            Hidden           = true,
+            TranslatesAutoresizingMaskIntoConstraints = false,
+        };
+        _attrView.TextContainerInset = new UIEdgeInsets(3, 6, 3, 6);
+        _attrView.Font = UIFont.SystemFontOfSize(11f);
+        _attrView.Layer.CornerRadius = 4f;
+        View.AddSubview(_attrView);
+        NSLayoutConstraint.ActivateConstraints([
+            _attrView.TrailingAnchor.ConstraintEqualTo(View.TrailingAnchor, -8),
+            _attrView.BottomAnchor.ConstraintEqualTo(View.BottomAnchor, -8),
+            _attrView.WidthAnchor.ConstraintLessThanOrEqualTo(View.WidthAnchor, 0.9f),
+        ]);
+
+        // Collapsed ⓘ button — same corner, shown when full text is hidden
+        _attrButton = new UIButton(UIButtonType.System);
+        _attrButton.SetTitle("ⓘ", UIControlState.Normal);
+        _attrButton.BackgroundColor = UIColor.FromRGBA(255, 255, 255, 180);
+        _attrButton.SetTitleColor(UIColor.FromRGBA(50, 50, 50, 220), UIControlState.Normal);
+        _attrButton.TitleLabel!.Font = UIFont.SystemFontOfSize(13f);
+        _attrButton.Layer.CornerRadius = 4f;
+        _attrButton.Hidden = true;
+        _attrButton.TranslatesAutoresizingMaskIntoConstraints = false;
+        _attrButton.TouchUpInside += (_, _) => ExpandAttribution();
+        View.AddSubview(_attrButton);
+        NSLayoutConstraint.ActivateConstraints([
+            _attrButton.TrailingAnchor.ConstraintEqualTo(View.TrailingAnchor, -8),
+            _attrButton.BottomAnchor.ConstraintEqualTo(View.BottomAnchor, -8),
+        ]);
     }
 
     // -- View size -------------------------------------------------------------
@@ -135,6 +180,9 @@ public class MapLibreMapController : IMapLibreMapController
             metalView.Frame = View.Bounds;
             View.InsertSubview(metalView, 0);
         }
+        // Keep the attribution overlays on top of the metal view.
+        View.BringSubviewToFront(_attrView);
+        View.BringSubviewToFront(_attrButton);
 
         _map = new MbglMap(_frontend, _runLoop,
                            pixelRatio: _pixelRatio,
@@ -169,12 +217,18 @@ public class MapLibreMapController : IMapLibreMapController
                 case "onDidFinishLoadingStyle":
                     _styleReady = true;
                     _style = _map?.GetStyle();
+                    _attrLoaded = false;  // new style — sources may have different attribution
+                    RefreshAttribution();
                     OnStyleLoadedReceived?.Invoke(new Style(null));
                     break;
                 case "onDidBecomeIdle":
+                    // TileJSON sources may finish loading after onDidFinishLoadingStyle;
+                    // only retry while we still have no content.
+                    if (!_attrLoaded) RefreshAttribution();
                     OnDidBecomeIdleReceived?.Invoke();
                     break;
                 case "onCameraIsChanging":
+                    CollapseAttribution();
                     OnCameraMoveReceived?.Invoke();
                     break;
                 case "onCameraDidChange":
@@ -228,7 +282,147 @@ public class MapLibreMapController : IMapLibreMapController
     public void SetAttributionButtonGravity(int v)            { }
     public void SetAttributionButtonMargins(int x, int y)     { }
     public void SetShowNavigationControls(bool show)          { }
-    public void SetShowAttributionControl(bool show, string? customAttribution) { }
+    public void SetShowAttributionControl(bool show, string? customAttribution)
+    {
+        _showAttrControl   = show;
+        _customAttribution = customAttribution;
+        RefreshAttribution();
+    }
+
+    // -- Attribution -----------------------------------------------------------
+
+    private void RefreshAttribution()
+    {
+        if (_style == null)
+        {
+            _attrView.Hidden   = true;
+            _attrButton.Hidden = true;
+            return;
+        }
+
+        var parts = new System.Collections.Generic.List<string>(_style.GetSourceAttributions());
+        if (!string.IsNullOrWhiteSpace(_customAttribution))
+            parts.Add(_customAttribution!);
+
+        if (parts.Count == 0 || !_showAttrControl)
+        {
+            _attrView.Hidden   = true;
+            _attrButton.Hidden = true;
+            return;
+        }
+
+        _attrLoaded = true;
+        _attrView.AttributedText = BuildAttributionAttributedString(parts);
+        ExpandAttribution();
+    }
+
+    private void ExpandAttribution()
+    {
+        if (!_showAttrControl || !_attrLoaded) return;
+        _attrView.Hidden   = false;
+        _attrButton.Hidden = true;
+        ScheduleAutoCollapse();
+    }
+
+    private void CollapseAttribution()
+    {
+        // If neither view is showing, there is nothing to collapse.
+        if (_attrView.Hidden && _attrButton.Hidden) return;
+        ++_attrCollapseGen;  // cancel any pending auto-collapse
+        _attrView.Hidden   = true;
+        _attrButton.Hidden = !(_attrLoaded && _showAttrControl);
+    }
+
+    private void ScheduleAutoCollapse()
+    {
+        int gen = ++_attrCollapseGen;
+        // Fire on the main thread after 5 s; generation counter prevents stale
+        // callbacks from firing after ExpandAttribution was called again.
+        Task.Delay(5000).ContinueWith(_ =>
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                if (_attrCollapseGen == gen) CollapseAttribution();
+            }));
+    }
+
+    private static NSAttributedString BuildAttributionAttributedString(
+        System.Collections.Generic.List<string> parts)
+    {
+        var result = new NSMutableAttributedString();
+        var hrefRe = new Regex(
+            @"<a\b[^>]*?href=[""']?([^""'\s>]+)[""']?[^>]*>(.*?)</a>",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        var baseAttrs = new UIStringAttributes
+        {
+            ForegroundColor = UIColor.FromRGBA(50, 50, 50, 220),
+        };
+        var linkAttrs = new UIStringAttributes
+        {
+            ForegroundColor = UIColor.SystemBlue,
+        };
+
+        bool first = true;
+        foreach (var part in parts)
+        {
+            if (!first) result.Append(new NSAttributedString(" | ", baseAttrs));
+            first = false;
+
+            int pos = 0;
+            foreach (Match m in hrefRe.Matches(part))
+            {
+                if (m.Index > pos)
+                    result.Append(new NSAttributedString(
+                        DecodeHtmlEntities(StripHtmlTags(part[pos..m.Index])), baseAttrs));
+
+                string href     = m.Groups[1].Value;
+                string linkText = DecodeHtmlEntities(StripHtmlTags(m.Groups[2].Value));
+                if (Uri.TryCreate(href, UriKind.Absolute, out var uri))
+                {
+                    var la = new UIStringAttributes(linkAttrs.Dictionary.MutableCopy() as Foundation.NSMutableDictionary);
+                    la.Link = new NSUrl(uri.AbsoluteUri);
+                    result.Append(new NSAttributedString(linkText, la));
+                }
+                else
+                {
+                    result.Append(new NSAttributedString(linkText, baseAttrs));
+                }
+                pos = m.Index + m.Length;
+            }
+            if (pos < part.Length)
+                result.Append(new NSAttributedString(
+                    DecodeHtmlEntities(StripHtmlTags(part[pos..])), baseAttrs));
+        }
+        return result;
+    }
+
+    private static string StripHtmlTags(string html)
+    {
+        if (string.IsNullOrEmpty(html)) return html;
+        var sb    = new System.Text.StringBuilder(html.Length);
+        bool inTag = false;
+        foreach (char c in html)
+        {
+            if      (c == '<') inTag = true;
+            else if (c == '>') inTag = false;
+            else if (!inTag)   sb.Append(c);
+        }
+        return sb.ToString().Trim();
+    }
+
+    private static string DecodeHtmlEntities(string text)
+    {
+        if (string.IsNullOrEmpty(text) || !text.Contains('&')) return text;
+        return text
+            .Replace("&amp;",   "&")
+            .Replace("&lt;",    "<")
+            .Replace("&gt;",    ">")
+            .Replace("&quot;",  "\"")
+            .Replace("&#39;",   "'")
+            .Replace("&nbsp;",  "\u00A0")
+            .Replace("&copy;",  "\u00A9")
+            .Replace("&reg;",   "\u00AE")
+            .Replace("&trade;", "\u2122");
+    }
 
     // -- Sources ---------------------------------------------------------------
 

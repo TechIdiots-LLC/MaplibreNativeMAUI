@@ -30,7 +30,7 @@ public class MapLibreMap : StackLayout
     public static readonly BindableProperty AttributionButtonMarginsProperty = BindableProperty.Create(nameof(AttributionButtonMargins), typeof(int?[]), typeof(MapLibreMap));
     /// <summary>Show zoom-in, zoom-out and compass/reset-north buttons. Default <c>true</c>.</summary>
     public static readonly BindableProperty ShowNavigationControlsProperty =
-        BindableProperty.Create(nameof(ShowNavigationControls), typeof(bool), typeof(MapLibreMap), defaultValue: false);
+        BindableProperty.Create(nameof(ShowNavigationControls), typeof(bool), typeof(MapLibreMap), defaultValue: true);
     /// <summary>
     /// Show an always-visible attribution overlay (OSM requires this).
     /// Attributions are collected from all loaded TileJSON sources plus

@@ -105,6 +105,15 @@ public class MapLibreMapController : IMapLibreMapController
     [DllImport("user32.dll")]
     private static extern bool InvalidateRect(IntPtr hWnd, IntPtr lpRect, bool bErase);
 
+    [DllImport("user32.dll")]
+    private static extern IntPtr WindowFromPoint(POINT Point);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetTimer(IntPtr hWnd, IntPtr nIDEvent, uint uElapse, IntPtr lpTimerFunc);
+
+    [DllImport("user32.dll")]
+    private static extern bool KillTimer(IntPtr hWnd, IntPtr uIDEvent);
+
     [DllImport("gdi32.dll")]
     private static extern IntPtr CreateSolidBrush(uint crColor);
 
@@ -127,6 +136,9 @@ public class MapLibreMapController : IMapLibreMapController
     private static extern bool TextOutW(IntPtr hdc, int x, int y, string text, int count);
 
     private const uint DT_LEFT      = 0x00000000;
+    private const uint DT_CENTER    = 0x00000001;
+    private const uint DT_VCENTER   = 0x00000004;
+    private const uint DT_SINGLELINE = 0x00000020;
     private const uint DT_WORDBREAK = 0x00000010;
     private const uint DT_CALCRECT  = 0x00000400;
     private const uint DT_NOPREFIX  = 0x00000800;
@@ -398,7 +410,7 @@ public class MapLibreMapController : IMapLibreMapController
     private IntPtr _navHwnd   = IntPtr.Zero;
     private WndProcDelegate? _navWndProc;   // keep-alive
     private bool   _showNavControls = true;
-    // Attribution — bottom-right corner, auto-width text band
+    // Attribution — bottom-left corner, auto-width text band
     private IntPtr _attrHwnd  = IntPtr.Zero;
     private WndProcDelegate? _attrWndProc;  // keep-alive
     private bool   _showAttrControl = true;
@@ -412,6 +424,10 @@ public class MapLibreMapController : IMapLibreMapController
     private const int AttrPadH        = 6;    // horizontal text padding
     private const int AttrPadV        = 3;    // vertical text padding
     private const int AttrFontSizePt  = 11;
+    // Below this map height (logical px) the nav panel is hidden so its buttons
+    // don't spill past the map edge or stack over the attribution on short maps.
+    // Nav panel = 3×29 px buttons + 2×1 px dividers + ~10 px top margin ≈ 99 px.
+    private const int MinMapHeightForNav = 100;
     private const string OverlayClass = "MapLibreOverlay";
     // Cached overlay positions — skip SetWindowPos when nothing changed (prevents repaint flicker)
     private (int x, int y, int w, int h) _lastNavRect;
@@ -420,6 +436,9 @@ public class MapLibreMapController : IMapLibreMapController
     private string _lastMeasuredAttrText = string.Empty;
     private int    _lastMeasuredAttrInnerW;
     private (int cx, int cy) _cachedAttrMeasure;
+    // Collapse state
+    private bool _attrCollapsed;
+    private System.Threading.Timer? _attrCollapseTimer;
 
     // Pumps the libuv run loop on the UI thread. Without this, async HTTP responses
     // for style/tile downloads are never delivered and StyleLoaded never fires.
@@ -512,6 +531,10 @@ public class MapLibreMapController : IMapLibreMapController
 
         _initialized = true;
         ShowOverlays();  // re-evaluate now that _initialized is true
+
+        // Win32 timer fires WM_TIMER even during modal resize loops where the
+        // DispatcherTimer is paused, ensuring overlays stay above the GL popup.
+        SetTimer(_childHwnd, (IntPtr)OverlayZTimerId, 50, IntPtr.Zero);
         System.Diagnostics.Debug.WriteLine(
             $"[MapLibre.Win] TryInitialize done. childHwnd=0x{_childHwnd.ToInt64():X} " +
             $"size={physW}x{physH} pixelRatio={_pixelRatio} visible={IsWindowVisible(_childHwnd)}");
@@ -616,6 +639,21 @@ public class MapLibreMapController : IMapLibreMapController
         // Keep popup aligned with the View on every tick (track window moves).
         UpdateChildWindowPosition();
 
+        if ((++_diagTick % 60) == 0)
+        {
+            int rectH = -1;
+            if (_childHwnd != IntPtr.Zero) { GetWindowRect(_childHwnd, out var dr); rectH = dr.Bottom - dr.Top; }
+            string who = "n/a";
+            if (_navHwnd != IntPtr.Zero && IsWindowVisible(_navHwnd))
+            {
+                GetWindowRect(_navHwnd, out var nvr);
+                var c = new POINT { X = (nvr.Left + nvr.Right) / 2, Y = (nvr.Top + nvr.Bottom) / 2 };
+                IntPtr at = WindowFromPoint(c);
+                who = at == _navHwnd ? "NAV" : at == _childHwnd ? "CHILD" : $"0x{at.ToInt64():X}";
+            }
+            CtrlDiag($"tick init={_initialized} loaded={View.IsLoaded} viewH={View.ActualHeight} childRectH={rectH} navFits={NavFitsCurrentHeight()} showNav={_showNavControls} navWinVisible={(_navHwnd != IntPtr.Zero && IsWindowVisible(_navHwnd))} topAtNavCenter={who}");
+        }
+
         if (_renderNeedsUpdate && _hGLRC != IntPtr.Zero && _hDC != IntPtr.Zero && _frontend != null)
         {
             _renderNeedsUpdate = false;
@@ -654,6 +692,7 @@ public class MapLibreMapController : IMapLibreMapController
                 _locIndLayer = null;  // style reload invalidates all layer handles
                 _style = _map?.GetStyle();
                 _renderNeedsUpdate = true;
+                _attrCollapsed = false;  // new style: show full text
                 if (_pendingLocInd.HasValue) ApplyPendingLocationIndicator();
                 RefreshAttributionText();  // rebuild attribution from TileJSON sources
                 OnStyleLoadedReceived?.Invoke(new Maps.Style(null));
@@ -666,6 +705,7 @@ public class MapLibreMapController : IMapLibreMapController
                 OnDidBecomeIdleReceived?.Invoke();
                 break;
             case "onCameraIsChanging":
+                CollapseAttribution();
                 OnCameraMoveReceived?.Invoke();
                 break;
             case "onCameraDidChange":
@@ -682,6 +722,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     private void OnViewSizeChanged(Microsoft.Maui.Graphics.Size newSize)
     {
+        CtrlDiag($"OnViewSizeChanged {newSize.Width}x{newSize.Height} init={_initialized}");
         if (!_initialized) return;
         int physW = Math.Max(1, (int)(newSize.Width  * _pixelRatio));
         int physH = Math.Max(1, (int)(newSize.Height * _pixelRatio));
@@ -720,6 +761,7 @@ public class MapLibreMapController : IMapLibreMapController
         int h = Math.Max(1, (int)(View.ActualHeight * _pixelRatio));
 
         SetWindowPos(_childHwnd, IntPtr.Zero, x, y, w, h, SWP_NOACTIVATE | SWP_NOZORDER);
+        RaiseOverlays();     // raise overlays BEFORE positioning so nav is z-top when SWP_SHOWWINDOW triggers WM_PAINT
         PositionOverlays();  // keep overlay windows tracking the map
 
         if (_logPositionCount < 5)
@@ -733,6 +775,22 @@ public class MapLibreMapController : IMapLibreMapController
         }
     }
     private int _logPositionCount;
+
+    /// <summary>
+    /// Re-positions the child GL window and overlays using current XAML coordinates,
+    /// and triggers a repaint. Called after a layout pass settles (e.g. window restore
+    /// from minimize or fullscreen) so TransformToVisual returns up-to-date values and
+    /// the GL surface is re-rendered even when the view size hasn't changed.
+    /// </summary>
+    internal void RefreshPosition()
+    {
+        if (_initialized)
+        {
+            UpdateChildWindowPosition();
+            _renderNeedsUpdate = true;
+            _map?.TriggerRepaint();
+        }
+    }
 
     private IntPtr TryGetXamlIslandHwnd()
     {
@@ -1030,9 +1088,12 @@ public class MapLibreMapController : IMapLibreMapController
             _effectiveParentHwnd, IntPtr.Zero, GetModuleHandleW(IntPtr.Zero), IntPtr.Zero);
         if (_navHwnd != IntPtr.Zero)
         {
-            // Place nav overlay just above the GL child in z-order (not TOPMOST —
+            // Place nav overlay above the GL child in z-order (not TOPMOST —
             // that would render above every other app window on the desktop).
-            SetWindowPos(_navHwnd, _childHwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            // SetWindowPos inserts the window *below* hWndInsertAfter, so anchoring
+            // to _childHwnd would push the overlay behind the map. Use HWND_TOP to
+            // bring it to the front of the owned-window group (above the GL popup).
+            SetWindowPos(_navHwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
             SetWindowLongPtr(_navHwnd, GWLP_WNDPROC,
                 Marshal.GetFunctionPointerForDelegate(_navWndProc));
             // Create the GDI font for nav buttons once.
@@ -1053,8 +1114,9 @@ public class MapLibreMapController : IMapLibreMapController
         {
             // 92% opacity — matches maplibre-gl-js attribution style.
             SetLayeredWindowAttributes(_attrHwnd, 0, 235, LWA_ALPHA);
-            // Place attr overlay just above the GL child (and nav) in z-order.
-            SetWindowPos(_attrHwnd, _childHwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            // Bring attr overlay to the front of the owned-window group (above the
+            // GL popup). See nav note above re: SetWindowPos insert-below semantics.
+            SetWindowPos(_attrHwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
             SetWindowLongPtr(_attrHwnd, GWLP_WNDPROC,
                 Marshal.GetFunctionPointerForDelegate(_attrWndProc));
             int fontH = -(int)(_pixelRatio * AttrFontSizePt);
@@ -1066,21 +1128,58 @@ public class MapLibreMapController : IMapLibreMapController
         ShowOverlays();
     }
 
+    private static readonly string _ctrlDiagPath =
+        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "maplibre_maui_diag.log");
+    private int _diagTick;
+    private static int _ctrlCounter;
+    private readonly int _ctrlId = System.Threading.Interlocked.Increment(ref _ctrlCounter);
+    private bool _diagLastNavVisible;
+    private bool _diagDumpNav = true;
+    private void CtrlDiag(string msg)
+    {
+        try { System.IO.File.AppendAllText(_ctrlDiagPath, $"{DateTime.Now:HH:mm:ss.fff} [ctrl#{_ctrlId} child=0x{_childHwnd.ToInt64():X} nav=0x{_navHwnd.ToInt64():X}] {msg}\r\n"); }
+        catch { /* ignore */ }
+    }
+
     /// <summary>Show/hide overlays based on current enabled flags.</summary>
     private void ShowOverlays()
     {
         if (_navHwnd  != IntPtr.Zero)
         {
-            uint showFlag = (_showNavControls && _initialized)
-                ? WS_VISIBLE : 0;
+            // Also hide the nav panel when the map is too short to fit it.
+            bool navVisible = _showNavControls && _initialized && NavFitsCurrentHeight();
             uint style = (uint)GetWindowLongA(_navHwnd, GWL_STYLE);
-            SetWindowLongPtr(_navHwnd, GWL_STYLE,
-                (IntPtr)((_showNavControls && _initialized)
-                    ? (style | WS_VISIBLE)
-                    : (style & ~WS_VISIBLE)));
+            if (navVisible != _diagLastNavVisible)
+            {
+                _diagLastNavVisible = navVisible;
+                CtrlDiag($"ShowOverlays navVisible -> {navVisible} (styleHadVisible={(style & WS_VISIBLE) != 0})");
+            }
+            // Use SetWindowPos SWP_SHOWWINDOW/SWP_HIDEWINDOW exclusively — do NOT
+            // pre-clear WS_VISIBLE via SetWindowLongPtr before calling SetWindowPos.
+            // Clearing the style bit first causes SetWindowPos to see the window as
+            // already hidden and skip its WM_SHOWWINDOW/DWM notification, leaving
+            // nav pixels on-screen even though IsWindowVisible returns False.
             SetWindowPos(_navHwnd, IntPtr.Zero, 0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW_OR_HIDE(
-                    _showNavControls && _initialized));
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW_OR_HIDE(navVisible));
+            if (navVisible)
+                InvalidateRect(_navHwnd, IntPtr.Zero, true);  // ensure WM_PAINT fires now that nav is z-top
+            if (navVisible && _diagDumpNav)
+            {
+                _diagDumpNav = false;
+                GetWindowRect(_navHwnd, out var nr);
+                int cl = -1, ct = -1, cr = -1, cb = -1;
+                if (_childHwnd != IntPtr.Zero) { GetWindowRect(_childHwnd, out var cwr); cl = cwr.Left; ct = cwr.Top; cr = cwr.Right; cb = cwr.Bottom; }
+                var navCenter = new POINT { X = (nr.Left + nr.Right) / 2, Y = (nr.Top + nr.Bottom) / 2 };
+                IntPtr atPoint = WindowFromPoint(navCenter);
+                string who = atPoint == _navHwnd ? "NAV" : atPoint == _childHwnd ? "CHILD" : $"0x{atPoint.ToInt64():X}";
+                CtrlDiag($"  postShow navVisibleWin={IsWindowVisible(_navHwnd)} childVisibleWin={IsWindowVisible(_childHwnd)} " +
+                         $"navRect=({nr.Left},{nr.Top},{nr.Right},{nr.Bottom}) childRect=({cl},{ct},{cr},{cb}) " +
+                         $"navOwner=0x{GetParent(_navHwnd).ToInt64():X} topAtNavCenter={who}");
+            }
+            else if (!navVisible)
+            {
+                _diagDumpNav = true; // re-arm so the next show is dumped again
+            }
         }
         if (_attrHwnd != IntPtr.Zero)
         {
@@ -1100,6 +1199,19 @@ public class MapLibreMapController : IMapLibreMapController
     private static extern int GetWindowLongA(IntPtr hWnd, int nIndex);
     private const int GWL_STYLE = -16;
 
+    /// <summary>
+    /// Whether the map area is tall enough to display the nav panel. On short
+    /// maps the panel is hidden so it doesn't overflow the edge or collide with
+    /// the attribution band (matches the WPF host behavior).
+    /// </summary>
+    private bool NavFitsCurrentHeight()
+    {
+        if (_childHwnd == IntPtr.Zero) return false;
+        GetWindowRect(_childHwnd, out var wr);
+        int mapH = wr.Bottom - wr.Top;
+        return mapH >= (int)(MinMapHeightForNav * _pixelRatio);
+    }
+
     /// <summary>Position overlays relative to the GL popup window.</summary>
     private void PositionOverlays()
     {
@@ -1110,8 +1222,9 @@ public class MapLibreMapController : IMapLibreMapController
 
         int marginPx  = (int)(NavPanelMargin * _pixelRatio);
         int btnSizePx = (int)(NavButtonSize  * _pixelRatio);
+        bool navFits  = mapH >= (int)(MinMapHeightForNav * _pixelRatio);
 
-        if (_navHwnd != IntPtr.Zero && _showNavControls)
+        if (_navHwnd != IntPtr.Zero && _showNavControls && navFits)
         {
             int panelH = btnSizePx * 3 + 2;  // +2 for separator lines
             int navX   = wr.Left + mapW - btnSizePx - marginPx;
@@ -1134,23 +1247,29 @@ public class MapLibreMapController : IMapLibreMapController
             int maxAttrW = Math.Max(120, mapW - marginPx * 2);
             int innerW   = maxAttrW - padH * 2;
 
-            // Only re-measure via GDI when text or available width actually changes.
-            if (_attrText != _lastMeasuredAttrText || innerW != _lastMeasuredAttrInnerW)
+            // Use displayed text (full or collapsed ⓘ) for measurement.
+            string measureText  = _attrCollapsed ? "ⓘ" : _attrText;
+            uint   measureFlags = _attrCollapsed
+                ? DT_CENTER | DT_SINGLELINE | DT_CALCRECT | DT_NOPREFIX
+                : DT_LEFT   | DT_WORDBREAK  | DT_CALCRECT | DT_NOPREFIX;
+
+            // Only re-measure via GDI when displayed text or available width changes.
+            if (measureText != _lastMeasuredAttrText || innerW != _lastMeasuredAttrInnerW)
             {
                 var hdc     = GetDC(IntPtr.Zero);
                 var oldFont = SelectObject(hdc, _attrFont != IntPtr.Zero ? _attrFont : IntPtr.Zero);
                 var calcRc  = new RECT { Left = 0, Top = 0, Right = innerW, Bottom = 0 };
-                DrawTextW(hdc, _attrText, _attrText.Length, ref calcRc, DT_LEFT | DT_WORDBREAK | DT_CALCRECT | DT_NOPREFIX);
+                DrawTextW(hdc, measureText, measureText.Length, ref calcRc, measureFlags);
                 SelectObject(hdc, oldFont);
                 ReleaseDC(IntPtr.Zero, hdc);
-                _cachedAttrMeasure     = (calcRc.Right, calcRc.Bottom);
-                _lastMeasuredAttrText  = _attrText;
+                _cachedAttrMeasure      = (calcRc.Right, calcRc.Bottom);
+                _lastMeasuredAttrText   = measureText;
                 _lastMeasuredAttrInnerW = innerW;
             }
 
             int attrW = _cachedAttrMeasure.cx + padH * 2;
             int attrH = _cachedAttrMeasure.cy + padV * 2;
-            int attrX = wr.Left + mapW - attrW - marginPx;
+            int attrX = wr.Left + marginPx;                       // bottom-left, avoids nav overlap
             int attrY = wr.Top  + mapH - attrH - marginPx;
             var ar = (attrX, attrY, attrW, attrH);
             if (ar != _lastAttrRect)
@@ -1160,6 +1279,10 @@ public class MapLibreMapController : IMapLibreMapController
                 InvalidateRect(_attrHwnd, IntPtr.Zero, true);
             }
         }
+
+        // Re-evaluate nav visibility — the map may have shrunk below the
+        // minimum height (or grown back) since the last call.
+        ShowOverlays();
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -1170,6 +1293,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     private void DestroyOverlays()
     {
+        if (_childHwnd != IntPtr.Zero) KillTimer(_childHwnd, (IntPtr)OverlayZTimerId);
         if (_navFont  != IntPtr.Zero) { DeleteObject(_navFont);  _navFont  = IntPtr.Zero; }
         if (_attrFont != IntPtr.Zero) { DeleteObject(_attrFont); _attrFont = IntPtr.Zero; }
         if (_navHwnd  != IntPtr.Zero) { DestroyWindow(_navHwnd);  _navHwnd  = IntPtr.Zero; }
@@ -1178,14 +1302,19 @@ public class MapLibreMapController : IMapLibreMapController
         _attrWndProc = null;
         _lastNavRect  = default;
         _lastAttrRect = default;
+        _attrCollapseTimer?.Dispose(); _attrCollapseTimer = null;
     }
 
     // ── Nav overlay WndProc ────────────────────────────────────────────────────
 
     private const uint WM_PAINT   = 0x000F;
     private const uint WM_ERASEBKGND = 0x0014;
-    private const uint WM_NCHITTEST  = 0x0084;
-    private const uint WM_SETCURSOR  = 0x0020;
+    private const uint WM_NCHITTEST   = 0x0084;
+    private const uint WM_SETCURSOR   = 0x0020;
+    private const uint WM_SHOWWINDOW  = 0x0018;
+    private const uint WM_TIMER       = 0x0113;
+    private const int  SW_PARENTOPENING = 3;  // lParam for WM_SHOWWINDOW when owner restores from minimize
+    private const uint OverlayZTimerId = 42;
     private static readonly IntPtr HTCLIENT = new(1);
 
     private IntPtr NavOverlayWndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
@@ -1281,6 +1410,10 @@ public class MapLibreMapController : IMapLibreMapController
             case WM_PAINT:
                 PaintAttribution(hWnd);
                 return IntPtr.Zero;
+            case WM_LBUTTONUP:
+                if (_attrCollapsed) ExpandAttribution();
+                else                CollapseAttribution();
+                return IntPtr.Zero;
             case WM_NCHITTEST: return HTCLIENT;
         }
         return DefWindowProcA(hWnd, msg, wParam, lParam);
@@ -1311,7 +1444,11 @@ public class MapLibreMapController : IMapLibreMapController
             SetTextColor(hdc, 0x00555555);
             var oldFont = SelectObject(hdc, _attrFont != IntPtr.Zero ? _attrFont : IntPtr.Zero);
             var textRc  = new RECT { Left = padH, Top = padV, Right = rc.Right - padH, Bottom = rc.Bottom - padV };
-            DrawTextW(hdc, _attrText, _attrText.Length, ref textRc, DT_LEFT | DT_WORDBREAK | DT_NOPREFIX);
+            string paintText = _attrCollapsed ? "ⓘ" : _attrText;
+            uint   dtFlags   = _attrCollapsed
+                ? DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX
+                : DT_LEFT   | DT_WORDBREAK | DT_NOPREFIX;
+            DrawTextW(hdc, paintText, paintText.Length, ref textRc, dtFlags);
             SelectObject(hdc, oldFont);
         }
         finally { EndPaint(hWnd, ref ps); }
@@ -1366,10 +1503,12 @@ public class MapLibreMapController : IMapLibreMapController
             sb.Append(StripHtmlTags(part));
         }
         _attrText = sb.ToString();
-        if (_attrHwnd != IntPtr.Zero && _showAttrControl)
+        if (_attrText.Length > 0)
         {
-            PositionOverlays();
-            InvalidateRect(_attrHwnd, IntPtr.Zero, false);
+            ExpandAttribution();
+        }
+        else if (_attrHwnd != IntPtr.Zero)
+        {
             ShowOverlays();
         }
     }
@@ -1413,15 +1552,72 @@ public class MapLibreMapController : IMapLibreMapController
     {
         _showAttrControl   = show;
         _customAttribution = customAttribution;
+        _attrCollapsed     = false;  // reset collapse when attribution settings change
         RefreshAttributionText();
     }
 
+    private void ExpandAttribution()
+    {
+        _attrCollapsed = false;
+        if (_attrHwnd != IntPtr.Zero && _showAttrControl)
+        {
+            PositionOverlays();
+            InvalidateRect(_attrHwnd, IntPtr.Zero, false);
+            ShowOverlays();
+        }
+        ScheduleAutoCollapse();
+    }
+
+    private void CollapseAttribution()
+    {
+        _attrCollapseTimer?.Dispose();
+        _attrCollapseTimer = null;
+        if (_attrCollapsed) return;
+        _attrCollapsed = true;
+        if (_attrHwnd != IntPtr.Zero && _showAttrControl && _attrText.Length > 0)
+        {
+            PositionOverlays();
+            InvalidateRect(_attrHwnd, IntPtr.Zero, false);
+        }
+    }
+
+    private void ScheduleAutoCollapse()
+    {
+        _attrCollapseTimer?.Dispose();
+        _attrCollapseTimer = new System.Threading.Timer(
+            _ => CollapseAttribution(), null,
+            TimeSpan.FromSeconds(5), Timeout.InfiniteTimeSpan);
+    }
+
     // ── Popup WndProc (mouse input) ────────────────────────────────────────────
+
+    /// <summary>Re-asserts overlay HWNDs above the GL popup in z-order.</summary>
+    private void RaiseOverlays()
+    {
+        // HWND_TOP places each overlay at the front of the owned-window group, i.e.
+        // above the GL popup. Anchoring to _childHwnd would insert them *below* it
+        // (SetWindowPos places hwnd after hWndInsertAfter), hiding them behind the map.
+        if (_navHwnd  != IntPtr.Zero)
+            SetWindowPos(_navHwnd,  HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        if (_attrHwnd != IntPtr.Zero)
+            SetWindowPos(_attrHwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    }
 
     private IntPtr PopupWndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
         switch (msg)
         {
+            case WM_TIMER when (uint)wParam.ToInt64() == OverlayZTimerId:
+                RaiseOverlays();
+                return IntPtr.Zero;
+
+            case WM_SHOWWINDOW when wParam != IntPtr.Zero && (int)lParam.ToInt64() == SW_PARENTOPENING:
+                // Owner (main XAML window) restored from minimize.  WinUI SizeChanged won't fire
+                // if the window size is unchanged, so we trigger the repaint directly here.
+                _renderNeedsUpdate = true;
+                _map?.TriggerRepaint();
+                break;
+
             case WM_SETCURSOR:
             {
                 // Override the cursor for the map client area.
