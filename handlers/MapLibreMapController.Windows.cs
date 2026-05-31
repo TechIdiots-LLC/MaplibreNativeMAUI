@@ -776,6 +776,16 @@ public class MapLibreMapController : IMapLibreMapController
     }
     private int _logPositionCount;
 
+    /// <summary>
+    /// Re-positions the child GL window and overlays using current XAML coordinates.
+    /// Called after a layout pass settles (e.g. window restore from fullscreen) so
+    /// TransformToVisual returns up-to-date values.
+    /// </summary>
+    internal void RefreshPosition()
+    {
+        if (_initialized) UpdateChildWindowPosition();
+    }
+
     private IntPtr TryGetXamlIslandHwnd()
     {
         // Strategy: WinUI 3 hosts XAML content inside a child HWND of the top-level

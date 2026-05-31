@@ -98,6 +98,10 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
                     root.InvalidateMeasure();
                     root.UpdateLayout();
                     HDiag($"PostLayout rootActual={root.ActualWidth}x{root.ActualHeight}");
+                    // Re-position GL child and overlays now that XAML coordinates are
+                    // stable. Needed after window restore from fullscreen where
+                    // OnViewSizeChanged fires before the layout pass settles.
+                    _controller?.RefreshPosition();
                 }
             });
     }
