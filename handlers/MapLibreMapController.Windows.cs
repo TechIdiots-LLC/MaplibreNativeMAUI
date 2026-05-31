@@ -1309,9 +1309,11 @@ public class MapLibreMapController : IMapLibreMapController
 
     private const uint WM_PAINT   = 0x000F;
     private const uint WM_ERASEBKGND = 0x0014;
-    private const uint WM_NCHITTEST  = 0x0084;
-    private const uint WM_SETCURSOR  = 0x0020;
-    private const uint WM_TIMER      = 0x0113;
+    private const uint WM_NCHITTEST   = 0x0084;
+    private const uint WM_SETCURSOR   = 0x0020;
+    private const uint WM_SHOWWINDOW  = 0x0018;
+    private const uint WM_TIMER       = 0x0113;
+    private const int  SW_PARENTOPENING = 3;  // lParam for WM_SHOWWINDOW when owner restores from minimize
     private const uint OverlayZTimerId = 42;
     private static readonly IntPtr HTCLIENT = new(1);
 
@@ -1608,6 +1610,13 @@ public class MapLibreMapController : IMapLibreMapController
             case WM_TIMER when (uint)wParam.ToInt64() == OverlayZTimerId:
                 RaiseOverlays();
                 return IntPtr.Zero;
+
+            case WM_SHOWWINDOW when wParam != IntPtr.Zero && (int)lParam.ToInt64() == SW_PARENTOPENING:
+                // Owner (main XAML window) restored from minimize.  WinUI SizeChanged won't fire
+                // if the window size is unchanged, so we trigger the repaint directly here.
+                _renderNeedsUpdate = true;
+                _map?.TriggerRepaint();
+                break;
 
             case WM_SETCURSOR:
             {
