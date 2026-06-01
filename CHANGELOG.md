@@ -7,6 +7,13 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 3.0.1
+### ✨ Features and improvements
+
+### 🐞 Bug fixes
+
+- Android ios attribution ([#7](https://github.com/acalcutt/maplibre-maui/pull/7)) (@acalcutt)
+
 ## 3.0.0
 ### ⚠️ Breaking changes
 - **Package rename** — All NuGet packages renamed from `Maui.MapLibre.*` to `MapLibreNative.Maui.*` because the `Maui.MapLibre` prefix is reserved on NuGet.org by another party. Update `PackageReference` entries:
