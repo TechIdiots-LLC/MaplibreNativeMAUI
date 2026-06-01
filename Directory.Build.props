@@ -1,0 +1,22 @@
+<Project>
+
+  <!--
+    Shared NuGet metadata applied to every packable project in this repo.
+    Individual .csproj files set <PackageId> and project-specific properties.
+  -->
+  <PropertyGroup Condition="'$(IsPackable)' != 'false'">
+    <Authors>Andrew Calcutt</Authors>
+    <PackageLicenseExpression>BSD-2-Clause</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/acalcutt/maplibre-maui</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <!-- Pack the repo-root README into every NuGet package. -->
+  <ItemGroup Condition="'$(IsPackable)' != 'false'">
+    <None Include="$(MSBuildThisFileDirectory)README.md"
+          Pack="true"
+          PackagePath="\" />
+  </ItemGroup>
+
+</Project>

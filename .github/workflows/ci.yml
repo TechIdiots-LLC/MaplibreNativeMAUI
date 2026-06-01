@@ -264,6 +264,38 @@ jobs:
       # pack job (TFM restore) and native-apple.yml (native library compilation).
       # Re-enable once GitHub Actions ships a macOS image with Xcode 26.5.
 
+      # - name: Build sample (iOS simulator)
+      #   run: |
+      #     dotnet build sample/MauiSample.csproj \
+      #       -f net9.0-ios \
+      #       -r iossimulator-x64 \
+      #       -c Release \
+      #       -p:EnableWindowsTargeting=true \
+      #       -p:UseLocalPackages=true
+
+      # - name: Upload iOS simulator app
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: sample-ios-simulator
+      #     path: sample/bin/Release/net9.0-ios/iossimulator-x64/**/*.app
+      #     retention-days: 7
+
+      # - name: Build sample (macCatalyst)
+      #   run: |
+      #     dotnet build sample/MauiSample.csproj \
+      #       -f net9.0-maccatalyst \
+      #       -c Release \
+      #       -p:EnableCodeSigning=false \
+      #       -p:EnableWindowsTargeting=true \
+      #       -p:UseLocalPackages=true
+
+      # - name: Upload macCatalyst app
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: sample-maccatalyst
+      #     path: sample/bin/Release/net9.0-maccatalyst/**/*.app
+      #     retention-days: 7
+
   # ── Sample app build — Windows (separate job, needs a Windows runner) ──────
   sample-windows:
     name: Sample — Windows
