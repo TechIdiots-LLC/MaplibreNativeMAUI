@@ -7,17 +7,31 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 3.0.3
+### ✨ Features and improvements
+- **NuGet package metadata** — New `Directory.Build.props` at the repo root injects `PackageLicenseExpression=BSD-2-Clause`, `PackageReadmeFile=README.md`, `RepositoryUrl`, and `Authors` into all four NuGet packages, resolving NuGet.org "missing license" and "missing readme" warnings
+- **CI: Android APK sample** — CI workflow now builds an Android APK from `MauiSample` on `macos-latest` and uploads it as a build artifact; release workflow adds a `samples-mobile` job that builds the Android APK and attaches it to the GitHub Release
+
+### 🐞 Bug fixes
+
 ## 3.0.2
 ### ✨ Features and improvements
 
 ### 🐞 Bug fixes
+- **WPF attribution blank text** — `_attributionPopup` now sets `AllowsTransparency=false`; layered (transparent) WPF popups have a known rendering defect where `Hyperlink`/`Run` inlines inside a `TextBlock` fail to paint, leaving the attribution visually blank
+- **WPF attribution positioning** — Attribution and ⓘ button popups now subscribe to `SizeChanged` on their `Border` children and reposition using the actual rendered height, replacing the previous fixed-constant bottom offset
+- **WPF minimize/restore repaint** — `MlnMapHost` now handles the parent window's `StateChanged` event and sets `_renderNeedsUpdate = true` when the window is restored from minimized, ensuring the GL surface repaints when the restored size is unchanged
 
 ## 3.0.1
 ### ✨ Features and improvements
+- **Attribution overlay — Android** — `MapLibreMapController` now wraps the `SurfaceView` in a `FrameLayout` and overlays a `TextView` (bottom-right corner) with clickable hyperlinks built from source HTML via `SpannableStringBuilder`/`URLSpan`; a collapsible ⓘ button is shown after the full text auto-collapses (5 seconds or on camera movement) ([#7](https://github.com/acalcutt/maplibre-maui/pull/7))
+- **Attribution overlay — iOS/macCatalyst** — A `UITextView` (bottom-right, tappable `NSAttributedString` links) and a `UIButton` ⓘ toggle are added as Auto Layout subviews of `MapContainerView`; `LayoutSubviews` is updated to skip Auto Layout views when resizing the Metal surface ([#7](https://github.com/acalcutt/maplibre-maui/pull/7))
+- **Attribution overlay — Windows MAUI** — Windows `MapLibreMapController` renders an attribution text band and a collapsible ⓘ button as child HWNDs; a Win32 `SetTimer`/`WM_TIMER` keeps the overlays z-ordered above the GL surface during modal resize loops ([#7](https://github.com/acalcutt/maplibre-maui/pull/7))
+- **Attribution overlay — WPF** — `MlnMapHost` replaces the plain-text attribution with clickable `Hyperlink` inlines in a `TextBlock`; adds a second collapsible ⓘ `Popup` that appears after the full attribution auto-collapses (5-second `DispatcherTimer`) or when `onCameraIsChanging` fires ([#7](https://github.com/acalcutt/maplibre-maui/pull/7))
+- **Windows MAUI maximize/restore layout** — `MapLibreMapHandler.Windows` subscribes to the host `Window.SizeChanged` event and defers `InvalidateMeasure` at `DispatcherQueuePriority.Low` so the map view and nav panel resize correctly on window maximize/restore without requiring a tab switch
+- **Sample: custom style URL** — MAUI sample (`BasicMapPage`) adds a custom style URL `Entry` + Apply button; WPF sample (`WpfExample`) adds a second toolbar row with a preset style picker `ComboBox` and a freeform URL `TextBox`
 
 ### 🐞 Bug fixes
-
-- Android ios attribution ([#7](https://github.com/acalcutt/maplibre-maui/pull/7)) (@acalcutt)
 
 ## 3.0.0
 ### ⚠️ Breaking changes
@@ -31,8 +45,11 @@
   - `Maui.MapLibre.Native.Upstream` → `MapLibreNative.Maui` (Vulkan package now shares the same namespace as the base package)
   - `Maui.MapLibre.WPF` → `MapLibreNative.Maui.WPF`
   - `Maui.MapLibre.Handlers` (and sub-namespaces) → `MapLibreNative.Maui.Handlers`
+- **Old binding layer removed** — `bindings/MlnMap.cs`, `MlnRuntime.cs`, and `NativeMethods.Mln.cs` (legacy compatibility wrappers) are deleted; callers must use the `MbglMap`/`MbglRunLoop`/`NativeMethods` types directly
 
 ### ✨ Features and improvements
+- **Documentation site** — DocFX GitHub Pages site added under `docs/`; published automatically via new `docs.yml` workflow on every push to `main`
+- **Vulkan package alignment** — `MapLibreNative.Maui.Vulkan` now shares the same `mln-cabi` ABI and `MapLibreNative.Maui` namespace as the base package; FFI sketch files removed
 - **WPF attribution plain text** — `MlnMapHost` now strips HTML tags and decodes HTML entities (`&copy;` → ©, `&amp;`, `&lt;`, `&gt;`, `&quot;`, `&nbsp;`, `&reg;`, `&trade;`) before displaying the attribution string, so the popup shows readable text instead of raw markup
 - **WPF attribution bounds** — Attribution popup `MaxWidth` is constrained to the map width minus margins; if the text would overflow the right edge the popup is repositioned to stay within the control bounds
 - **WPF popup follow-window** — Navigation and attribution popups now reopen via `Dispatcher.BeginInvoke(DispatcherPriority.Render)` on `LocationChanged` so they track the window when it is dragged to a new screen position
