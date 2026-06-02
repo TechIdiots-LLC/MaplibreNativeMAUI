@@ -21,6 +21,13 @@ jobs:
             extra-flags: ""
             artifact: native-ios-arm64
 
+          - name: iOS Simulator arm64
+            cmake-system: iOS
+            cmake-sysroot: iphonesimulator
+            cmake-archs: arm64
+            extra-flags: ""
+            artifact: native-iossimulator-arm64
+
           - name: macCatalyst arm64+x64
             cmake-system: Darwin
             cmake-sysroot: macosx

@@ -86,17 +86,33 @@ jobs:
           N=bindings/native
           mkdir -p $N/win-x64 $N/win-arm64
           mkdir -p $N/android-arm64 $N/android-x64
-          mkdir -p $N/ios-arm64 $N/maccatalyst
+          mkdir -p $N/ios-arm64 $N/iossimulator-arm64 $N/maccatalyst
 
             find native-artifacts/native-windows-x64 -name "mln-cabi.dll" -exec cp {} $N/win-x64/ \;
             find native-artifacts/native-windows-arm64 -name "mln-cabi.dll" -exec cp {} $N/win-arm64/ \;
             find native-artifacts/native-android-arm64-v8a -name "libmln-cabi.so" -exec cp {} $N/android-arm64/ \;
             find native-artifacts/native-android-x86_64 -name "libmln-cabi.so" -exec cp {} $N/android-x64/ \;
             find native-artifacts/native-ios-arm64 -name "libmln-cabi.a" -exec cp {} $N/ios-arm64/ \;
+            find native-artifacts/native-iossimulator-arm64 -name "libmln-cabi.a" -exec cp {} $N/iossimulator-arm64/ \;
             find native-artifacts/native-maccatalyst -name "libmln-cabi.a" -exec cp {} $N/maccatalyst/ \;
 
           echo "Native libs arranged:"
           find $N -type f
+      - name: Create iOS XCFramework
+        run: |
+          N=bindings/native
+          mkdir -p $N/ios
+          XCFW_ARGS=""
+          [ -f $N/ios-arm64/libmln-cabi.a ]         && XCFW_ARGS="$XCFW_ARGS -library $N/ios-arm64/libmln-cabi.a"
+          [ -f $N/iossimulator-arm64/libmln-cabi.a ] && XCFW_ARGS="$XCFW_ARGS -library $N/iossimulator-arm64/libmln-cabi.a"
+          if [ -n "$XCFW_ARGS" ]; then
+            xcodebuild -create-xcframework \
+              $XCFW_ARGS \
+              -output $N/ios/libmln-cabi.xcframework
+            echo "XCFramework created at $N/ios/libmln-cabi.xcframework"
+          else
+            echo "No iOS libraries found; skipping XCFramework creation."
+          fi
       - name: Restore workloads
         run: dotnet workload restore maplibre-maui.sln
 

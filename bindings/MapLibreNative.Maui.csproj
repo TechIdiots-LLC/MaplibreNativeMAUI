@@ -83,8 +83,15 @@
   </ItemGroup>
 
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">
+    <!-- Prefer XCFramework: bundles both device (ios-arm64) and simulator (iossimulator-arm64) slices. -->
+    <NativeReference Include="$(_MbglNativeDir)ios\libmln-cabi.xcframework"
+                     Condition="Exists('$(_MbglNativeDir)ios\libmln-cabi.xcframework')">
+      <Kind>Static</Kind>
+      <ForceLoad>True</ForceLoad>
+    </NativeReference>
+    <!-- Fallback for local dev builds that only have the device .a (no XCFramework). -->
     <NativeReference Include="$(_MbglNativeDir)ios-arm64\libmln-cabi.a"
-                     Condition="Exists('$(_MbglNativeDir)ios-arm64\libmln-cabi.a')">
+                     Condition="Exists('$(_MbglNativeDir)ios-arm64\libmln-cabi.a') And !Exists('$(_MbglNativeDir)ios\libmln-cabi.xcframework')">
       <Kind>Static</Kind>
       <ForceLoad>True</ForceLoad>
     </NativeReference>
