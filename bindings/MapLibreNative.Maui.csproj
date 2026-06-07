@@ -56,6 +56,38 @@
       <Pack>true</Pack>
       <PackagePath>runtimes/win-arm64/native</PackagePath>
     </None>
+
+    <!--
+      iOS XCFramework – pack every file inside the bundle so the directory
+      structure is preserved under build/native/ios/libmln-cabi.xcframework/.
+      The .targets file at build/net9.0-ios/ references this path.
+    -->
+    <None Include="$(_MbglNativeDir)ios\libmln-cabi.xcframework\**"
+          Condition="Exists('$(_MbglNativeDir)ios\libmln-cabi.xcframework')">
+      <Pack>true</Pack>
+      <PackagePath>build/native/ios/libmln-cabi.xcframework/%(RecursiveDir)%(Filename)%(Extension)</PackagePath>
+    </None>
+
+    <!-- macCatalyst static library -->
+    <None Include="$(_MbglNativeDir)maccatalyst\libmln-cabi.a"
+          Condition="Exists('$(_MbglNativeDir)maccatalyst\libmln-cabi.a')">
+      <Pack>true</Pack>
+      <PackagePath>build/native/maccatalyst</PackagePath>
+    </None>
+
+    <!--
+      MSBuild .targets files that re-add NativeReference when the package is
+      consumed (NativeReference items in a class library do not propagate
+      through NuGet automatically; a build .targets file is required).
+    -->
+    <None Include="$(MSBuildThisFileDirectory)build\net9.0-ios\MapLibreNative.Maui.targets">
+      <Pack>true</Pack>
+      <PackagePath>build/net9.0-ios</PackagePath>
+    </None>
+    <None Include="$(MSBuildThisFileDirectory)build\net9.0-maccatalyst\MapLibreNative.Maui.targets">
+      <Pack>true</Pack>
+      <PackagePath>build/net9.0-maccatalyst</PackagePath>
+    </None>
   </ItemGroup>
 
   <!-- CopyToOutputDirectory only applies when actually building for Windows.

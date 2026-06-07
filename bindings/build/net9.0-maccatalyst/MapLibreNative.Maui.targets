@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Propagates the native static library to any project that consumes the
+  MapLibreNative.Maui NuGet package on net9.0-maccatalyst.
+  $(MSBuildThisFileDirectory) resolves to build/net9.0-maccatalyst/ inside
+  the package cache; ../native/maccatalyst/ is where the .a is packaged.
+-->
+<Project>
+  <ItemGroup>
+    <NativeReference Include="$(MSBuildThisFileDirectory)../native/maccatalyst/libmln-cabi.a">
+      <Kind>Static</Kind>
+      <ForceLoad>True</ForceLoad>
+    </NativeReference>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Propagates the native static XCFramework to any project that consumes the
+  MapLibreNative.Maui NuGet package on net9.0-ios (device AND simulator).
+  $(MSBuildThisFileDirectory) resolves to build/net9.0-ios/ inside the
+  package cache; ../native/ios/ is where the xcframework is packaged.
+-->
+<Project>
+  <ItemGroup>
+    <NativeReference Include="$(MSBuildThisFileDirectory)../native/ios/libmln-cabi.xcframework">
+      <Kind>Static</Kind>
+      <ForceLoad>True</ForceLoad>
+    </NativeReference>
+  </ItemGroup>
+</Project>
