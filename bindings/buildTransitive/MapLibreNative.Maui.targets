@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Re-adds the native static libraries shipped by MapLibreNative.Maui so that
+  any consumer (direct or transitive) gets them linked into the final app.
+
+  NativeReference items in a class library do not propagate through NuGet
+  automatically; a buildTransitive .targets file is the standard workaround.
+
+  Placed in buildTransitive/ (no TFM subfolder) to avoid NU1012
+  "missing platform version" that NuGet 6+ raises for subfolders like
+  build/net9.0-ios/ when no explicit platform version is present.
+
+  $(MSBuildThisFileDirectory) resolves to <package>/buildTransitive/ in the
+  NuGet cache; native files live alongside at native/ios/ and native/maccatalyst/.
+-->
+<Project>
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">
+    <NativeReference Include="$(MSBuildThisFileDirectory)native/ios/libmln-cabi.xcframework">
+      <Kind>Static</Kind>
+      <ForceLoad>True</ForceLoad>
+    </NativeReference>
+  </ItemGroup>
+
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">
+    <NativeReference Include="$(MSBuildThisFileDirectory)native/maccatalyst/libmln-cabi.a">
+      <Kind>Static</Kind>
+      <ForceLoad>True</ForceLoad>
+    </NativeReference>
+  </ItemGroup>
+</Project>

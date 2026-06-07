@@ -59,34 +59,35 @@
 
     <!--
       iOS XCFramework – pack every file inside the bundle so the directory
-      structure is preserved under build/native/ios/libmln-cabi.xcframework/.
-      The .targets file at build/net9.0-ios/ references this path.
+      structure is preserved under buildTransitive/native/ios/libmln-cabi.xcframework/.
+      The .targets file at buildTransitive/ references this path.
     -->
     <None Include="$(_MbglNativeDir)ios\libmln-cabi.xcframework\**"
           Condition="Exists('$(_MbglNativeDir)ios\libmln-cabi.xcframework')">
       <Pack>true</Pack>
-      <PackagePath>build/native/ios/libmln-cabi.xcframework/%(RecursiveDir)%(Filename)%(Extension)</PackagePath>
+      <PackagePath>buildTransitive/native/ios/libmln-cabi.xcframework/%(RecursiveDir)%(Filename)%(Extension)</PackagePath>
     </None>
 
     <!-- macCatalyst static library -->
     <None Include="$(_MbglNativeDir)maccatalyst\libmln-cabi.a"
           Condition="Exists('$(_MbglNativeDir)maccatalyst\libmln-cabi.a')">
       <Pack>true</Pack>
-      <PackagePath>build/native/maccatalyst</PackagePath>
+      <PackagePath>buildTransitive/native/maccatalyst</PackagePath>
     </None>
 
     <!--
-      MSBuild .targets files that re-add NativeReference when the package is
-      consumed (NativeReference items in a class library do not propagate
-      through NuGet automatically; a build .targets file is required).
+      Single MSBuild .targets file placed in buildTransitive/ (no TFM subfolder).
+      - buildTransitive ensures imports flow to transitive consumers (the sample
+        app depends on MapLibreNative.Maui.Handlers, not directly on this package).
+      - No TFM-versioned subfolder avoids NU1012 "missing platform version" that
+        NuGet 6+ raises for paths like build/net9.0-ios/ without an explicit
+        platform version number (e.g. net9.0-ios17.0).
+      - TFM conditions inside the targets file select ios vs maccatalyst at
+        evaluation time.
     -->
-    <None Include="$(MSBuildThisFileDirectory)build\net9.0-ios\MapLibreNative.Maui.targets">
+    <None Include="$(MSBuildThisFileDirectory)buildTransitive\MapLibreNative.Maui.targets">
       <Pack>true</Pack>
-      <PackagePath>build/net9.0-ios</PackagePath>
-    </None>
-    <None Include="$(MSBuildThisFileDirectory)build\net9.0-maccatalyst\MapLibreNative.Maui.targets">
-      <Pack>true</Pack>
-      <PackagePath>build/net9.0-maccatalyst</PackagePath>
+      <PackagePath>buildTransitive</PackagePath>
     </None>
   </ItemGroup>
 
