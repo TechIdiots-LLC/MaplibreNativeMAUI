@@ -29,10 +29,10 @@ jobs:
             artifact: native-iossimulator-arm64
 
           - name: macCatalyst arm64+x64
-            cmake-system: iOS
+            cmake-system: Darwin
             cmake-sysroot: macosx
             cmake-archs: "x86_64;arm64"
-            extra-flags: -DCMAKE_XCODE_ATTRIBUTE_SUPPORTS_MACCATALYST=YES -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DMLN_WITH_GLFW=OFF
+            extra-flags: -DCMAKE_XCODE_ATTRIBUTE_SUPPORTS_MACCATALYST=YES -DMLN_WITH_GLFW=OFF
             artifact: native-maccatalyst
 
     steps:
@@ -83,6 +83,23 @@ jobs:
           libtool -static -o "${CABI}.merged" ${ALL_LIBS}
           mv "${CABI}.merged" "$CABI"
           echo "Merged object count: $(ar -t "$CABI" | wc -l)"
+
+      - name: Retag archive as macCatalyst
+        # cmake + Xcode generator with CMAKE_SYSTEM_NAME=Darwin builds macOS-tagged
+        # objects even with SUPPORTS_MACCATALYST=YES, because vendor sub-project
+        # targets may not inherit that attribute.  Use vtool to re-stamp every
+        # object in the merged archive with the correct macCatalyst platform tag.
+        if: ${{ matrix.artifact == 'native-maccatalyst' }}
+        run: |
+          CABI=$(find build -name "libmln-cabi.a" | head -1)
+          echo "Retagging $CABI as macCatalyst (minos 15.0)..."
+          xcrun vtool \
+            -set-build-version maccatalyst 15.0 15.0 \
+            -replace \
+            -output "${CABI}.retagged" "$CABI"
+          mv "${CABI}.retagged" "$CABI"
+          echo "Sample platform tags after retag:"
+          xcrun vtool -show-build "$CABI" 2>/dev/null | head -10 || true
 
       - name: Locate built library
         id: find-lib
