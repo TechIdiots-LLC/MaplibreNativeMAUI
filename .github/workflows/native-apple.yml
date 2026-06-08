@@ -88,16 +88,37 @@ jobs:
         if: ${{ matrix.artifact == 'native-maccatalyst' }}
         run: |
           set -euo pipefail
+
+          # mln-cabi does not consume any .swift sources, but maplibre-native's
+          # platform/darwin/darwin.cmake unconditionally calls
+          # `enable_language(OBJC OBJCXX Swift)`, which forces CMake to run a
+          # Swift compiler check try_compile. That try_compile goes through
+          # Xcode's builtin-Swift-Compilation step, which derives its own
+          # `-target <arch>-apple-macos<dep>` from MACOSX_DEPLOYMENT_TARGET and
+          # ignores CMAKE_Swift_FLAGS / OTHER_SWIFT_FLAGS we try to inject, so
+          # the Swift .o ends up macOS-tagged while the link expects
+          # macCatalyst -> "ld: building for 'macCatalyst', but linking in
+          # object file built for 'macOS'". The only Swift sources in the
+          # subtree are tests (MLNDocumentationExampleTests.swift etc.) which
+          # are not in mln-cabi's dependency graph, so dropping Swift from the
+          # enable_language() call for this job is safe and avoids the issue.
+          DCMAKE=dependencies/maplibre-native/platform/darwin/darwin.cmake
+          sed -i.bak \
+            's/enable_language(OBJC OBJCXX Swift)/enable_language(OBJC OBJCXX)/' \
+            "$DCMAKE"
+          echo "Patched darwin.cmake:"
+          grep enable_language "$DCMAKE"
+
           mkdir -p out
           for ARCH in x86_64 arm64; do
             BUILD_DIR=build-${ARCH}
             TRIPLE="${ARCH}-apple-ios15.0-macabi"
-            # -target must be on BOTH the compile and link lines: Xcode adds
-            # its own `-target <arch>-apple-macos<dep>` to each invocation;
-            # clang uses the LAST -target, so we append ours via CMAKE_*_FLAGS
+            # -target must be on the compile AND link lines: Xcode adds its own
+            # `-target <arch>-apple-macos<dep>` to each invocation; clang uses
+            # the LAST -target, so we append ours via CMAKE_<LANG>_FLAGS
             # (compile) and CMAKE_*_LINKER_FLAGS (link). Without the linker
-            # flag, the compiler-check try_compile fails to link with
-            # "building for 'macOS', but linking in object file built for 'macCatalyst'".
+            # flag the cxx try_compile fails with "building for 'macOS', but
+            # linking in object file built for 'macCatalyst'".
             #
             # MACOSX_DEPLOYMENT_TARGET stays within the SDK's supported range
             # (Xcode 15.4 ships MacOSX14.5 SDK -> max 14.x); the actual
