@@ -142,11 +142,16 @@ public:
         res._mtlView.autoResizeDrawable        = NO;  // we set drawableSize manually
         res._mtlView.paused                    = YES; // we drive rendering ourselves
         res._mtlView.enableSetNeedsDisplay     = NO;
+#if !TARGET_OS_MACCATALYST
+        // autoresizingMask is an NSView/UIView property unavailable on
+        // macCatalyst (UIKit over AppKit).  We drive frame size manually
+        // anyway (autoResizeDrawable = NO), so skip this on Catalyst.
         res._mtlView.autoresizingMask          =
-#if TARGET_OS_IPHONE
+# if TARGET_OS_IPHONE
             UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-#else
+# else
             NSViewWidthSizable | NSViewHeightSizable;
+# endif
 #endif
 
         res._delegate = [[MbglMetalViewDelegate alloc]
