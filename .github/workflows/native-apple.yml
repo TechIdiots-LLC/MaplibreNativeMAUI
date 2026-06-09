@@ -106,8 +106,13 @@ jobs:
           sed -i.bak \
             's/enable_language(OBJC OBJCXX Swift)/enable_language(OBJC OBJCXX)/' \
             "$DCMAKE"
+          # ios.cmake (only included for CMAKE_SYSTEM_NAME=iOS) links
+          # mbgl-vendor-filesystem to mbgl-core, which provides the
+          # vendor/filesystem/include path needed by action_journal_impl.cpp
+          # (<ghc/filesystem.hpp>). Darwin builds omit ios.cmake, so add it here.
+          echo 'target_link_libraries(mbgl-core PRIVATE mbgl-vendor-filesystem)' >> "$DCMAKE"
           echo "Patched darwin.cmake:"
-          grep enable_language "$DCMAKE"
+          grep -E "enable_language|mbgl-vendor-filesystem" "$DCMAKE"
 
           mkdir -p out
           for ARCH in x86_64 arm64; do
@@ -136,9 +141,6 @@ jobs:
               -DCMAKE_SHARED_LINKER_FLAGS="-target ${TRIPLE}" \
               -DCMAKE_MODULE_LINKER_FLAGS="-target ${TRIPLE}" \
               -DCMAKE_XCODE_ATTRIBUTE_SUPPORTS_MACCATALYST=YES \
-              -DCMAKE_XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET=15.0 \
-              -DCMAKE_XCODE_ATTRIBUTE_FRAMEWORK_SEARCH_PATHS='$(SDKROOT)/System/iOSSupport/System/Library/Frameworks $(inherited)' \
-              -DCMAKE_XCODE_ATTRIBUTE_SYSTEM_FRAMEWORK_SEARCH_PATHS='$(SDKROOT)/System/iOSSupport/System/Library/Frameworks $(inherited)' \
               -DMLN_WITH_METAL=ON \
               -DMLN_WITH_GLFW=OFF
             cmake --build "$BUILD_DIR" --target mln-cabi --config Release
