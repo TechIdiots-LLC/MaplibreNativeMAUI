@@ -116,11 +116,27 @@ jobs:
       - name: Restore workloads
         run: dotnet workload restore maplibre-maui.sln
 
+      - name: Compute CI package version
+        run: |
+          # Bump the patch component so the CI version always sorts above the
+          # last published stable release on nuget.org. The sample references
+          # Version="*-*" which picks the highest available version across all
+          # configured sources; using a higher base version (patch+1) rather
+          # than a plain prerelease suffix (which sorts BELOW stable in SemVer)
+          # ensures the local CI feed wins automatically.
+          BASE=${{ needs.version.outputs.version }}
+          MAJOR=$(echo "$BASE" | cut -d. -f1)
+          MINOR=$(echo "$BASE" | cut -d. -f2)
+          PATCH=$(echo "$BASE" | cut -d. -f3)
+          CI_VER="${MAJOR}.${MINOR}.$((PATCH+1))-ci.${{ github.run_number }}"
+          echo "CI_VER=$CI_VER" >> "$GITHUB_ENV"
+          echo "CI package version: $CI_VER"
+
       - name: Pack MapLibreNative.Maui
         run: |
           dotnet pack bindings/MapLibreNative.Maui.csproj \
             -c Release \
-            -p:Version=${{ needs.version.outputs.version }} \
+            -p:Version=${{ env.CI_VER }} \
             -p:_MbglNativeDir=$(pwd)/bindings/native/ \
             -o artifacts/
 
@@ -128,7 +144,7 @@ jobs:
         run: |
           dotnet pack handlers/MapLibreNative.Maui.Handlers.csproj \
             -c Release \
-            -p:Version=${{ needs.version.outputs.version }} \
+            -p:Version=${{ env.CI_VER }} \
             -o artifacts/
 
       - name: Upload NuGet artifacts
@@ -254,20 +270,6 @@ jobs:
 
       - name: Restore workloads
         run: dotnet workload restore sample/MauiSample.csproj
-
-      - name: Restore sample packages from CI feed
-        run: |
-          # dotnet restore with explicit --source overrides all configured
-          # sources for this invocation, so local-feed is searched first.
-          # This seeds the global package cache with the CI-built packages
-          # (correctly platform-tagged native libs) before dotnet build runs,
-          # preventing nuget.org's published version from being used instead.
-          # Must run after workload restore so MAUI workloads are installed.
-          dotnet restore sample/MauiSample.csproj \
-            -p:UseLocalPackages=true \
-            -p:EnableWindowsTargeting=true \
-            --source $(pwd)/local-feed \
-            --source https://api.nuget.org/v3/index.json
 
       - name: Build sample (Android)
         run: |
