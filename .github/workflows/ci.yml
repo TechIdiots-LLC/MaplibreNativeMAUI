@@ -183,6 +183,9 @@ jobs:
           echo "Staged DLLs:"
           find bindings/native -name "*.dll"
 
+      - name: Restore workloads
+        run: dotnet workload install maui-windows android
+
       - name: Pack Maui.MapLibre.WPF
         shell: bash
         run: |
@@ -347,7 +350,7 @@ jobs:
         run: dotnet nuget add source "${{ github.workspace }}\local-feed" --name local-ci
 
       - name: Restore workloads
-        run: dotnet workload restore sample/MauiSample.csproj
+        run: dotnet workload install maui-windows
 
       - name: Publish sample (Windows)
         run: |
