@@ -66,17 +66,24 @@ jobs:
       - name: Build mln-cabi
         run: |
           if [ "${{ matrix.artifact }}" = "native-maccatalyst" ]; then
-            # Without an explicit destination xcodebuild defaults to a plain
-            # macOS build and stamps objects with the macOS platform tag rather
-            # than MACCATALYST, which causes "ld: building for 'macCatalyst',
-            # but linking in object file built for 'macOS'" in the MAUI app.
-            # Passing 'variant=Mac Catalyst' makes Xcode set IS_MACCATALYST=YES,
-            # use the macabi target triple, AND automatically prepend the
-            # iOSSupport framework search path — so MetalKit resolves to the
-            # UIKit-based MTKView (UIView subclass) instead of the AppKit-based
-            # macOS MTKView (NSView subclass, unavailable on macCatalyst).
-            cmake --build build --target mln-cabi --config Release \
-              -- -destination "platform=macOS,variant=Mac Catalyst"
+            # cmake --build injects -sdk macosx (from CMAKE_OSX_SYSROOT) into
+            # the xcodebuild invocation. Xcode rejects combining -sdk with
+            # -destination, silently falling back to a plain macOS build and
+            # producing macOS-tagged objects instead of MACCATALYST ones.
+            # Bypass cmake and call xcodebuild directly so we control every flag:
+            # -destination "platform=macOS,variant=Mac Catalyst" sets
+            # IS_MACCATALYST=YES, uses the macabi target triple, and prepends
+            # the iOSSupport framework path (MetalKit resolves to UIKit-based
+            # MTKView instead of the AppKit NSView subclass).
+            XCODEPROJ=$(find build -maxdepth 2 -name "*.xcodeproj" | head -1)
+            echo "Building for Mac Catalyst: $XCODEPROJ"
+            xcodebuild \
+              -project "$XCODEPROJ" \
+              -target mln-cabi \
+              -configuration Release \
+              -destination "platform=macOS,variant=Mac Catalyst" \
+              ONLY_ACTIVE_ARCH=NO \
+              build
           else
             cmake --build build --target mln-cabi --config Release
           fi
