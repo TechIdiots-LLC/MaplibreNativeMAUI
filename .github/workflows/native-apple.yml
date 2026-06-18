@@ -54,6 +54,7 @@ jobs:
             >> dependencies/maplibre-native/platform/darwin/darwin.cmake
 
       - name: Configure CMake
+        if: ${{ matrix.artifact != 'native-maccatalyst' }}
         run: |
           cmake -B build -G Xcode \
             -DCMAKE_SYSTEM_NAME=${{ matrix.cmake-system }} \
@@ -63,32 +64,49 @@ jobs:
             ${{ matrix.extra-flags }} \
             -DMLN_WITH_METAL=ON
 
-      - name: Build mln-cabi
+      - name: Configure and build macCatalyst (macabi)
+        if: ${{ matrix.artifact == 'native-maccatalyst' }}
         run: |
-          if [ "${{ matrix.artifact }}" = "native-maccatalyst" ]; then
-            # cmake --build injects -sdk macosx (from CMAKE_OSX_SYSROOT) into
-            # the xcodebuild invocation. Xcode rejects combining -sdk with
-            # -destination, silently falling back to a plain macOS build and
-            # producing macOS-tagged objects instead of MACCATALYST ones.
-            # Bypass cmake and call xcodebuild directly so we control every flag:
-            # -destination "platform=macOS,variant=Mac Catalyst" sets
-            # IS_MACCATALYST=YES, uses the macabi target triple, and prepends
-            # the iOSSupport framework path (MetalKit resolves to UIKit-based
-            # MTKView instead of the AppKit NSView subclass).
-            XCODEPROJ=$(find build -maxdepth 2 -name "*.xcodeproj" | head -1)
-            echo "Building for Mac Catalyst: $XCODEPROJ"
-            xcodebuild \
-              -project "$XCODEPROJ" \
-              -target mln-cabi \
-              -configuration Release \
-              -destination "platform=macOS,variant=Mac Catalyst" \
-              ONLY_ACTIVE_ARCH=NO \
-              build
-          else
-            cmake --build build --target mln-cabi --config Release
-          fi
+          # Build for x86_64 and arm64 separately using the explicit macabi
+          # target triple. This guarantees that every object file is tagged
+          # as macCatalyst (macabi ABI) rather than plain macOS, avoiding the
+          # "built for macOS" linker error when the MAUI app links the library.
+          SYSROOT=$(xcrun --sdk macosx --show-sdk-path)
+          IOSUPPORT_FWKS="$SYSROOT/System/iOSSupport/System/Library/Frameworks"
+          IOSUPPORT_INC="$SYSROOT/System/iOSSupport/usr/include"
+          for ARCH in x86_64 arm64; do
+            TRIPLE="${ARCH}-apple-ios15.0-macabi"
+            MC_FLAGS="-target $TRIPLE -iframework $IOSUPPORT_FWKS -I$IOSUPPORT_INC"
+            cmake -B "build-${ARCH}" \
+              -G Ninja \
+              -DCMAKE_SYSTEM_NAME=Darwin \
+              -DCMAKE_OSX_SYSROOT=macosx \
+              -DCMAKE_OSX_ARCHITECTURES=${ARCH} \
+              -DCMAKE_BUILD_TYPE=Release \
+              "-DCMAKE_C_FLAGS=${MC_FLAGS}" \
+              "-DCMAKE_CXX_FLAGS=${MC_FLAGS}" \
+              -DMLN_WITH_GLFW=OFF \
+              -DMLN_WITH_METAL=ON
+            cmake --build "build-${ARCH}" --target mln-cabi --config Release --parallel
+            CABI=$(find "build-${ARCH}" -name "libmln-cabi.a" | head -1)
+            ALL_LIBS=$(find "build-${ARCH}" -name "*.a" -type f | sort)
+            # shellcheck disable=SC2086
+            libtool -static -o "${CABI}.merged" ${ALL_LIBS}
+            mv "${CABI}.merged" "$CABI"
+          done
+          X86=$(find build-x86_64 -name "libmln-cabi.a" | head -1)
+          ARM=$(find build-arm64 -name "libmln-cabi.a" | head -1)
+          mkdir -p build
+          lipo -create "$X86" "$ARM" -output build/libmln-cabi.a
+          echo "Universal macCatalyst binary:"
+          lipo -info build/libmln-cabi.a
+
+      - name: Build mln-cabi
+        if: ${{ matrix.artifact != 'native-maccatalyst' }}
+        run: cmake --build build --target mln-cabi --config Release
 
       - name: Merge into self-contained archive
+        if: ${{ matrix.artifact != 'native-maccatalyst' }}
         run: |
           # libmln-cabi.a is a thin C wrapper whose PRIVATE cmake link deps
           # (mbgl-core, metal-cpp symbols, vendor libs) are NOT merged into
