@@ -87,8 +87,6 @@ jobs:
               -DCMAKE_BUILD_TYPE=Release \
               -DCMAKE_C_COMPILER="$CLANG" \
               -DCMAKE_CXX_COMPILER="$CLANGXX" \
-              -DCMAKE_OBJC_COMPILER="$CLANG" \
-              -DCMAKE_OBJCXX_COMPILER="$CLANGXX" \
               "-DCMAKE_C_FLAGS=${MC_FLAGS}" \
               "-DCMAKE_CXX_FLAGS=${MC_FLAGS}" \
               "-DCMAKE_OBJC_FLAGS=${MC_FLAGS}" \

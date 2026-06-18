@@ -1,5 +1,13 @@
 cmake_minimum_required(VERSION 3.15 FATAL_ERROR)
-project(maplibre-maui LANGUAGES CXX C)
+
+# On Apple platforms with the Ninja generator (used for macCatalyst builds)
+# CMake must be told about ObjC/ObjCXX up front so it registers the compile
+# rules (CMAKE_OBJCXX_COMPILE_OBJECT etc.) before any subdirectory is added.
+if(APPLE)
+    project(maplibre-maui LANGUAGES CXX C OBJC OBJCXX)
+else()
+    project(maplibre-maui LANGUAGES CXX C)
+endif()
 
 set(MAPLIBRE_NATIVE_DIR "${CMAKE_CURRENT_LIST_DIR}/dependencies/maplibre-native"
     CACHE PATH "Path to maplibre-native source tree")
