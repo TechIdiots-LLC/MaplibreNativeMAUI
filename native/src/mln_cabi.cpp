@@ -1047,36 +1047,30 @@ static mbgl::FeatureState jsonToFeatureState(const char* json) {
     return state;
 }
 
-static void mbglValueToJsonWriter(const mbgl::Value& v,
-                                   rapidjson::Writer<rapidjson::StringBuffer>& w);
-
-static void mbglValueToJsonWriter(const mbgl::Value& v,
-                                   rapidjson::Writer<rapidjson::StringBuffer>& w) {
-    struct Visitor {
-        rapidjson::Writer<rapidjson::StringBuffer>& w;
-        void operator()(const mbgl::NullValue&) const { w.Null(); }
-        void operator()(bool b) const                 { w.Bool(b); }
-        void operator()(uint64_t u) const             { w.Uint64(u); }
-        void operator()(int64_t i) const              { w.Int64(i); }
-        void operator()(double d) const               { w.Double(d); }
-        void operator()(const std::string& s) const   {
+static void writeValue(const mbgl::Value& v, rapidjson::Writer<rapidjson::StringBuffer>& w) {
+    v.match(
+        [&](const mbgl::NullValue&)                { w.Null(); },
+        [&](bool b)                                { w.Bool(b); },
+        [&](uint64_t u)                            { w.Uint64(u); },
+        [&](int64_t i)                             { w.Int64(i); },
+        [&](double d)                              { w.Double(d); },
+        [&](const std::string& s) {
             w.String(s.data(), static_cast<rapidjson::SizeType>(s.size()));
-        }
-        void operator()(const std::vector<mbgl::Value>& arr) const {
+        },
+        [&](const std::vector<mbgl::Value>& arr) {
             w.StartArray();
-            for (const auto& e : arr) mbglValueToJsonWriter(e, w);
+            for (const auto& e : arr) writeValue(e, w);
             w.EndArray();
-        }
-        void operator()(const mbgl::PropertyMap& obj) const {
+        },
+        [&](const mbgl::PropertyMap& obj) {
             w.StartObject();
             for (const auto& [k, v2] : obj) {
                 w.Key(k.data(), static_cast<rapidjson::SizeType>(k.size()));
-                mbglValueToJsonWriter(v2, w);
+                writeValue(v2, w);
             }
             w.EndObject();
         }
-    };
-    std::visit(Visitor{w}, v);
+    );
 }
 
 static char* featureStateToJson(const mbgl::FeatureState& state) {
@@ -1085,7 +1079,7 @@ static char* featureStateToJson(const mbgl::FeatureState& state) {
     writer.StartObject();
     for (const auto& [key, val] : state) {
         writer.Key(key.data(), static_cast<rapidjson::SizeType>(key.size()));
-        mbglValueToJsonWriter(val, writer);
+        writeValue(val, writer);
     }
     writer.EndObject();
     return dup_string(std::string(buf.GetString(), buf.GetSize()));
