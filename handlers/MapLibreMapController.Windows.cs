@@ -1679,6 +1679,8 @@ public class MapLibreMapController : IMapLibreMapController
                     ReleaseCapture();
                     _dragging = false;
                     _map?.OnPanEnd();
+                    _renderNeedsUpdate = true;
+                    _map?.TriggerRepaint();
                 }
                 return IntPtr.Zero;
             }
