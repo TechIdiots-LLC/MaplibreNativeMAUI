@@ -790,6 +790,8 @@ public class MlnMapHost : HwndHost
                         _isDragging = false;
                         ReleaseCapture();
                         _map.OnPanEnd();
+                        _renderNeedsUpdate = true;
+                        _map.TriggerRepaint();
                         handled = true;
                     }
                     break;
