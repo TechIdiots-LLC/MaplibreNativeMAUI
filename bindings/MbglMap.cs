@@ -163,7 +163,41 @@ public sealed class MbglMap : IDisposable
     /// <summary>Set the debug overlay bitmask. Pass <see cref="MbglDebugOptions.None"/> to disable all.</summary>
     public void SetDebugOptions(int options) => NativeMethods.MapSetDebugOptions(Handle, options);
 
-    // ── Tier 1 – gesture / interactive movement ───────────────────────────────
+    // ── Viewport bounds ────────────────────────────────────────────────────────
+
+    public unsafe (double LatSW, double LonSW, double LatNE, double LonNE) LatLngBoundsForCamera()
+    {
+        double latSW = 0, lonSW = 0, latNE = 0, lonNE = 0;
+        NativeMethods.MapLatLngBoundsForCamera(Handle, &latSW, &lonSW, &latNE, &lonNE);
+        return (latSW, lonSW, latNE, lonNE);
+    }
+
+    // ── Memory / debug ─────────────────────────────────────────────────────────
+
+    public void ReduceMemoryUse() => NativeMethods.MapReduceMemoryUse(Handle);
+    public void DumpDebugLogs()   => NativeMethods.MapDumpDebugLogs(Handle);
+
+    // ── Feature state ──────────────────────────────────────────────────────────
+
+    public void SetFeatureState(string sourceId, string featureId, string stateJson,
+        string? sourceLayerId = null)
+        => NativeMethods.MapSetFeatureState(Handle, sourceId, sourceLayerId, featureId, stateJson);
+
+    public string? GetFeatureState(string sourceId, string featureId,
+        string? sourceLayerId = null)
+    {
+        var ptr = NativeMethods.MapGetFeatureState(Handle, sourceId, sourceLayerId, featureId);
+        if (ptr == IntPtr.Zero) return null;
+        var result = System.Runtime.InteropServices.Marshal.PtrToStringUTF8(ptr);
+        NativeMethods.FreeString(ptr);
+        return result;
+    }
+
+    public void RemoveFeatureState(string sourceId, string? featureId = null,
+        string? stateKey = null, string? sourceLayerId = null)
+        => NativeMethods.MapRemoveFeatureState(Handle, sourceId, sourceLayerId, featureId, stateKey);
+
+
     public void SetGestureInProgress(bool inProgress)
         => NativeMethods.MapSetGestureInProgress(Handle, inProgress ? 1 : 0);
 

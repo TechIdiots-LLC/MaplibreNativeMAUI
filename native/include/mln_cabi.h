@@ -402,6 +402,54 @@ MLN_CABI_API mbgl_status_t   mbgl_layer_set_visibility(mbgl_layer_t* layer, int 
 MLN_CABI_API mbgl_status_t   mbgl_layer_set_paint_property(mbgl_layer_t* layer, const char* name, const char* value_json) MLN_CABI_NOEXCEPT;
 MLN_CABI_API mbgl_status_t   mbgl_layer_set_layout_property(mbgl_layer_t* layer, const char* name, const char* value_json) MLN_CABI_NOEXCEPT;
 
+/* ── Viewport bounds ───────────────────────────────────────────────────────── */
+/** Returns the lat/lng bounds of the current camera viewport.
+ *  out_lat_sw / out_lon_sw = south-west corner; out_lat_ne / out_lon_ne = north-east. */
+MLN_CABI_API mbgl_status_t   mbgl_map_latlng_bounds_for_camera(mbgl_map_t* map,
+                                                                  double* out_lat_sw, double* out_lon_sw,
+                                                                  double* out_lat_ne, double* out_lon_ne) MLN_CABI_NOEXCEPT;
+
+/* ── Memory / debug ─────────────────────────────────────────────────────────── */
+/** Ask the renderer to free cached resources to reduce memory pressure. */
+MLN_CABI_API mbgl_status_t   mbgl_map_reduce_memory_use(mbgl_map_t* map) MLN_CABI_NOEXCEPT;
+/** Dump renderer debug information to the log. */
+MLN_CABI_API mbgl_status_t   mbgl_map_dump_debug_logs(mbgl_map_t* map) MLN_CABI_NOEXCEPT;
+
+/* ── Feature state ──────────────────────────────────────────────────────────── */
+/** Set per-feature state as a JSON object (e.g. {"hover":true}).
+ *  @param source_layer_id  Pass NULL or "" for non-vector sources. */
+MLN_CABI_API mbgl_status_t   mbgl_map_set_feature_state(mbgl_map_t* map,
+                                                          const char* source_id,
+                                                          const char* source_layer_id,
+                                                          const char* feature_id,
+                                                          const char* state_json) MLN_CABI_NOEXCEPT;
+/** Get per-feature state as a JSON object string; caller must free with mbgl_free_string().
+ *  Returns NULL on error or if no state is set. */
+MLN_CABI_API char*           mbgl_map_get_feature_state(mbgl_map_t* map,
+                                                          const char* source_id,
+                                                          const char* source_layer_id,
+                                                          const char* feature_id) MLN_CABI_NOEXCEPT;
+/** Remove feature state.  Pass NULL/empty feature_id to clear all features in a source;
+ *  pass NULL/empty state_key to clear all state keys for a feature. */
+MLN_CABI_API mbgl_status_t   mbgl_map_remove_feature_state(mbgl_map_t* map,
+                                                             const char* source_id,
+                                                             const char* source_layer_id,
+                                                             const char* feature_id,
+                                                             const char* state_key) MLN_CABI_NOEXCEPT;
+
+/* ── Style – generic JSON add ───────────────────────────────────────────────── */
+/** Add a source from a MapLibre source spec JSON object (without the "id" key).
+ *  @param source_id  The unique identifier to assign to this source. */
+MLN_CABI_API mbgl_status_t   mbgl_style_add_source_json(mbgl_style_t* st,
+                                                          const char* source_id,
+                                                          const char* source_json) MLN_CABI_NOEXCEPT;
+/** Add a layer from a complete MapLibre layer spec JSON (must include "id" and "type").
+ *  @param before_id  Insert before this layer ID, or NULL to append.
+ *  Returns a non-owning layer handle, or NULL on error. */
+MLN_CABI_API mbgl_layer_t*   mbgl_style_add_layer_json(mbgl_style_t* st,
+                                                         const char* layer_json,
+                                                         const char* before_id) MLN_CABI_NOEXCEPT;
+
 /* ── Version ───────────────────────────────────────────────────────────────── */
 MLN_CABI_API const char*     mln_cabi_version(void) MLN_CABI_NOEXCEPT;
 

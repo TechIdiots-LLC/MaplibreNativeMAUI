@@ -32,6 +32,8 @@
 #include <mbgl/style/layers/color_relief_layer.hpp>
 #include <mbgl/style/conversion/geojson.hpp>
 #include <mbgl/style/conversion/filter.hpp>
+#include <mbgl/style/conversion/source.hpp>
+#include <mbgl/style/conversion/layer.hpp>
 #include <mbgl/util/rapidjson.hpp>
 #include <mbgl/style/rapidjson_conversion.hpp>
 #include <mbgl/map/map_observer.hpp>
@@ -971,6 +973,229 @@ static char* dup_string(const std::string& s) {
     std::copy(s.begin(), s.end(), result);
     result[s.size()] = '\0';
     return result;
+}
+
+/* ─── Viewport bounds ───────────────────────────────────────────────────────── */
+
+mbgl_status_t mbgl_map_latlng_bounds_for_camera(mbgl_map_t* map,
+                                                  double* out_lat_sw, double* out_lon_sw,
+                                                  double* out_lat_ne, double* out_lon_ne) noexcept {
+    if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_latlng_bounds_for_camera: null handle");
+    try {
+        auto* m      = map_ptr(map);
+        auto  bounds = m->map->latLngBoundsForCamera(m->map->getCameraOptions());
+        if (out_lat_sw) *out_lat_sw = bounds.southwest().latitude();
+        if (out_lon_sw) *out_lon_sw = bounds.southwest().longitude();
+        if (out_lat_ne) *out_lat_ne = bounds.northeast().latitude();
+        if (out_lon_ne) *out_lon_ne = bounds.northeast().longitude();
+        return MBGL_OK;
+    } catch (const std::exception& e) { return set_native_error(e); }
+}
+
+/* ─── Memory / debug ────────────────────────────────────────────────────────── */
+
+mbgl_status_t mbgl_map_reduce_memory_use(mbgl_map_t* map) noexcept {
+    if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_reduce_memory_use: null handle");
+    try {
+        auto* renderer = map_ptr(map)->frontend->getRenderer();
+        if (renderer) renderer->reduceMemoryUse();
+        return MBGL_OK;
+    } catch (const std::exception& e) { return set_native_error(e); }
+}
+
+mbgl_status_t mbgl_map_dump_debug_logs(mbgl_map_t* map) noexcept {
+    if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_dump_debug_logs: null handle");
+    try {
+        auto* renderer = map_ptr(map)->frontend->getRenderer();
+        if (renderer) renderer->dumpDebugLogs();
+        return MBGL_OK;
+    } catch (const std::exception& e) { return set_native_error(e); }
+}
+
+/* ─── Feature state helpers ─────────────────────────────────────────────────── */
+
+static mbgl::Value jsValueToMbglValue(const mbgl::JSValue& v) {
+    if (v.IsBool())   return v.GetBool();
+    if (v.IsInt64())  return v.GetInt64();
+    if (v.IsUint64()) return static_cast<int64_t>(v.GetUint64());
+    if (v.IsDouble()) return v.GetDouble();
+    if (v.IsString()) return std::string{v.GetString(), v.GetStringLength()};
+    if (v.IsArray()) {
+        std::vector<mbgl::Value> arr;
+        arr.reserve(v.Size());
+        for (const auto& elem : v.GetArray())
+            arr.push_back(jsValueToMbglValue(elem));
+        return arr;
+    }
+    if (v.IsObject()) {
+        mbgl::PropertyMap obj;
+        for (const auto& m : v.GetObject())
+            obj[std::string{m.name.GetString(), m.name.GetStringLength()}] = jsValueToMbglValue(m.value);
+        return obj;
+    }
+    return mbgl::NullValue{};
+}
+
+static mbgl::FeatureState jsonToFeatureState(const char* json) {
+    mbgl::FeatureState state;
+    if (!json || !*json) return state;
+    mbgl::JSDocument doc;
+    doc.Parse(json);
+    if (doc.HasParseError() || !doc.IsObject()) return state;
+    for (const auto& m : doc.GetObject())
+        state[std::string{m.name.GetString(), m.name.GetStringLength()}] = jsValueToMbglValue(m.value);
+    return state;
+}
+
+static void mbglValueToJsonWriter(const mbgl::Value& v,
+                                   rapidjson::Writer<rapidjson::StringBuffer>& w);
+
+static void mbglValueToJsonWriter(const mbgl::Value& v,
+                                   rapidjson::Writer<rapidjson::StringBuffer>& w) {
+    struct Visitor {
+        rapidjson::Writer<rapidjson::StringBuffer>& w;
+        void operator()(const mbgl::NullValue&) const { w.Null(); }
+        void operator()(bool b) const                 { w.Bool(b); }
+        void operator()(uint64_t u) const             { w.Uint64(u); }
+        void operator()(int64_t i) const              { w.Int64(i); }
+        void operator()(double d) const               { w.Double(d); }
+        void operator()(const std::string& s) const   {
+            w.String(s.data(), static_cast<rapidjson::SizeType>(s.size()));
+        }
+        void operator()(const std::vector<mbgl::Value>& arr) const {
+            w.StartArray();
+            for (const auto& e : arr) mbglValueToJsonWriter(e, w);
+            w.EndArray();
+        }
+        void operator()(const mbgl::PropertyMap& obj) const {
+            w.StartObject();
+            for (const auto& [k, v2] : obj) {
+                w.Key(k.data(), static_cast<rapidjson::SizeType>(k.size()));
+                mbglValueToJsonWriter(v2, w);
+            }
+            w.EndObject();
+        }
+    };
+    std::visit(Visitor{w}, v);
+}
+
+static char* featureStateToJson(const mbgl::FeatureState& state) {
+    rapidjson::StringBuffer buf;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+    writer.StartObject();
+    for (const auto& [key, val] : state) {
+        writer.Key(key.data(), static_cast<rapidjson::SizeType>(key.size()));
+        mbglValueToJsonWriter(val, writer);
+    }
+    writer.EndObject();
+    return dup_string(std::string(buf.GetString(), buf.GetSize()));
+}
+
+/* ─── Feature state ─────────────────────────────────────────────────────────── */
+
+mbgl_status_t mbgl_map_set_feature_state(mbgl_map_t* map,
+                                           const char* source_id,
+                                           const char* source_layer_id,
+                                           const char* feature_id,
+                                           const char* state_json) noexcept {
+    if (!map || !source_id || !feature_id || !state_json)
+        return set_error(MBGL_INVALID_ARG, "mbgl_map_set_feature_state: null arg");
+    try {
+        auto* renderer = map_ptr(map)->frontend->getRenderer();
+        if (!renderer) return set_error(MBGL_INVALID_STATE, "mbgl_map_set_feature_state: renderer not ready");
+        std::optional<std::string> layerId =
+            (source_layer_id && *source_layer_id) ? std::optional<std::string>{source_layer_id} : std::nullopt;
+        renderer->setFeatureState(safe_str(source_id), layerId,
+                                  safe_str(feature_id), jsonToFeatureState(state_json));
+        return MBGL_OK;
+    } catch (const std::exception& e) { return set_native_error(e); }
+}
+
+char* mbgl_map_get_feature_state(mbgl_map_t* map,
+                                   const char* source_id,
+                                   const char* source_layer_id,
+                                   const char* feature_id) noexcept {
+    if (!map || !source_id || !feature_id) return nullptr;
+    try {
+        auto* renderer = map_ptr(map)->frontend->getRenderer();
+        if (!renderer) return nullptr;
+        std::optional<std::string> layerId =
+            (source_layer_id && *source_layer_id) ? std::optional<std::string>{source_layer_id} : std::nullopt;
+        mbgl::FeatureState state;
+        renderer->getFeatureState(state, safe_str(source_id), layerId, safe_str(feature_id));
+        return featureStateToJson(state);
+    } catch (...) { return nullptr; }
+}
+
+mbgl_status_t mbgl_map_remove_feature_state(mbgl_map_t* map,
+                                              const char* source_id,
+                                              const char* source_layer_id,
+                                              const char* feature_id,
+                                              const char* state_key) noexcept {
+    if (!map || !source_id)
+        return set_error(MBGL_INVALID_ARG, "mbgl_map_remove_feature_state: null source_id");
+    try {
+        auto* renderer = map_ptr(map)->frontend->getRenderer();
+        if (!renderer) return set_error(MBGL_INVALID_STATE, "mbgl_map_remove_feature_state: renderer not ready");
+        std::optional<std::string> layerId =
+            (source_layer_id && *source_layer_id) ? std::optional<std::string>{source_layer_id} : std::nullopt;
+        std::optional<std::string> featureIdOpt =
+            (feature_id && *feature_id) ? std::optional<std::string>{feature_id} : std::nullopt;
+        std::optional<std::string> stateKeyOpt =
+            (state_key && *state_key) ? std::optional<std::string>{state_key} : std::nullopt;
+        renderer->removeFeatureState(safe_str(source_id), layerId, featureIdOpt, stateKeyOpt);
+        return MBGL_OK;
+    } catch (const std::exception& e) { return set_native_error(e); }
+}
+
+/* ─── Style – generic JSON add ──────────────────────────────────────────────── */
+
+mbgl_status_t mbgl_style_add_source_json(mbgl_style_t* st,
+                                           const char* source_id,
+                                           const char* source_json) noexcept {
+    if (!st || !source_id || !source_json)
+        return set_error(MBGL_INVALID_ARG, "mbgl_style_add_source_json: null arg");
+    try {
+        using namespace mbgl::style::conversion;
+        mbgl::JSDocument doc;
+        doc.Parse<0>(source_json);
+        if (doc.HasParseError())
+            return set_error(MBGL_INVALID_ARG, "mbgl_style_add_source_json: JSON parse error");
+        const mbgl::JSValue& v = doc;
+        Error err;
+        auto source = convert<std::unique_ptr<mbgl::style::Source>>(
+            Convertible(&v), err, safe_str(source_id));
+        if (!source)
+            return set_error(MBGL_INVALID_ARG, std::string("mbgl_style_add_source_json: ") + err.message);
+        style_ref(st).addSource(std::move(*source));
+        return MBGL_OK;
+    } catch (const std::exception& e) { return set_native_error(e); }
+}
+
+mbgl_layer_t* mbgl_style_add_layer_json(mbgl_style_t* st,
+                                          const char* layer_json,
+                                          const char* before_id) noexcept {
+    if (!st || !layer_json) { set_error(MBGL_INVALID_ARG, "mbgl_style_add_layer_json: null arg"); return nullptr; }
+    try {
+        using namespace mbgl::style::conversion;
+        mbgl::JSDocument doc;
+        doc.Parse<0>(layer_json);
+        if (doc.HasParseError()) {
+            set_error(MBGL_INVALID_ARG, "mbgl_style_add_layer_json: JSON parse error");
+            return nullptr;
+        }
+        const mbgl::JSValue& v = doc;
+        Error err;
+        auto layer = convert<std::unique_ptr<mbgl::style::Layer>>(Convertible(&v), err);
+        if (!layer) {
+            set_error(MBGL_INVALID_ARG, std::string("mbgl_style_add_layer_json: ") + err.message);
+            return nullptr;
+        }
+        auto* raw = layer->get();
+        if (before_id && *before_id) style_ref(st).addLayer(std::move(*layer), safe_str(before_id));
+        else                         style_ref(st).addLayer(std::move(*layer));
+        return reinterpret_cast<mbgl_layer_t*>(raw);
+    } catch (const std::exception& e) { set_native_error(e); return nullptr; }
 }
 
 /* ─── Gesture helpers ───────────────────────────────────────────────────────── */

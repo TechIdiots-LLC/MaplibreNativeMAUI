@@ -5,7 +5,20 @@
 - _...Add new stuff here..._
 
 ### 🐞 Bug fixes
-- _...Add new stuff here..._
+- _...Add new stuff here..._## 3.1.0
+### ✨ Features and improvements
+- **Feature state (set / get / remove)** — New `SetFeatureState`, `GetFeatureState`, and `RemoveFeatureState` methods on the controller and `MbglMap` wrapper. Backed by `mbgl_map_set_feature_state`, `mbgl_map_get_feature_state`, and `mbgl_map_remove_feature_state` in the C ABI. State is passed as a JSON object string (e.g. `{"hover":true}`); `source_layer_id` is optional for non-vector sources; `feature_id` and `state_key` are optional on remove to clear all features/keys in a source.
+- **Viewport bounds** — New `GetVisibleBounds()` controller method (backed by `mbgl_map_latlng_bounds_for_camera`) returns the `(LatSW, LonSW, LatNE, LonNE)` lat-lng bounding box of the current camera viewport.
+- **Memory pressure / debug logs** — New `ReduceMemoryUse()` and `DumpDebugLogs()` controller methods (backed by `mbgl_map_reduce_memory_use` / `mbgl_map_dump_debug_logs`) delegate to the underlying renderer for resource cleanup and diagnostic output.
+- **Generic JSON source add** — New `AddSourceJson(sourceId, sourceJson)` on the controller and `MbglStyle` wrapper accepts any MapLibre source-spec JSON object and registers it with the active style, complementing the existing typed `GeoJsonSource`, `VectorSource`, etc.
+- **Generic JSON layer add** — New `AddLayerJson(layerJson, beforeLayerId?)` on the controller and `MbglStyle` wrapper accepts a complete MapLibre layer-spec JSON object (must include `"id"` and `"type"`) and returns a non-owning `MbglLayer` handle.
+- **Observer: `onRenderError` event** — `CabiMapObserver` now overrides `onRenderError(std::exception_ptr)` and fires `"onRenderError"` with the exception message as the detail string; the Windows and macOS/iOS controllers expose this as `OnRenderErrorReceived`.
+- **Observer: `placementChanged` frame variants** — `onDidFinishRenderingFrame` now emits four distinct event names encoding both `needsRepaint` and `placementChanged` booleans: `"onDidFinishRenderingFrame"`, `"onDidFinishRenderingFrameNeedsRepaint"`, `"onDidFinishRenderingFramePlacementChanged"`, and `"onDidFinishRenderingFrameNeedsRepaintPlacementChanged"`.
+- **CI: Windows — Ninja generator** — CMake configure in `native-windows.yml` and `native-windows-vulkan.yml` switched from `-G "Visual Studio 17 2022"` to `-G Ninja -DCMAKE_BUILD_TYPE=Release`; the VS generator fails when `ilammy/msvc-dev-cmd@v1` is active because it breaks `vswhere.exe` discovery.
+- **CI: Windows — MAUI workloads** — `pack-wpf` and `sample-windows` jobs in `ci.yml` now run `dotnet workload install maui` before packing/building, fixing `NETSDK1147` errors caused by missing Android/iOS workloads on the Windows runner.
+- **CI: macCatalyst — correct macabi ABI** — macCatalyst build in `native-apple.yml` completely rewritten: two separate Ninja builds (x86_64 and arm64) each pass `-target ARCH-apple-ios15.0-macabi` via `CMAKE_C_FLAGS`/`CMAKE_CXX_FLAGS` with `-iframework`/`-I` paths for `iOSSupport` frameworks. Per-arch static libraries are merged with `libtool` then combined with `lipo`, replacing the previous xcodebuild approach that silently produced macOS-tagged (not macabi) object files.
+
+### 🐛 Bug fixes
 
 ## 3.0.3
 ### ✨ Features and improvements

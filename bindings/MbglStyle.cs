@@ -210,6 +210,27 @@ public sealed class MbglStyle
         var ptr = NativeMethods.StyleGetSource(Handle, sourceId);
         return ptr == IntPtr.Zero ? null : new MbglSource(ptr);
     }
+
+    // ── Generic JSON add ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Add a source from a raw MapLibre source-spec JSON object
+    /// (the object value — not including the source ID key).
+    /// Example: <c>AddSourceJson("my-source", "{\"type\":\"geojson\",\"data\":\"...\"}")</c>
+    /// </summary>
+    public void AddSourceJson(string sourceId, string sourceJson)
+        => NativeMethods.StyleAddSourceJson(Handle, sourceId, sourceJson);
+
+    /// <summary>
+    /// Add a layer from a complete MapLibre layer-spec JSON object
+    /// (must include "id" and "type" fields).
+    /// Returns a non-owning <see cref="MbglLayer"/> handle, or <c>null</c> on error.
+    /// </summary>
+    public MbglLayer? AddLayerJson(string layerJson, string? beforeLayerId = null)
+    {
+        var ptr = NativeMethods.StyleAddLayerJson(Handle, layerJson, beforeLayerId);
+        return ptr == IntPtr.Zero ? null : new MbglLayer(ptr);
+    }
 }
 
 // ── Source handle ─────────────────────────────────────────────────────────────

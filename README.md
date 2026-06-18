@@ -216,6 +216,73 @@ The return value is a GeoJSON `FeatureCollection` string, or `null` if the rende
 
 ---
 
+## Feature State
+
+Per-feature state lets you change the visual appearance of individual features (e.g. hover effects) without re-loading the style:
+
+```csharp
+// Set state — stateJson is a JSON object
+controller.SetFeatureState(sourceId: "my-source", featureId: "123", stateJson: "{\"hover\":true}");
+
+// With an explicit source layer (required for vector tile sources)
+controller.SetFeatureState("my-source", "123", "{\"hover\":true}", sourceLayerId: "my-layer");
+
+// Read state back (returns JSON string or null)
+string? state = controller.GetFeatureState("my-source", "123");
+
+// Remove a single state key
+controller.RemoveFeatureState("my-source", featureId: "123", stateKey: "hover");
+
+// Remove all state for a feature
+controller.RemoveFeatureState("my-source", featureId: "123");
+
+// Remove all state for every feature in a source
+controller.RemoveFeatureState("my-source");
+```
+
+---
+
+## Viewport Bounds
+
+```csharp
+// Get the lat-lng bounding box of the current camera view
+var (latSW, lonSW, latNE, lonNE) = controller.GetVisibleBounds();
+```
+
+---
+
+## Memory Management
+
+```csharp
+// Ask the renderer to release cached GPU resources
+controller.ReduceMemoryUse();
+
+// Write renderer diagnostics to the log
+controller.DumpDebugLogs();
+```
+
+---
+
+## Generic JSON Sources and Layers
+
+In addition to the typed XAML source/layer elements you can add sources and layers from raw MapLibre style-spec JSON:
+
+```csharp
+// Add any source type by spec JSON
+controller.AddSourceJson("my-source",
+    "{\"type\":\"geojson\",\"data\":{\"type\":\"FeatureCollection\",\"features\": []}}");
+
+// Add any layer type by spec JSON
+controller.AddLayerJson(
+    "{\"id\":\"my-fill\",\"type\":\"fill\",\"source\":\"my-source\"," +
+    "\"paint\":{\"fill-color\":\"#ff0000\",\"fill-opacity\":0.5}}");
+
+// Insert before an existing layer
+controller.AddLayerJson(layerJson, beforeLayerId: "labels");
+```
+
+---
+
 ## Style & Layer Inspection
 
 Once a style is loaded, you can inspect and modify it via the controller:

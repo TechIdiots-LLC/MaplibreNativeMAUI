@@ -519,6 +519,43 @@ public static partial class NativeMethods
     [LibraryImport(Lib, EntryPoint = "mbgl_layer_get_visibility")]
     public static partial int LayerGetVisibility(IntPtr layer);
 
+    // ── Viewport bounds ────────────────────────────────────────────────────────
+    [LibraryImport(Lib, EntryPoint = "mbgl_map_latlng_bounds_for_camera")]
+    public static unsafe partial MbglStatus MapLatLngBoundsForCamera(IntPtr map,
+        double* outLatSw, double* outLonSw, double* outLatNe, double* outLonNe);
+
+    // ── Memory / debug ─────────────────────────────────────────────────────────
+    [LibraryImport(Lib, EntryPoint = "mbgl_map_reduce_memory_use")]
+    public static partial MbglStatus MapReduceMemoryUse(IntPtr map);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_map_dump_debug_logs")]
+    public static partial MbglStatus MapDumpDebugLogs(IntPtr map);
+
+    // ── Feature state ──────────────────────────────────────────────────────────
+    [LibraryImport(Lib, EntryPoint = "mbgl_map_set_feature_state",
+        StringMarshalling = StringMarshalling.Utf8)]
+    public static partial MbglStatus MapSetFeatureState(IntPtr map,
+        string sourceId, string? sourceLayerId, string featureId, string stateJson);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_map_get_feature_state",
+        StringMarshalling = StringMarshalling.Utf8)]
+    public static partial IntPtr MapGetFeatureState(IntPtr map,
+        string sourceId, string? sourceLayerId, string featureId);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_map_remove_feature_state",
+        StringMarshalling = StringMarshalling.Utf8)]
+    public static partial MbglStatus MapRemoveFeatureState(IntPtr map,
+        string sourceId, string? sourceLayerId, string? featureId, string? stateKey);
+
+    // ── Style – generic JSON add ───────────────────────────────────────────────
+    [LibraryImport(Lib, EntryPoint = "mbgl_style_add_source_json",
+        StringMarshalling = StringMarshalling.Utf8)]
+    public static partial MbglStatus StyleAddSourceJson(IntPtr style, string sourceId, string sourceJson);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_style_add_layer_json",
+        StringMarshalling = StringMarshalling.Utf8)]
+    public static partial IntPtr StyleAddLayerJson(IntPtr style, string layerJson, string? beforeLayerId);
+
 #if ANDROID
     // ── Android ANativeWindow helpers ──────────────────────────────────────────
     [DllImport(Lib, EntryPoint = "mbgl_android_acquire_window")]
