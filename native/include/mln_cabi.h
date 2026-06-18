@@ -71,9 +71,14 @@ typedef void (*mbgl_render_fn)(void* userdata);
 /** Observer callback fired for named map lifecycle events.
  *  @param event_name  Camel-case event name matching the MapObserver virtual method
  *                     (e.g. "onDidFinishLoadingStyle", "onDidBecomeIdle").
- *  @param detail      Optional extra detail: error message for onDidFailLoadingMap,
+ *  @param detail      Optional extra detail: error message for onDidFailLoadingMap
+ *                     and onRenderError (GPU allocation / render failure),
  *                     image ID for onStyleImageMissing, source ID for onSourceChanged,
  *                     "animated" or "immediate" for camera change events, else NULL.
+ *                     Frame events: "onDidFinishRenderingFrameNeedsRepaint",
+ *                     "onDidFinishRenderingFramePlacementChanged",
+ *                     "onDidFinishRenderingFrameNeedsRepaintPlacementChanged",
+ *                     or plain "onDidFinishRenderingFrame".
  *  @param userdata    Opaque pointer passed to mbgl_map_create. */
 typedef void (*mbgl_map_observer_fn)(const char* event_name, const char* detail, void* userdata);
 

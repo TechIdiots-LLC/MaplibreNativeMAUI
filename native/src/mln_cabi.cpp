@@ -159,12 +159,29 @@ public:
     }
     void onWillStartRenderingFrame() override { fire("onWillStartRenderingFrame"); }
     void onDidFinishRenderingFrame(const RenderFrameStatus& s) override {
-        fire(s.needsRepaint ? "onDidFinishRenderingFrameNeedsRepaint"
-                            : "onDidFinishRenderingFrame");
+        // Encode needsRepaint and placementChanged as separate event names so the
+        // C# side can branch without an extra detail string parse.
+        if (s.needsRepaint && s.placementChanged)
+            fire("onDidFinishRenderingFrameNeedsRepaintPlacementChanged");
+        else if (s.needsRepaint)
+            fire("onDidFinishRenderingFrameNeedsRepaint");
+        else if (s.placementChanged)
+            fire("onDidFinishRenderingFramePlacementChanged");
+        else
+            fire("onDidFinishRenderingFrame");
     }
     void onWillStartRenderingMap() override { fire("onWillStartRenderingMap"); }
     void onDidFinishRenderingMap(RenderMode) override { fire("onDidFinishRenderingMap"); }
     void onDidFinishLoadingStyle() override { fire("onDidFinishLoadingStyle"); }
+    void onRenderError(std::exception_ptr ep) override {
+        try {
+            if (ep) std::rethrow_exception(ep);
+        } catch (const std::exception& e) {
+            fire("onRenderError", e.what());
+        } catch (...) {
+            fire("onRenderError", "unknown render error");
+        }
+    }
     void onSourceChanged(mbgl::style::Source& src) override {
         fire("onSourceChanged", src.getID().c_str());
     }

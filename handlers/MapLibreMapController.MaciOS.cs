@@ -100,6 +100,7 @@ public class MapLibreMapController : IMapLibreMapController
     public event Action<Location>?           OnUserLocationUpdateReceived;
     public event Action<string>?             OnDidFailLoadingMapReceived;
     public event Action<string>?             OnStyleImageMissingReceived;
+    public event Action<string>?             OnRenderErrorReceived;
 
     // -- Construction ----------------------------------------------------------
 
@@ -239,6 +240,10 @@ public class MapLibreMapController : IMapLibreMapController
                     break;
                 case "onStyleImageMissing":
                     OnStyleImageMissingReceived?.Invoke(detail ?? string.Empty);
+                    break;
+                case "onRenderError":
+                    System.Diagnostics.Debug.WriteLine($"[MapLibre.iOS] render error: {detail}");
+                    OnRenderErrorReceived?.Invoke(detail ?? string.Empty);
                     break;
             }
         });
