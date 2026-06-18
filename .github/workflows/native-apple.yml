@@ -78,10 +78,14 @@ jobs:
           CLANGXX=$(xcrun -f clang++)
           for ARCH in x86_64 arm64; do
             TRIPLE="${ARCH}-apple-ios15.0-macabi"
-            # -Wno-overriding-t-option suppresses the clang warning/error that
-            # fires when maplibre-native's macos.cmake injects -mmacosx-version-min
-            # alongside our explicit -target triple (the triple takes precedence).
-            MC_FLAGS="-target $TRIPLE -iframework $IOSUPPORT_FWKS -I$IOSUPPORT_INC -Wno-overriding-t-option"
+            # -iframework/-I add the iOSSupport headers; -Wno-overriding-t-option
+            # suppresses the conflict when maplibre-native's macos.cmake injects
+            # -mmacosx-version-min (the -target triple always takes precedence).
+            EXTRA_FLAGS="-iframework $IOSUPPORT_FWKS -I$IOSUPPORT_INC -Wno-overriding-t-option"
+            # CMAKE_<LANG>_COMPILER_TARGET is the canonical CMake way to set the
+            # clang -target triple; it is inserted first in every compile command
+            # and cannot be overridden by subdirectory flag manipulation, which
+            # is what caused .mm files to compile as the native arm64 host arch.
             cmake -B "build-${ARCH}" \
               -G Ninja \
               -DCMAKE_SYSTEM_NAME=Darwin \
@@ -91,10 +95,16 @@ jobs:
               -DCMAKE_BUILD_TYPE=Release \
               -DCMAKE_C_COMPILER="$CLANG" \
               -DCMAKE_CXX_COMPILER="$CLANGXX" \
-              "-DCMAKE_C_FLAGS=${MC_FLAGS}" \
-              "-DCMAKE_CXX_FLAGS=${MC_FLAGS}" \
-              "-DCMAKE_OBJC_FLAGS=${MC_FLAGS}" \
-              "-DCMAKE_OBJCXX_FLAGS=${MC_FLAGS}" \
+              -DCMAKE_OBJC_COMPILER="$CLANG" \
+              -DCMAKE_OBJCXX_COMPILER="$CLANGXX" \
+              "-DCMAKE_C_COMPILER_TARGET=${TRIPLE}" \
+              "-DCMAKE_CXX_COMPILER_TARGET=${TRIPLE}" \
+              "-DCMAKE_OBJC_COMPILER_TARGET=${TRIPLE}" \
+              "-DCMAKE_OBJCXX_COMPILER_TARGET=${TRIPLE}" \
+              "-DCMAKE_C_FLAGS=${EXTRA_FLAGS}" \
+              "-DCMAKE_CXX_FLAGS=${EXTRA_FLAGS}" \
+              "-DCMAKE_OBJC_FLAGS=${EXTRA_FLAGS}" \
+              "-DCMAKE_OBJCXX_FLAGS=${EXTRA_FLAGS}" \
               -DMLN_WITH_GLFW=OFF \
               -DMLN_WITH_METAL=ON
             cmake --build "build-${ARCH}" --target mln-cabi --config Release --parallel
