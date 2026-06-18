@@ -722,9 +722,14 @@ public class MapLibreMapController : IMapLibreMapController
                 System.Diagnostics.Debug.WriteLine($"[MapLibre.Win] render error: {detail}");
                 OnRenderErrorReceived?.Invoke(detail ?? string.Empty);
                 break;
-            case "onDidFinishRenderingFramePlacementChanged":
+            case "onDidFinishRenderingFrameNeedsRepaint":
             case "onDidFinishRenderingFrameNeedsRepaintPlacementChanged":
-                // Symbol placement changed — request a repaint so overlaid labels update.
+                // mbgl still has work to do (tiles loading, animation in progress).
+                // Re-queue a render so the loop keeps running until the map is idle.
+                _renderNeedsUpdate = true;
+                break;
+            case "onDidFinishRenderingFramePlacementChanged":
+                // Symbol placement changed — labels need a repaint.
                 _renderNeedsUpdate = true;
                 break;
         }
