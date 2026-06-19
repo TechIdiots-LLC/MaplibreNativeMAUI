@@ -64,6 +64,8 @@ jobs:
     name: Pack NuGet
     runs-on: macos-latest
     needs: [version, build-windows, build-android, build-apple]
+    outputs:
+      ci_ver: ${{ steps.ci_ver.outputs.ci_ver }}
 
     steps:
       - uses: actions/checkout@v4
@@ -117,6 +119,7 @@ jobs:
         run: dotnet workload restore maplibre-maui.sln
 
       - name: Compute CI package version
+        id: ci_ver
         run: |
           # Bump the patch component so the CI version always sorts above the
           # last published stable release on nuget.org. The sample references
@@ -130,6 +133,7 @@ jobs:
           PATCH=$(echo "$BASE" | cut -d. -f3)
           CI_VER="${MAJOR}.${MINOR}.$((PATCH+1)).${{ github.run_number }}"
           echo "CI_VER=$CI_VER" >> "$GITHUB_ENV"
+          echo "ci_ver=$CI_VER" >> "$GITHUB_OUTPUT"
           echo "CI package version: $CI_VER"
 
       - name: Pack MapLibreNative.Maui
@@ -191,7 +195,7 @@ jobs:
         run: |
           dotnet pack wpf/MapLibreNative.Maui.WPF.csproj \
             -c Release \
-            -p:Version=${{ env.CI_VER }} \
+            -p:Version=${{ needs.pack.outputs.ci_ver }} \
             -o artifacts/
 
       - name: Upload WPF NuGet artifact
