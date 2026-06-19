@@ -6,7 +6,7 @@
       Consumed by WPF apps (VistumblerCS and any other classic .NET WPF project)
       that want a MapLibre map backed by the same mln-cabi.dll used by MAUI.
     -->
-    <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
+    <TargetFrameworks>net9.0-windows10.0.19041.0;net10.0-windows10.0.19041.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>

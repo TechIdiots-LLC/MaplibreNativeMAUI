@@ -40,7 +40,7 @@ jobs:
           cmake -B build \
             -DCMAKE_TOOLCHAIN_FILE="$ANDROID_HOME/ndk/27.0.12077973/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=${{ matrix.abi }} \
-            -DANDROID_PLATFORM=android-21 \
+            -DANDROID_PLATFORM=android-23 \
             -DCMAKE_BUILD_TYPE=Release \
             -DMLN_WITH_VULKAN=ON
 

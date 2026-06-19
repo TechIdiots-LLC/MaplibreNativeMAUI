@@ -76,6 +76,7 @@ jobs:
           dotnet-version: |
             8.0.x
             9.0.x
+            10.0.x
 
       - name: Download all native artifacts
         uses: actions/download-artifact@v4
@@ -167,10 +168,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up .NET 9 SDK
+      - name: Set up .NET 8, 9, and 10 SDKs
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 9.0.x
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
 
       - name: Download Windows native artifacts
         uses: actions/download-artifact@v4
@@ -298,6 +302,7 @@ jobs:
           dotnet-version: |
             8.0.x
             9.0.x
+            10.0.x
 
       - name: Download NuGet packages
         uses: actions/download-artifact@v4
@@ -378,6 +383,7 @@ jobs:
           dotnet-version: |
             8.0.x
             9.0.x
+            10.0.x
 
       - name: Download MLN native artifacts (Windows + Android)
         uses: actions/download-artifact@v4

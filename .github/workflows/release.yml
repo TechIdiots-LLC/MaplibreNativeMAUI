@@ -92,6 +92,7 @@ jobs:
           dotnet-version: |
             8.0.x
             9.0.x
+            10.0.x
 
       - name: Download all native artifacts
         uses: actions/download-artifact@v4
@@ -172,6 +173,7 @@ jobs:
           dotnet-version: |
             8.0.x
             9.0.x
+            10.0.x
 
       - name: Download Windows native artifacts
         uses: actions/download-artifact@v4
@@ -303,6 +305,7 @@ jobs:
           dotnet-version: |
             8.0.x
             9.0.x
+            10.0.x
 
       - name: Download MAUI NuGet packages (for local feed)
         uses: actions/download-artifact@v4
@@ -382,6 +385,7 @@ jobs:
           dotnet-version: |
             8.0.x
             9.0.x
+            10.0.x
 
       - name: Download MLN native artifacts (Windows + Android)
         uses: actions/download-artifact@v4
@@ -457,7 +461,9 @@ jobs:
       - name: Set up .NET SDK (for nuget push)
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 9.0.x
+          dotnet-version: |
+            9.0.x
+            10.0.x
 
       - name: Download NuGet packages
         uses: actions/download-artifact@v4
