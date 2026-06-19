@@ -5,7 +5,9 @@
 - _...Add new stuff here..._
 
 ### 🐞 Bug fixes
-- _...Add new stuff here..._## 3.1.0
+- _...Add new stuff here..._
+
+## 3.1.0
 ### ✨ Features and improvements
 - **Feature state (set / get / remove)** — New `SetFeatureState`, `GetFeatureState`, and `RemoveFeatureState` methods on the controller and `MbglMap` wrapper. Backed by `mbgl_map_set_feature_state`, `mbgl_map_get_feature_state`, and `mbgl_map_remove_feature_state` in the C ABI. State is passed as a JSON object string (e.g. `{"hover":true}`); `source_layer_id` is optional for non-vector sources; `feature_id` and `state_key` are optional on remove to clear all features/keys in a source.
 - **Viewport bounds** — New `GetVisibleBounds()` controller method (backed by `mbgl_map_latlng_bounds_for_camera`) returns the `(LatSW, LonSW, LatNE, LonNE)` lat-lng bounding box of the current camera viewport.
@@ -14,11 +16,17 @@
 - **Generic JSON layer add** — New `AddLayerJson(layerJson, beforeLayerId?)` on the controller and `MbglStyle` wrapper accepts a complete MapLibre layer-spec JSON object (must include `"id"` and `"type"`) and returns a non-owning `MbglLayer` handle.
 - **Observer: `onRenderError` event** — `CabiMapObserver` now overrides `onRenderError(std::exception_ptr)` and fires `"onRenderError"` with the exception message as the detail string; the Windows and macOS/iOS controllers expose this as `OnRenderErrorReceived`.
 - **Observer: `placementChanged` frame variants** — `onDidFinishRenderingFrame` now emits four distinct event names encoding both `needsRepaint` and `placementChanged` booleans: `"onDidFinishRenderingFrame"`, `"onDidFinishRenderingFrameNeedsRepaint"`, `"onDidFinishRenderingFramePlacementChanged"`, and `"onDidFinishRenderingFrameNeedsRepaintPlacementChanged"`.
+- **Submodule bump** — `dependencies/maplibre-native` updated from `647636bf6115` to `fa8a9c8e3261` (iOS 6.27.0 / Android 13.3.0).
+- **CI: iOS and macCatalyst sample builds** — CI and release workflows now build and upload iOS simulator (`.app`) and macCatalyst (`.app`) sample artifacts on the `macos-26` runner with Xcode 26.5.
 - **CI: Windows — Ninja generator** — CMake configure in `native-windows.yml` and `native-windows-vulkan.yml` switched from `-G "Visual Studio 17 2022"` to `-G Ninja -DCMAKE_BUILD_TYPE=Release`; the VS generator fails when `ilammy/msvc-dev-cmd@v1` is active because it breaks `vswhere.exe` discovery.
-- **CI: Windows — MAUI workloads** — `pack-wpf` and `sample-windows` jobs in `ci.yml` now run `dotnet workload install maui` before packing/building, fixing `NETSDK1147` errors caused by missing Android/iOS workloads on the Windows runner.
-- **CI: macCatalyst — correct macabi ABI** — macCatalyst build in `native-apple.yml` completely rewritten: two separate Ninja builds (x86_64 and arm64) each pass `-target ARCH-apple-ios15.0-macabi` via `CMAKE_C_FLAGS`/`CMAKE_CXX_FLAGS` with `-iframework`/`-I` paths for `iOSSupport` frameworks. Per-arch static libraries are merged with `libtool` then combined with `lipo`, replacing the previous xcodebuild approach that silently produced macOS-tagged (not macabi) object files.
+- **CI: Windows — MAUI workloads** — `pack-wpf` job in `ci.yml` now runs `dotnet workload install maui` before packing/building, fixing `NETSDK1147` errors caused by missing Android/iOS workloads on the Windows runner.
+- **CI: macCatalyst — correct macabi ABI** — macCatalyst build in `native-apple.yml` completely rewritten: two separate Ninja builds (x86_64 and arm64) each set `CMAKE_<LANG>_COMPILER_TARGET=ARCH-apple-ios15.0-macabi` for all four languages (C, CXX, ObjC, ObjCXX). `CMAKE_OSX_ARCHITECTURES` and `CMAKE_OSX_DEPLOYMENT_TARGET` are cleared to prevent macOS sysroot flags from overriding the macabi triple. Per-arch static libraries are merged with `libtool` then combined with `lipo`.
+- **CI/release alignment** — Artifact and step names unified between `ci.yml` and `release.yml`: `nuget-packages`, `nuget-packages-vulkan`, `nuget-packages-wpf`, `windows-samples`, `mobile-samples`. Redundant `sample-windows` CI job removed (consolidated into `pack-wpf`). `EnableWindowsTargeting=true` added to iOS/macCatalyst release builds. Vulkan pack jobs now include the `iossimulator-arm64` slice.
+- **`CMakeLists.txt`: declare `OBJC OBJCXX` languages on Apple** — Prevents a Ninja generator error (`CMAKE_OBJCXX_COMPILE_OBJECT` not set) when building `.mm` files on Apple platforms.
 
-### 🐛 Bug fixes
+### 🐞 Bug fixes
+- **Windows / WPF: map goes blank after drag** — `onDidFinishRenderingFrame*` events are fired from inside `_renderer->render()` after `_updateParams` has already been consumed. Handling them by setting `_renderNeedsUpdate = true` caused the next timer tick to call `glClear` + `SwapBuffers` with null params, blanking the screen. Fix: `NeedsRepaint` cases do nothing (mbgl re-queues `update()` itself); `PlacementChanged`-only calls `TriggerRepaint()` so fresh params arrive before the next render. Applies to both `MapLibreMapController.Windows.cs` and `wpf/MlnMapHost.cs`.
+- **Windows / WPF: final pan frame not rendered after mouse release** — `WM_LBUTTONUP` handler did not set `_renderNeedsUpdate = true` or call `TriggerRepaint()` after `OnPanEnd()`, so the map stopped updating immediately when the mouse button was released. Fixed in both controllers.
 
 ## 3.0.3
 ### ✨ Features and improvements
