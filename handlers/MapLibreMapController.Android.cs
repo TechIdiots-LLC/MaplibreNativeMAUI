@@ -919,12 +919,12 @@ public class MapLibreMapController : IMapLibreMapController
         _surfaceView.SetOnTouchListener(new MapTouchListener(this));
     }
 
-    private class MapTouchListener : Java.Lang.Object, View.IOnTouchListener
+    private class MapTouchListener : Java.Lang.Object, Android.Views.View.IOnTouchListener
     {
         private readonly MapLibreMapController _ctrl;
         public MapTouchListener(MapLibreMapController ctrl) => _ctrl = ctrl;
 
-        public bool OnTouch(View? v, MotionEvent? e)
+        public bool OnTouch(Android.Views.View? v, MotionEvent? e)
         {
             if (e == null) return false;
 
