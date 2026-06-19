@@ -1492,4 +1492,43 @@ void* mbgl_android_acquire_window(void* jni_env, void* surface_jobject) noexcept
 void mbgl_android_release_window(void* window) noexcept {
     ANativeWindow_release(reinterpret_cast<ANativeWindow*>(window));
 }
+
+// ── Android HTTP provider (implemented in http_file_source_android.cpp) ───────
+extern void mbgl_set_http_provider_impl(mbgl_http_provider_fn fn, void* userdata) noexcept;
+extern void mbgl_http_respond_impl(uint64_t request_id,
+                                   mbgl_http_error_t error,
+                                   const char* error_message,
+                                   int http_status,
+                                   const char* data, int data_len,
+                                   const char* etag,
+                                   const char* modified,
+                                   const char* expires,
+                                   const char* cache_control,
+                                   int no_content, int not_modified,
+                                   int must_revalidate) noexcept;
+extern void mbgl_http_cancel_impl(uint64_t request_id) noexcept;
+
+void mbgl_set_http_provider(mbgl_http_provider_fn fn, void* userdata) noexcept {
+    mbgl_set_http_provider_impl(fn, userdata);
+}
+
+void mbgl_http_respond(uint64_t request_id,
+                       mbgl_http_error_t error,
+                       const char* error_message,
+                       int http_status,
+                       const char* data, int data_len,
+                       const char* etag,
+                       const char* modified,
+                       const char* expires,
+                       const char* cache_control,
+                       int no_content, int not_modified,
+                       int must_revalidate) noexcept {
+    mbgl_http_respond_impl(request_id, error, error_message, http_status,
+                           data, data_len, etag, modified, expires,
+                           cache_control, no_content, not_modified, must_revalidate);
+}
+
+void mbgl_http_cancel(uint64_t request_id) noexcept {
+    mbgl_http_cancel_impl(request_id);
+}
 #endif

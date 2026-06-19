@@ -61,7 +61,7 @@ elseif(ANDROID)
         "${MAPLIBRE_NATIVE_DIR}/platform/default/src/mbgl/util/logging_stderr.cpp"
         "${MAPLIBRE_NATIVE_DIR}/platform/android/src/test/collator_test_stub.cpp"
         "${MAPLIBRE_NATIVE_DIR}/platform/android/src/test/number_format_test_stub.cpp"
-        src/http_file_source_stub.cpp
+        src/http_file_source_android.cpp
     )
     # MapLibre disables RTTI on Android/Linux. We must match that so polymorphic
     # classes in mln_cabi.cpp don't emit typeinfo that references non-existent

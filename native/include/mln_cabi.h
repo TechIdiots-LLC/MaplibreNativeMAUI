@@ -460,6 +460,93 @@ MLN_CABI_API const char*     mln_cabi_version(void) MLN_CABI_NOEXCEPT;
 MLN_CABI_API void*  mbgl_android_acquire_window(void* jni_env, void* surface_jobject) MLN_CABI_NOEXCEPT;
 /** Release an ANativeWindow obtained via mbgl_android_acquire_window. */
 MLN_CABI_API void   mbgl_android_release_window(void* window) MLN_CABI_NOEXCEPT;
+
+/* ── Android HTTP provider ─────────────────────────────────────────────────── */
+/**
+ * Callback type for the HTTP provider.  Called by the native layer when it
+ * needs to fetch a URL.  The host (C#) must call mbgl_http_respond() with the
+ * same request_id when the fetch completes or fails.
+ *
+ * @param request_id  Unique ID for this request.  Pass back to mbgl_http_respond().
+ * @param url         The URL to fetch (null-terminated UTF-8).
+ * @param etag        Previous ETag for a conditional GET, or NULL.
+ * @param modified    Previous Last-Modified for a conditional GET, or NULL.
+ * @param range_start First byte of a Range request, or -1 for a full fetch.
+ * @param range_end   Last byte (inclusive) of a Range request, or -1 for a full fetch.
+ *                    When both are >= 0 send "Range: bytes=range_start-range_end".
+ *                    HTTP 206 Partial Content responses are treated as success.
+ * @param userdata    Opaque pointer supplied to mbgl_set_http_provider().
+ */
+typedef void (*mbgl_http_provider_fn)(
+    uint64_t    request_id,
+    const char* url,
+    const char* etag,
+    const char* modified,
+    int64_t     range_start,
+    int64_t     range_end,
+    void*       userdata);
+
+/**
+ * Error codes passed to mbgl_http_respond().
+ * Values are intentionally aligned with mbgl::Response::Error::Reason.
+ */
+typedef enum mbgl_http_error_t {
+    MBGL_HTTP_ERROR_NONE       = 0, /**< Success — no error. */
+    MBGL_HTTP_ERROR_NOT_FOUND  = 2, /**< HTTP 404. */
+    MBGL_HTTP_ERROR_SERVER     = 3, /**< HTTP 5xx. */
+    MBGL_HTTP_ERROR_CONNECTION = 4, /**< Network or connection failure. */
+    MBGL_HTTP_ERROR_RATE_LIMIT = 5, /**< HTTP 429. */
+    MBGL_HTTP_ERROR_OTHER      = 6, /**< Any other error. */
+} mbgl_http_error_t;
+
+/**
+ * Register the HTTP provider callback.  Must be called before the first map is
+ * created.  Pass NULL to remove the current provider (requests will fail with a
+ * Connection error until a new provider is registered).
+ */
+MLN_CABI_API void mbgl_set_http_provider(mbgl_http_provider_fn fn,
+                                           void*                 userdata) MLN_CABI_NOEXCEPT;
+
+/**
+ * Deliver a completed HTTP response back to the native layer.
+ * Must be called exactly once per request unless mbgl_http_cancel() was already
+ * called for the same request_id.  Safe to call from any thread.
+ *
+ * @param request_id       The ID supplied to mbgl_http_provider_fn.
+ * @param error            MBGL_HTTP_ERROR_NONE on success, otherwise an error code.
+ * @param error_message    Human-readable error string (may be NULL).
+ * @param http_status      Raw HTTP status code (e.g. 200, 404); ignored when error != NONE.
+ * @param data             Response body bytes, or NULL.
+ * @param data_len         Length of data in bytes.
+ * @param etag             ETag header value, or NULL.
+ * @param modified         Last-Modified header value (RFC 1123), or NULL.
+ * @param expires          Expires header value (RFC 1123), or NULL.
+ * @param cache_control    Cache-Control header value, or NULL.
+ * @param no_content       1 if the response was 204 No Content (or 404 for a tile).
+ * @param not_modified     1 if the response was 304 Not Modified.
+ * @param must_revalidate  1 if Cache-Control: must-revalidate was present.
+ */
+MLN_CABI_API void mbgl_http_respond(
+    uint64_t          request_id,
+    mbgl_http_error_t error,
+    const char*       error_message,
+    int               http_status,
+    const char*       data,
+    int               data_len,
+    const char*       etag,
+    const char*       modified,
+    const char*       expires,
+    const char*       cache_control,
+    int               no_content,
+    int               not_modified,
+    int               must_revalidate) MLN_CABI_NOEXCEPT;
+
+/**
+ * Cancel a pending HTTP request.  After this call, any subsequent
+ * mbgl_http_respond() with the same request_id is silently ignored.
+ * The host C# should also abort the in-flight HttpClient request.
+ */
+MLN_CABI_API void mbgl_http_cancel(uint64_t request_id) MLN_CABI_NOEXCEPT;
 #endif
 
 #ifdef __cplusplus

@@ -563,5 +563,65 @@ public static partial class NativeMethods
 
     [DllImport(Lib, EntryPoint = "mbgl_android_release_window")]
     public static extern void AndroidReleaseWindow(IntPtr window);
+
+    // ── Android HTTP provider ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Callback signature for the HTTP provider.  Called by the native layer
+    /// when it needs to fetch a URL.  Respond with <see cref="HttpRespond"/>.
+    /// </summary>
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    public delegate void HttpProviderDelegate(
+        ulong       requestId,
+        IntPtr      urlPtr,
+        IntPtr      etagPtr,
+        IntPtr      modifiedPtr,
+        long        rangeStart,
+        long        rangeEnd,
+        IntPtr      userdata);
+
+    /// <summary>Error codes for <see cref="HttpRespond"/>.</summary>
+    public enum MbglHttpError : int
+    {
+        None       = 0,
+        NotFound   = 2,
+        Server     = 3,
+        Connection = 4,
+        RateLimit  = 5,
+        Other      = 6,
+    }
+
+    /// <summary>
+    /// Register the C# HTTP provider.  Must be called before the first map is
+    /// created.  The delegate must be kept alive for the lifetime of the map.
+    /// </summary>
+    [DllImport(Lib, EntryPoint = "mbgl_set_http_provider")]
+    public static extern void SetHttpProvider(
+        HttpProviderDelegate? fn,
+        IntPtr                userdata);
+
+    /// <summary>
+    /// Deliver a completed HTTP response to the native layer.
+    /// Safe to call from any thread.  All string parameters may be IntPtr.Zero.
+    /// </summary>
+    [DllImport(Lib, EntryPoint = "mbgl_http_respond")]
+    public static extern void HttpRespond(
+        ulong         requestId,
+        MbglHttpError error,
+        IntPtr        errorMessage,
+        int           httpStatus,
+        IntPtr        data,
+        int           dataLen,
+        IntPtr        etag,
+        IntPtr        modified,
+        IntPtr        expires,
+        IntPtr        cacheControl,
+        int           noContent,
+        int           notModified,
+        int           mustRevalidate);
+
+    /// <summary>Cancel a pending HTTP request.</summary>
+    [DllImport(Lib, EntryPoint = "mbgl_http_cancel")]
+    public static extern void HttpCancel(ulong requestId);
 #endif
 }

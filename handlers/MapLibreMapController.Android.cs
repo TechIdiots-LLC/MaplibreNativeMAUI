@@ -4,6 +4,8 @@ using Android.Widget;
 using Android.Runtime;
 using Android.Text;
 using Android.Text.Method;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -22,6 +24,233 @@ namespace MapLibreNative.Maui.Handlers;
 /// </summary>
 public class MapLibreMapController : IMapLibreMapController
 {
+    // -- HTTP provider (shared across all map instances) -----------------------
+
+    private static readonly HttpClient s_http = new(new HttpClientHandler
+    {
+        AllowAutoRedirect       = true,
+        MaxAutomaticRedirections = 10,
+    })
+    {
+        Timeout = TimeSpan.FromSeconds(30),
+        DefaultRequestHeaders = { { "User-Agent", "MapLibreNative/1.0 (.NET MAUI Android)" } },
+    };
+
+    // Keep the delegate alive for the lifetime of the process so the GC
+    // never collects it while the native side is still pointing to it.
+    private static readonly NativeMethods.HttpProviderDelegate s_httpProvider = OnHttpRequest;
+
+    // Tracks in-flight CancellationTokenSources keyed by request_id so we can
+    // abort the HttpClient request when the native side cancels it.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, CancellationTokenSource>
+        s_pendingRequests = new();
+
+    private static bool s_httpProviderRegistered;
+
+    private static void EnsureHttpProviderRegistered()
+    {
+        if (s_httpProviderRegistered) return;
+        s_httpProviderRegistered = true;
+        NativeMethods.SetHttpProvider(s_httpProvider, IntPtr.Zero);
+    }
+
+    private static void OnHttpRequest(ulong requestId, IntPtr urlPtr, IntPtr etagPtr,
+                                       IntPtr modifiedPtr, long rangeStart, long rangeEnd,
+                                       IntPtr userdata)
+    {
+        string url      = Marshal.PtrToStringUTF8(urlPtr)  ?? string.Empty;
+        string? etag    = Marshal.PtrToStringUTF8(etagPtr);
+        string? modified = Marshal.PtrToStringUTF8(modifiedPtr);
+
+        var cts = new CancellationTokenSource();
+        s_pendingRequests[requestId] = cts;
+
+        // Fire-and-forget; errors are delivered via mbgl_http_respond.
+        _ = FetchAsync(requestId, url, etag, modified, rangeStart, rangeEnd, cts.Token);
+    }
+
+    private static async Task FetchAsync(ulong requestId, string url,
+                                          string? etag, string? modified,
+                                          long rangeStart, long rangeEnd,
+                                          CancellationToken ct)
+    {
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+
+            // Conditional GET headers
+            if (!string.IsNullOrEmpty(etag))
+                req.Headers.IfNoneMatch.Add(new EntityTagHeaderValue($"\"{etag}\"", true));
+            else if (!string.IsNullOrEmpty(modified))
+                req.Headers.IfModifiedSince = DateTimeOffset.TryParse(modified, out var dt) ? dt : null;
+
+            // Range request (used by PMTiles and other partial-content sources)
+            if (rangeStart >= 0 && rangeEnd >= rangeStart)
+                req.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(rangeStart, rangeEnd);
+
+            HttpResponseMessage resp;
+            try
+            {
+                resp = await s_http.SendAsync(req, HttpCompletionOption.ResponseContentRead, ct)
+                                   .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Request was cancelled from the native side — no response needed.
+                s_pendingRequests.TryRemove(requestId, out _);
+                return;
+            }
+            catch (Exception ex)
+            {
+                s_pendingRequests.TryRemove(requestId, out _);
+                RespondError(requestId, NativeMethods.MbglHttpError.Connection, ex.Message);
+                return;
+            }
+
+            s_pendingRequests.TryRemove(requestId, out _);
+
+            int status = (int)resp.StatusCode;
+
+            if (resp.StatusCode == System.Net.HttpStatusCode.NotModified)
+            {
+                RespondNotModified(requestId);
+                return;
+            }
+
+            if (resp.StatusCode == System.Net.HttpStatusCode.NoContent ||
+                (status == 404 && url.Contains("/tiles/")))
+            {
+                RespondNoContent(requestId);
+                return;
+            }
+
+            if (status == 404)
+            {
+                RespondError(requestId, NativeMethods.MbglHttpError.NotFound, "HTTP 404");
+                return;
+            }
+
+            if (status == 429)
+            {
+                RespondError(requestId, NativeMethods.MbglHttpError.RateLimit, "HTTP 429");
+                return;
+            }
+
+            if (status >= 500 && status < 600)
+            {
+                RespondError(requestId, NativeMethods.MbglHttpError.Server, $"HTTP {status}");
+                return;
+            }
+
+            // 200 OK and 206 Partial Content are both treated as success.
+            if (status != 200 && status != 206)
+            {
+                RespondError(requestId, NativeMethods.MbglHttpError.Other, $"HTTP {status}");
+                return;
+            }
+
+            byte[] body = await resp.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+
+            string? respEtag     = resp.Headers.ETag?.Tag?.Trim('"');
+            string? respModified = resp.Content.Headers.LastModified?.ToString("R");
+            string? respExpires  = resp.Content.Headers.Expires?.ToString("R");
+            string? cacheControl = resp.Headers.CacheControl?.ToString();
+            int     mustReval    = resp.Headers.CacheControl?.MustRevalidate == true ? 1 : 0;
+
+            RespondSuccess(requestId, body, respEtag, respModified, respExpires,
+                           cacheControl, mustReval);
+        }
+        catch (OperationCanceledException)
+        {
+            s_pendingRequests.TryRemove(requestId, out _);
+        }
+        catch (Exception ex)
+        {
+            s_pendingRequests.TryRemove(requestId, out _);
+            RespondError(requestId, NativeMethods.MbglHttpError.Connection, ex.Message);
+        }
+    }
+
+    private static void RespondSuccess(ulong requestId, byte[] body,
+                                       string? etag, string? modified,
+                                       string? expires, string? cacheControl,
+                                       int mustReval)
+    {
+        var etagBytes    = ToNullTerminatedUtf8(etag);
+        var modBytes     = ToNullTerminatedUtf8(modified);
+        var expiresBytes = ToNullTerminatedUtf8(expires);
+        var ccBytes      = ToNullTerminatedUtf8(cacheControl);
+
+        // Use a dummy single-byte array when body is empty so fixed() gives a
+        // valid (non-null) pointer — the C++ side checks data_len so the byte
+        // itself is never read.
+        byte[] safeBody = body.Length > 0 ? body : new byte[1];
+
+        unsafe
+        {
+            fixed (byte* bodyPtr = safeBody)
+            fixed (byte* e = etagBytes)
+            fixed (byte* m = modBytes)
+            fixed (byte* x = expiresBytes)
+            fixed (byte* c = ccBytes)
+            {
+                NativeMethods.HttpRespond(
+                    requestId,
+                    NativeMethods.MbglHttpError.None,
+                    IntPtr.Zero,
+                    200,
+                    (nint)bodyPtr,
+                    body.Length,
+                    e is null ? IntPtr.Zero : (IntPtr)e,
+                    m is null ? IntPtr.Zero : (IntPtr)m,
+                    x is null ? IntPtr.Zero : (IntPtr)x,
+                    c is null ? IntPtr.Zero : (IntPtr)c,
+                    0, 0, mustReval);
+            }
+        }
+    }
+
+    private static byte[]? ToNullTerminatedUtf8(string? s)
+    {
+        if (string.IsNullOrEmpty(s)) return null;
+        int len = System.Text.Encoding.UTF8.GetByteCount(s);
+        var buf = new byte[len + 1]; // +1 for null terminator (already zero-initialized)
+        System.Text.Encoding.UTF8.GetBytes(s, 0, s.Length, buf, 0);
+        return buf;
+    }
+
+    private static void RespondNotModified(ulong requestId)
+    {
+        NativeMethods.HttpRespond(requestId, NativeMethods.MbglHttpError.None,
+            IntPtr.Zero, 304, IntPtr.Zero, 0,
+            IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero,
+            0, 1, 0);
+    }
+
+    private static void RespondNoContent(ulong requestId)
+    {
+        NativeMethods.HttpRespond(requestId, NativeMethods.MbglHttpError.None,
+            IntPtr.Zero, 204, IntPtr.Zero, 0,
+            IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero,
+            1, 0, 0);
+    }
+
+    private static void RespondError(ulong requestId, NativeMethods.MbglHttpError error, string message)
+    {
+        var msgBytes = ToNullTerminatedUtf8(message);
+        unsafe
+        {
+            fixed (byte* msg = msgBytes)
+            {
+                NativeMethods.HttpRespond(requestId, error,
+                    msg is null ? IntPtr.Zero : (IntPtr)msg,
+                    0, IntPtr.Zero, 0,
+                    IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero,
+                    0, 0, 0);
+            }
+        }
+    }
+
     // -- Layout property name set (same as Windows controller) ----------------
 
     private static readonly HashSet<string> LayoutPropertyNames = new(StringComparer.Ordinal)
@@ -85,6 +314,8 @@ public class MapLibreMapController : IMapLibreMapController
     {
         _pixelRatio  = pixelRatio;
         _styleString = styleString;
+
+        EnsureHttpProviderRegistered();
 
         var ctx = Android.App.Application.Context!;
 
