@@ -7,6 +7,10 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 3.2.1
+### 🐛 Bug fixes
+- **WPF: popups float above other windows when minimized** — `MlnMapHost` now explicitly closes the navigation, attribution button, and attribution detail `Popup` overlays when the parent window is minimized, and re-opens them (via `UpdateNavPopupOpen` / `UpdateAttributionPopupOpen`) when restored. Previously the popups remained visible as floating top-level HWNDs above all other windows.
+
 ## 3.2.0
 ### ✨ Features and improvements
 - **.NET 10 multi-targeting** — All NuGet packages (`MapLibreNative.Maui`, `MapLibreNative.Maui.Handlers`, `MapLibreNative.Maui.WPF`, `MapLibreNative.Maui.Vulkan`) and sample projects now target both `net9.0` and `net10.0` platform TFMs. `global.json` updated to `rollForward: latestMajor` so the .NET 10 SDK is picked up automatically on CI.

@@ -494,10 +494,21 @@ public class MlnMapHost : HwndHost
             };
             parentWin.StateChanged += (_, _) =>
             {
-                // Window restored from minimize: WPF SizeChanged doesn't fire when the
-                // restored size is unchanged, so the GL surface won't repaint on its own.
-                if (parentWin.WindowState != WindowState.Minimized)
+                if (parentWin.WindowState == WindowState.Minimized)
+                {
+                    // Close all popups so they don't float above other windows.
+                    if (_navPopup         != null) _navPopup.IsOpen         = false;
+                    if (_attributionPopup != null) _attributionPopup.IsOpen = false;
+                    if (_attrButtonPopup  != null) _attrButtonPopup.IsOpen  = false;
+                }
+                else
+                {
+                    // Window restored from minimize: WPF SizeChanged doesn't fire when the
+                    // restored size is unchanged, so the GL surface won't repaint on its own.
                     _renderNeedsUpdate = true;
+                    UpdateNavPopupOpen();
+                    UpdateAttributionPopupOpen();
+                }
             };
             parentWin.LocationChanged += (_, _) => 
             { 
