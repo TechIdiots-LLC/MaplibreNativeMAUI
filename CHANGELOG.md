@@ -7,6 +7,10 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 3.2.3
+### 🐛 Bug fixes
+- **WPF: popups don't reappear after restoring from minimize** — `UpdateNavPopupOpen()` was called synchronously in `StateChanged` while `IsVisible` on the `HwndHost` was still `false`, so the nav popup stayed closed. `UpdateAttributionPopupOpen()` was also called instead of `CollapseAttribution()`, meaning the attribution button was never re-shown (unlike the `Activated` path). Fixed by deferring the reopen to `Dispatcher.BeginInvoke(Render)` so WPF has finished making the visual tree visible, and calling `CollapseAttribution()` to restore the attribution button.
+
 ## 3.2.2
 ### 🐛 Bug fixes
 - **WPF: popups reappear after minimize (race conditions)** — Two race conditions in `MlnMapHost` allowed popups to reopen after being closed by `StateChanged`: (1) `WM_ACTIVATE` can arrive on a minimized window, causing the `Activated` handler to call `UpdateNavPopupOpen()` and reopen the nav popup; (2) `LocationChanged`’s `Dispatcher.BeginInvoke(Render, …)` callbacks captured `wasOpen = true` before `StateChanged` ran and then re‑set `IsOpen = true` after `StateChanged` closed the popups. Both paths now check `parentWin.WindowState != WindowState.Minimized` before reopening.

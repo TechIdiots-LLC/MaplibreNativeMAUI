@@ -509,8 +509,15 @@ public class MlnMapHost : HwndHost
                     // Window restored from minimize: WPF SizeChanged doesn't fire when the
                     // restored size is unchanged, so the GL surface won't repaint on its own.
                     _renderNeedsUpdate = true;
-                    UpdateNavPopupOpen();
-                    UpdateAttributionPopupOpen();
+                    // Defer popup reopen — IsVisible on the HwndHost is still false at the
+                    // point StateChanged fires for restore; BeginInvoke(Render) lets WPF
+                    // finish making the visual tree visible before we set IsOpen = true.
+                    Dispatcher.BeginInvoke(DispatcherPriority.Render, () =>
+                    {
+                        if (parentWin.WindowState == WindowState.Minimized) return;
+                        UpdateNavPopupOpen();
+                        if (_attrLoaded) CollapseAttribution();  // reshow ⓘ button
+                    });
                 }
             };
             parentWin.LocationChanged += (_, _) => 
