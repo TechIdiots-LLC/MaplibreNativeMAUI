@@ -7,7 +7,19 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
-## 3.1.0
+## 3.2.0
+### ✨ Features and improvements
+- **Android HTTP networking** — Replaced the no-op `http_file_source_stub.cpp` with a full provider-callback bridge (`http_file_source_android.cpp`). C# `HttpClient` handles fetching; results are marshalled back to the mbgl RunLoop via `mbgl_http_respond`. Supports conditional GET (ETag / If-Modified-Since), byte-range requests for PMTiles (`Range: bytes=start-end`, HTTP 206 treated as success), and all mbgl response types (200, 304, 204, 404, 429, 5xx, errors).
+- **Android gesture input** — `MapLibreMapController.Android.cs` now attaches `GestureDetector`, `ScaleGestureDetector`, and a raw two-pointer tracker to the `SurfaceView`. Supported gestures: single-finger pan (with fling/momentum), pinch-to-zoom, two-finger rotate, two-finger tilt (shove), double-tap zoom, single-tap (`OnMapClickReceived`), long-press (`OnMapLongClickReceived`). `SetRotateGesturesEnabled`, `SetScrollGesturesEnabled`, `SetTiltGesturesEnabled`, and `SetZoomGesturesEnabled` are now real flag setters instead of no-ops.
+- **Android NDK platform** — `ANDROID_PLATFORM` corrected from `android-21` to `android-23` in both `native-android.yml` and `native-android-vulkan.yml`, matching `SupportedOSPlatformVersion=23.0`.
+- **CI/release: multi-TFM publish fix** — `ConsoleExample` and `WpfExample` now receive `-f net10.0-windows10.0.19041.0 -p:UseLocalPackages=true` on all publish steps in both `ci.yml` and `release.yml`, resolving `NETSDK1129` (ambiguous TFM) and `NU1102` (Mono runtime not found) errors introduced when both projects gained `net10.0` TFMs.
+- **`WpfExample.csproj`: conditional reference** — Uses `ProjectReference` to `MapLibreNative.Maui.WPF` when building locally and `PackageReference` (version `*-*`) when `UseLocalPackages=true`, preventing CI restore from pulling in Android/iOS TFMs via the bindings project chain.
+
+### 🐛 Bug fixes
+- **Android linker: undefined `_impl` symbols** — Forward declarations of `mbgl_set_http_provider_impl`, `mbgl_http_respond_impl`, and `mbgl_http_cancel_impl` in `mln_cabi.cpp` were missing `extern "C"`, causing `ld.lld` to look for C++-mangled names that don't match the `extern "C"` definitions in `http_file_source_android.cpp`. Fixed by adding `extern "C"` to all three forward declarations.
+- **Android controller: ambiguous `View` type** — `MapTouchListener` used the unqualified `View` type, which was ambiguous between `Microsoft.Maui.Controls.View` and `Android.Views.View`. Qualified to `Android.Views.View` in both the interface declaration and the `OnTouch` parameter.
+
+
 ### ✨ Features and improvements
 - **Feature state (set / get / remove)** — New `SetFeatureState`, `GetFeatureState`, and `RemoveFeatureState` methods on the controller and `MbglMap` wrapper. Backed by `mbgl_map_set_feature_state`, `mbgl_map_get_feature_state`, and `mbgl_map_remove_feature_state` in the C ABI. State is passed as a JSON object string (e.g. `{"hover":true}`); `source_layer_id` is optional for non-vector sources; `feature_id` and `state_key` are optional on remove to clear all features/keys in a source.
 - **Viewport bounds** — New `GetVisibleBounds()` controller method (backed by `mbgl_map_latlng_bounds_for_camera`) returns the `(LatSW, LonSW, LatNE, LonNE)` lat-lng bounding box of the current camera viewport.
