@@ -1066,6 +1066,10 @@ public class MlnMapHost : HwndHost
     {
         _attrCollapseTimer?.Stop();
         if (_attributionPopup == null || !_attrLoaded) return;
+        var parentWin = Window.GetWindow(this);
+        // Don't open the popup (or start the auto-collapse timer) when the window
+        // isn't visible to the user — it would float above other applications.
+        if (parentWin?.WindowState == WindowState.Minimized || parentWin?.IsActive == false) return;
         if (_initialized && IsVisible)
         {
             _attributionPopup.IsOpen = true;
@@ -1080,7 +1084,8 @@ public class MlnMapHost : HwndHost
         if (_attributionPopup != null) _attributionPopup.IsOpen = false;
         var parentWin = Window.GetWindow(this);
         if (_attrButtonPopup != null && _attrLoaded && _initialized && IsVisible
-            && parentWin?.WindowState != WindowState.Minimized)
+            && parentWin?.WindowState != WindowState.Minimized
+            && parentWin?.IsActive == true)
             _attrButtonPopup.IsOpen = true;
     }
 

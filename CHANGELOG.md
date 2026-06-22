@@ -7,6 +7,10 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 3.2.5
+### 🐛 Bug fixes
+- **WPF: attribution button appears above other apps when Vistumbler is in the background** — Map observer events (`onDidBecomeIdle`, `onCameraIsChanging`) fire on a background thread even while another application has focus. `onCameraIsChanging` dispatched `CollapseAttribution()` which opened `_attrButtonPopup` with no `IsActive` check; `onDidBecomeIdle` could call `RefreshAttribution()` → `ExpandAttribution()` → start `_attrCollapseTimer`, whose tick then opened the button popup 5 seconds later. Both `ExpandAttribution()` and `CollapseAttribution()` now check `parentWin?.IsActive == true` (in addition to the existing `WindowState != Minimized` guard) and skip opening any popup when the window does not have focus.
+
 ## 3.2.4
 ### 🐛 Bug fixes
 - **WPF: attribution button reappears while window is minimized** — The `_attrCollapseTimer` (a 5-second `DispatcherTimer` that transitions the attribution panel from expanded to collapsed/button view) was left running after minimize. When it fired, `CollapseAttribution()` opened `_attrButtonPopup` without checking `WindowState`, causing the button to float above other windows. Fixed by stopping `_attrCollapseTimer` in the `StateChanged` minimize branch, and adding a `WindowState.Minimized` guard in `CollapseAttribution()`.
