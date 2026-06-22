@@ -7,6 +7,10 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 3.2.4
+### 🐛 Bug fixes
+- **WPF: attribution button reappears while window is minimized** — The `_attrCollapseTimer` (a 5-second `DispatcherTimer` that transitions the attribution panel from expanded to collapsed/button view) was left running after minimize. When it fired, `CollapseAttribution()` opened `_attrButtonPopup` without checking `WindowState`, causing the button to float above other windows. Fixed by stopping `_attrCollapseTimer` in the `StateChanged` minimize branch, and adding a `WindowState.Minimized` guard in `CollapseAttribution()`.
+
 ## 3.2.3
 ### 🐛 Bug fixes
 - **WPF: popups don't reappear after restoring from minimize** — `UpdateNavPopupOpen()` was called synchronously in `StateChanged` while `IsVisible` on the `HwndHost` was still `false`, so the nav popup stayed closed. `UpdateAttributionPopupOpen()` was also called instead of `CollapseAttribution()`, meaning the attribution button was never re-shown (unlike the `Activated` path). Fixed by deferring the reopen to `Dispatcher.BeginInvoke(Render)` so WPF has finished making the visual tree visible, and calling `CollapseAttribution()` to restore the attribution button.

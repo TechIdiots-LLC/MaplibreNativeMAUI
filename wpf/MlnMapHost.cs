@@ -499,7 +499,9 @@ public class MlnMapHost : HwndHost
             {
                 if (parentWin.WindowState == WindowState.Minimized)
                 {
-                    // Close all popups so they don't float above other windows.
+                    // Close all popups and stop the collapse timer so it can't
+                    // reopen the attribution button while the window is minimized.
+                    _attrCollapseTimer?.Stop();
                     if (_navPopup         != null) _navPopup.IsOpen         = false;
                     if (_attributionPopup != null) _attributionPopup.IsOpen = false;
                     if (_attrButtonPopup  != null) _attrButtonPopup.IsOpen  = false;
@@ -1076,7 +1078,9 @@ public class MlnMapHost : HwndHost
     {
         _attrCollapseTimer?.Stop();
         if (_attributionPopup != null) _attributionPopup.IsOpen = false;
-        if (_attrButtonPopup != null && _attrLoaded && _initialized && IsVisible)
+        var parentWin = Window.GetWindow(this);
+        if (_attrButtonPopup != null && _attrLoaded && _initialized && IsVisible
+            && parentWin?.WindowState != WindowState.Minimized)
             _attrButtonPopup.IsOpen = true;
     }
 
