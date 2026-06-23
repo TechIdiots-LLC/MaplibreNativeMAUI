@@ -200,16 +200,24 @@ public class MlnMapHost : HwndHost
     }
 
     /// <summary>
-    /// Add an image source from a URL.
-    /// Note: the C ABI does not yet support lat/lng quad coordinates for image sources;
-    /// the source is registered as a raster source (same workaround as the MAUI controller).
+    /// Add an image source pinned to the map by its four corner coordinates.
+    /// <paramref name="coordinates"/> order: top-right, top-left, bottom-right, bottom-left.
+    /// When <paramref name="coordinates"/> is <c>null</c> the source is added as a plain raster source.
     /// No-op if the source already exists.
     /// </summary>
-    public void AddImageSource(string sourceId, string url)
+    public void AddImageSource(string sourceId, string url,
+        double lat0 = 0, double lon0 = 0, double lat1 = 0, double lon1 = 0,
+        double lat2 = 0, double lon2 = 0, double lat3 = 0, double lon3 = 0,
+        bool hasCoordinates = false)
     {
         if (_style == null) return;
         if (!_style.HasSource(sourceId))
-            _style.AddRasterSource(sourceId, url);
+        {
+            if (hasCoordinates)
+                _style.AddImageSource(sourceId, url, lat0, lon0, lat1, lon1, lat2, lon2, lat3, lon3);
+            else
+                _style.AddRasterSource(sourceId, url);
+        }
         _renderNeedsUpdate = true;
     }
 

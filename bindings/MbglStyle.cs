@@ -37,6 +37,16 @@ public sealed class MbglStyle
     public MbglSource AddRasterDemSource(string sourceId, string url, int tileSize = 512)
         => new(NativeMethods.StyleAddRasterDemSource(Handle, sourceId, url, tileSize));
 
+    /// <summary>
+    /// Add an image source with an explicit lat/lng quad defining the four corners.
+    /// Corner order: top-right, top-left, bottom-right, bottom-left (matches MapLibre style spec).
+    /// </summary>
+    public MbglSource AddImageSource(string sourceId, string url,
+        double lat0, double lon0, double lat1, double lon1,
+        double lat2, double lon2, double lat3, double lon3)
+        => new(NativeMethods.StyleAddImageSource(Handle, sourceId, url,
+               lat0, lon0, lat1, lon1, lat2, lon2, lat3, lon3));
+
     public void RemoveSource(string sourceId)
         => NativeMethods.StyleRemoveSource(Handle, sourceId);
 

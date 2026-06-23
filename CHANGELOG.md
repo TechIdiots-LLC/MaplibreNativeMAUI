@@ -9,7 +9,8 @@
 
 ## 3.2.6
 ### ✨ Features and improvements
-- **WPF: `AddVectorSourceUrl`, `AddRasterSource`, `AddRasterDemSource`, `AddImageSource`, `AddSourceJson`** — Five new `MlnMapHost` source methods matching the MAUI controller surface. `AddVectorSourceUrl` adds a `type:"vector"` source backed by a TileJSON URL. `AddRasterSource` and `AddRasterDemSource` add raster/raster-DEM tile sources with an optional tile-size parameter. `AddImageSource` registers an image URL as a raster source (same workaround as the MAUI controller — the C ABI does not yet support lat/lng quad coordinates). `AddSourceJson` accepts a raw MapLibre source-spec JSON object of any type, matching the method already available on the MAUI controller.
+- **WPF: `AddVectorSourceUrl`, `AddRasterSource`, `AddRasterDemSource`, `AddImageSource`, `AddSourceJson`** — Five new `MlnMapHost` source methods matching the MAUI controller surface. `AddVectorSourceUrl` adds a `type:"vector"` source backed by a TileJSON URL. `AddRasterSource` and `AddRasterDemSource` add raster/raster-DEM tile sources with an optional tile-size parameter. `AddImageSource` now accepts full lat/lng quad corner coordinates (top-right, top-left, bottom-right, bottom-left) backed by the already-implemented `mbgl_style_add_image_source` C ABI function. `AddSourceJson` accepts a raw MapLibre source-spec JSON object of any type.
+- **Image source lat/lng quad support** — `mbgl_style_add_image_source` was already implemented in `mln_cabi.cpp` and declared in `mln_cabi.h` but was not wired up to C#. Added `StyleAddImageSource` P/Invoke to `NativeMethods.cs`, `AddImageSource` method to `MbglStyle`, and updated `MapLibreMapController.Windows.cs` and `MlnMapHost` to use it. The raster-source fallback is only used when no coordinates are provided.
 
 ## 3.2.5
 ### 🐛 Bug fixes

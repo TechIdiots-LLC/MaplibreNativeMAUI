@@ -307,6 +307,12 @@ public static partial class NativeMethods
         StringMarshalling = StringMarshalling.Utf8)]
     public static partial IntPtr StyleAddRasterDemSource(IntPtr style, string sourceId, string url, int tileSize);
 
+    [LibraryImport(Lib, EntryPoint = "mbgl_style_add_image_source",
+        StringMarshalling = StringMarshalling.Utf8)]
+    public static partial IntPtr StyleAddImageSource(IntPtr style, string sourceId, string url,
+        double lat0, double lon0, double lat1, double lon1,
+        double lat2, double lon2, double lat3, double lon3);
+
     [LibraryImport(Lib, EntryPoint = "mbgl_style_remove_source",
         StringMarshalling = StringMarshalling.Utf8)]
     public static partial MbglStatus StyleRemoveSource(IntPtr style, string sourceId);

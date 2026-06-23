@@ -941,8 +941,19 @@ public class MapLibreMapController : IMapLibreMapController
     public void AddImageSource(string sourceName, string url, LatLngQuad? coordinates)
     {
         if (!_styleReady || _style == null) return;
-        // C ABI does not yet expose image sources with lat/lng quads; add as raster-tile workaround
-        _style.AddRasterSource(sourceName, url);
+        if (coordinates != null)
+        {
+            _style.AddImageSource(sourceName, url,
+                coordinates.TopRight.Lat,    coordinates.TopRight.Lng,
+                coordinates.TopLeft.Lat,     coordinates.TopLeft.Lng,
+                coordinates.BottomRight.Lat, coordinates.BottomRight.Lng,
+                coordinates.BottomLeft.Lat,  coordinates.BottomLeft.Lng);
+        }
+        else
+        {
+            // No coordinates supplied — fall back to a plain raster source.
+            _style.AddRasterSource(sourceName, url);
+        }
     }
 
     public void RemoveSource(string sourceId)
