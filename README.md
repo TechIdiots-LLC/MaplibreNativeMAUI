@@ -346,7 +346,7 @@ xmlns:mlwpf="clr-namespace:MapLibreNative.Maui.WPF;assembly=MapLibreNative.Maui.
 
 ### Prerequisites
 
-- .NET 9 SDK
+- .NET 10 SDK (LTS) — projects multi-target .NET 9 and .NET 10
 - CMake ≥ 3.21
 - **Android**: Android NDK r26+, `ANDROID_NDK` env var set
 - **Apple**: Xcode 15+, macOS host
@@ -377,7 +377,7 @@ cmake --build build/windows --config Release
 ### Build and run the sample
 
 ```sh
-dotnet build sample/MauiSample.csproj -f net9.0-android
+dotnet build sample/MauiSample.csproj -f net10.0-android
 ```
 
 ---
