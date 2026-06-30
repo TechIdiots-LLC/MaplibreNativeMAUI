@@ -2,10 +2,17 @@
 
 ## master
 ### ✨ Features and improvements
-- **WPF sample: data-driven circle-color test harness** — `WpfExample` gains a "Run Data-Driven Circle Test" button (and a `--autotest` CLI flag for unattended/CI use) that adds a shared GeoJSON source at runtime with three circle layers using literal, `property`+`stops`, `case`, and `match` `circle-color` forms, plus a real WifiDB vector-tile comparison, and logs `QueryRenderedFeaturesInBox` results for each to `%TEMP%\maplibre_datadriven_test.log`. Written to investigate a VistumblerCS report of circle layers rendering zero features; confirmed all four `circle-color` forms render correctly via the runtime `AddCircleLayer` API (no `dependencies/maplibre-native` changes needed) — the actual bug was a consuming app's server `.htaccess` mislabeling 404 responses as gzip. Kept as a regression check for this class of bug.
+- _...Add new stuff here..._
 
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
+
+## 3.2.10
+### ✨ Features and improvements
+- **WPF sample: data-driven circle-color test harness** — `WpfExample` gains a "Run Data-Driven Circle Test" button (and a `--autotest` CLI flag for unattended/CI use) that adds a shared GeoJSON source at runtime with circle layers using literal, `property`+`stops`, `case`, and `match` `circle-color` forms, plus a vector-tile comparison against the public MapLibre demotiles source (`source-layer "centroids"`), and logs `QueryRenderedFeaturesInBox` results for each to `%TEMP%\maplibre_datadriven_test.log`. Written to investigate a VistumblerCS report of circle layers rendering zero features; kept as a regression check for this class of bug. (An initial pass at this investigation concluded the renderer was fine and pinned the bug entirely on a consuming app's server `.htaccess` mislabeling 404 responses as gzip — that header bug was real and is fixed upstream in the consuming app, but it was not the whole story; see the source-layer fix below, found by extending this same harness to a populated vector source.)
+
+### 🐞 Bug fixes
+- **Runtime vector-source circle/symbol/etc. layers could render zero features** — a layer added at runtime (`AddCircleLayer` et al.) against a vector-tile source, with its `source-layer` set via `SetSourceLayer` *after* the layer is added to the style, would never render any features from tiles that were already loaded — even with a perfectly valid `circle-color`/`circle-radius` and correct tile data. Root cause: upstream `mbgl::style::Layer::setSourceLayer()` is the only mutating layer setter that does not call `observer->onLayerChanged()` (unlike `setFilter`, `setVisibility`, `setMinZoom`, `setMaxZoom`), so the render orchestrator was never told to re-evaluate already-loaded tiles against the new source-layer. Adding any filter to the layer "fixed" it as a side effect (filters do notify), which is why this was previously misread as a `circle-color`/data-driven-paint bug rather than a source-layer bug. Fixed in `mbgl_layer_set_source_layer` (`native/src/mln_cabi.cpp`) by triggering the missing notification locally — toggling layer visibility to its opposite value and back immediately after applying the source-layer — rather than patching the `dependencies/maplibre-native` submodule. Verified with the WPF sample harness above: runtime circle layers against a vector source-layer went from 0 rendered features to the full expected set.
 
 ## 3.2.9
 ### ✨ Features and improvements
