@@ -2,7 +2,7 @@
 
 ## master
 ### ✨ Features and improvements
-- _...Add new stuff here..._
+- **WPF sample: data-driven circle-color test harness** — `WpfExample` gains a "Run Data-Driven Circle Test" button (and a `--autotest` CLI flag for unattended/CI use) that adds a shared GeoJSON source at runtime with three circle layers using literal, `property`+`stops`, `case`, and `match` `circle-color` forms, plus a real WifiDB vector-tile comparison, and logs `QueryRenderedFeaturesInBox` results for each to `%TEMP%\maplibre_datadriven_test.log`. Written to investigate a VistumblerCS report of circle layers rendering zero features; confirmed all four `circle-color` forms render correctly via the runtime `AddCircleLayer` API (no `dependencies/maplibre-native` changes needed) — the actual bug was a consuming app's server `.htaccess` mislabeling 404 responses as gzip. Kept as a regression check for this class of bug.
 
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
