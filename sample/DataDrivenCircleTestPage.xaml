@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:maplibre="clr-namespace:MapLibreNative.Maui.Handlers;assembly=MapLibreNative.Maui.Handlers"
+             xmlns:local="clr-namespace:MauiSample"
+             x:DataType="local:DataDrivenCircleTestViewModel"
+             x:Class="MauiSample.DataDrivenCircleTestPage"
+             Title="Data-Driven Test">
+
+    <Grid RowDefinitions="*,Auto,Auto">
+        <maplibre:MapLibreMap x:Name="Map"
+                              Grid.Row="0"
+                              StyleUrl="{Binding StyleUrl}"
+                              MapReady="OnMapReady" />
+
+        <HorizontalStackLayout Grid.Row="1" Spacing="8" Padding="8">
+            <Button x:Name="RunTestButton" Text="Run Test" Clicked="OnRunTest" />
+        </HorizontalStackLayout>
+
+        <ScrollView Grid.Row="2" MaximumHeightRequest="180">
+            <Label Text="{Binding Status}" Padding="8,4" FontFamily="Courier" FontSize="11" />
+        </ScrollView>
+    </Grid>
+</ContentPage>
