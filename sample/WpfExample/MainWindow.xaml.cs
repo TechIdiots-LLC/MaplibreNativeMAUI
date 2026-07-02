@@ -12,6 +12,7 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Threading;
 
 namespace WpfExample;
 
@@ -20,6 +21,23 @@ public partial class MainWindow : Window
     private bool   _markerVisible;
     private bool _firstStyleLoad = true;
     private double _currentZoom = 9;
+
+    // ── GPS simulation ─────────────────────────────────────────────────────────
+    // A short loop around Seattle. The GPS overlay button on the map (bottom-right)
+    // cycles: ○ Off → ⊙ Show → ◎ Follow → ○ Off.  Click it before or after
+    // starting the simulation to see how each mode behaves.
+    private static readonly (double Lat, double Lon, float Bearing, string Label)[] GpsWaypoints =
+    [
+        (47.6062, -122.3321,   0f, "Pike Place Market"),
+        (47.6089, -122.3380, 310f, "Seattle Centre approach"),
+        (47.6116, -122.3493, 270f, "Space Needle"),
+        (47.6145, -122.3450,  45f, "Queen Anne"),
+        (47.6120, -122.3330,  90f, "South Lake Union"),
+        (47.6090, -122.3290, 135f, "Capitol Hill approach"),
+        (47.6062, -122.3321, 200f, "Pike Place Market (loop)"),
+    ];
+    private DispatcherTimer? _gpsTimer;
+    private int _gpsWaypointIndex;
 
     // ── Data-driven circle-color investigation ──────────────────────────────────
     // See https://github.com/TechIdiots-LLC/MaplibreNativeMAUI investigate/runtime-data-driven-circle-color.
@@ -395,5 +413,40 @@ public partial class MainWindow : Window
         var line = $"[{DateTime.Now:HH:mm:ss.fff}] {message}";
         System.Diagnostics.Debug.WriteLine($"[ddtest] {line}");
         try { File.AppendAllText(_autoTestLogPath, line + Environment.NewLine); } catch { /* best-effort */ }
+    }
+
+    // ── GPS simulation ─────────────────────────────────────────────────────────
+
+    private void BtnGpsStart_Click(object sender, RoutedEventArgs e)
+    {
+        if (_gpsTimer != null)
+            return; // already running
+
+        _gpsWaypointIndex = 0;
+        _gpsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
+        _gpsTimer.Tick += GpsTimer_Tick;
+        _gpsTimer.Start();
+
+        BtnGpsStart.IsEnabled = false;
+        BtnGpsStop.IsEnabled  = true;
+        StatusText.Text = "GPS simulation running — tap ○/⊙/◎ on the map to cycle tracking mode.";
+    }
+
+    private void BtnGpsStop_Click(object sender, RoutedEventArgs e)
+    {
+        _gpsTimer?.Stop();
+        _gpsTimer = null;
+
+        BtnGpsStart.IsEnabled = true;
+        BtnGpsStop.IsEnabled  = false;
+        StatusText.Text = "GPS simulation stopped.";
+    }
+
+    private void GpsTimer_Tick(object? sender, EventArgs e)
+    {
+        var wp = GpsWaypoints[_gpsWaypointIndex % GpsWaypoints.Length];
+        MapHost.UpdateGpsLocation(wp.Lat, wp.Lon, wp.Bearing, accuracyMeters: 8f);
+        StatusText.Text = $"GPS fix #{_gpsWaypointIndex + 1}: {wp.Label}  ({wp.Lat:F4}, {wp.Lon:F4})  bearing={wp.Bearing:F0}°";
+        _gpsWaypointIndex++;
     }
 }

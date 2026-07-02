@@ -288,6 +288,7 @@ public class MapLibreMapController : IMapLibreMapController
     public void SetAttributionButtonMargins(int x, int y)     { }
     public void SetShowNavigationControls(bool show)          { }
     public void SetShowGpsControl(bool show)                  { }
+    public void UpdateGpsLocation(double lat, double lon, float bearing = 0, float accuracyMeters = 10) { }
     public void SetShowAttributionControl(bool show, string? customAttribution)
     {
         _showAttrControl   = show;

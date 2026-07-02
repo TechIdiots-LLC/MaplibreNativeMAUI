@@ -428,7 +428,7 @@ public class MapLibreMapController : IMapLibreMapController
     private bool   _showGpsControl = true;
     private IntPtr _gpsFont  = IntPtr.Zero;
     /// <summary>GPS tracking mode — matches Android TrackingMode enum.</summary>
-    private enum GpsTrackingMode { Off, Show, Follow }
+    private enum GpsTrackingMode { Off, Show, Follow, FollowBearing }
     private GpsTrackingMode _gpsMode = GpsTrackingMode.Off;
     // Last received GPS fix — cached so SHOW mode can display it immediately when enabled
     private double _lastGpsLat, _lastGpsLon;
@@ -1517,8 +1517,8 @@ public class MapLibreMapController : IMapLibreMapController
                 int btn = y / (btnSizePx + 1);
                 switch (btn)
                 {
-                    case 0: CycleGpsMode();  break;  // top    = GPS tracking state
-                    case 1: ResetNorth();    break;  // bottom = reset bearing to north
+                    case 0: CycleGpsMode();             break;  // top    = GPS tracking state
+                    case 1: GpsBearingButtonPressed(); break;  // bottom = reset north / drop FollowBearing→Follow
                 }
                 return IntPtr.Zero;
             }
@@ -1527,15 +1527,16 @@ public class MapLibreMapController : IMapLibreMapController
         return DefWindowProcA(hWnd, msg, wParam, lParam);
     }
 
-    /// <summary>Cycle GPS tracking mode: Off → Show → Follow → Off.</summary>
+    /// <summary>Cycle GPS tracking mode: Off → Show → Follow → FollowBearing → Off.</summary>
     private void CycleGpsMode()
     {
         _gpsMode = _gpsMode switch
         {
-            GpsTrackingMode.Off    => GpsTrackingMode.Show,
-            GpsTrackingMode.Show   => GpsTrackingMode.Follow,
-            GpsTrackingMode.Follow => GpsTrackingMode.Off,
-            _                      => GpsTrackingMode.Off,
+            GpsTrackingMode.Off           => GpsTrackingMode.Show,
+            GpsTrackingMode.Show          => GpsTrackingMode.Follow,
+            GpsTrackingMode.Follow        => GpsTrackingMode.FollowBearing,
+            GpsTrackingMode.FollowBearing => GpsTrackingMode.Off,
+            _                             => GpsTrackingMode.Off,
         };
 
         ApplyGpsMode();
@@ -1556,9 +1557,11 @@ public class MapLibreMapController : IMapLibreMapController
         {
             // (Re-)apply the last known GPS fix to the location indicator
             _pendingLocInd = new LocIndParams(_lastGpsLat, _lastGpsLon, _lastGpsBearing, Math.Max(5f, _lastGpsAccuracy));
-            if (_gpsMode == GpsTrackingMode.Follow)
+            if (_gpsMode is GpsTrackingMode.Follow or GpsTrackingMode.FollowBearing)
             {
-                EaseTo(_lastGpsLat, _lastGpsLon, GetZoom() < 8 ? 14 : GetZoom(), GetBearing(), GetPitch(), durationMs: 300);
+                double cameraZoom    = GetZoom() < 8 ? 14 : GetZoom();
+                double cameraBearing = _gpsMode == GpsTrackingMode.FollowBearing ? _lastGpsBearing : GetBearing();
+                EaseTo(_lastGpsLat, _lastGpsLon, cameraZoom, cameraBearing, GetPitch(), durationMs: 300);
             }
             if (_styleReady && _style != null)
                 ApplyPendingLocationIndicator();
@@ -1583,15 +1586,16 @@ public class MapLibreMapController : IMapLibreMapController
 
         if (_gpsMode == GpsTrackingMode.Off) return;
 
-        bool follow = _gpsMode == GpsTrackingMode.Follow;
-        _pendingLocInd   = new LocIndParams(lat, lon, bearing, Math.Max(5f, accuracyMeters));
+        bool follow        = _gpsMode is GpsTrackingMode.Follow or GpsTrackingMode.FollowBearing;
+        bool useBearing    = _gpsMode == GpsTrackingMode.FollowBearing;
+        _pendingLocInd     = new LocIndParams(lat, lon, bearing, Math.Max(5f, accuracyMeters));
 
         if (follow)
         {
-            if (isFirstFix)
-                JumpTo(lat, lon, GetZoom());
-            else
-                EaseTo(lat, lon, GetZoom(), GetBearing(), GetPitch(), durationMs: 200);
+            double cameraZoom    = GetZoom() < 8 ? 14 : GetZoom();
+            double cameraBearing = useBearing ? bearing : GetBearing();
+            if (isFirstFix) JumpTo(lat, lon, cameraZoom, cameraBearing, GetPitch());
+            else            EaseTo(lat, lon, GetZoom(), cameraBearing, GetPitch(), durationMs: 200);
         }
 
         if (_styleReady && _style != null)
@@ -1602,6 +1606,21 @@ public class MapLibreMapController : IMapLibreMapController
         // Refresh the GPS button (state indicator icon may change on first fix)
         if (isFirstFix && _gpsHwnd != IntPtr.Zero)
             InvalidateRect(_gpsHwnd, IntPtr.Zero, true);
+    }
+
+    /// <summary>
+    /// Bearing button pressed: if in FollowBearing mode, drop to Follow (stop rotating) and
+    /// reset bearing to north; otherwise just reset bearing to north.
+    /// </summary>
+    private void GpsBearingButtonPressed()
+    {
+        if (_gpsMode == GpsTrackingMode.FollowBearing)
+        {
+            _gpsMode = GpsTrackingMode.Follow;
+            if (_gpsHwnd != IntPtr.Zero)
+                InvalidateRect(_gpsHwnd, IntPtr.Zero, true);
+        }
+        ResetNorth();
     }
 
     public void SetShowGpsControl(bool show)
@@ -1653,13 +1672,23 @@ public class MapLibreMapController : IMapLibreMapController
                     break;
                 case GpsTrackingMode.Follow:
                     // Highlight the button with a tinted background
-                    var tintBrush = CreateSolidBrush(0x00FFF3E0);  // very light blue tint (BGR)
+                    var tintBrush = CreateSolidBrush(0x00FFF3E0);  // RGB(224,243,255) light blue tint
                     var tintOld   = SelectObject(hdc, tintBrush);
                     RoundRect(hdc, 1, 1, btnSizePx - 1, btnSizePx - 1, 4, 4);
                     SelectObject(hdc, tintOld);
                     DeleteObject(tintBrush);
-                    gpsColor  = 0x00C57000;   // BGR deeper blue = #0070C5
+                    gpsColor  = 0x00C57000;   // RGB(0,112,197) deep blue = #0070C5
                     gpsSymbol = "\u25CE";      // ◎ bullseye / follow
+                    break;
+                case GpsTrackingMode.FollowBearing:
+                    // Orange-tinted background — indicates active bearing-rotation navigation mode
+                    var tintBrush2 = CreateSolidBrush(0x00E0F3FF);  // RGB(255,243,224) warm orange tint
+                    var tintOld2   = SelectObject(hdc, tintBrush2);
+                    RoundRect(hdc, 1, 1, btnSizePx - 1, btnSizePx - 1, 4, 4);
+                    SelectObject(hdc, tintOld2);
+                    DeleteObject(tintBrush2);
+                    gpsColor  = 0x00007CF5;   // RGB(245,124,0) orange-amber = #F57C00
+                    gpsSymbol = "\u25B2";      // ▲ navigation triangle / heading-up
                     break;
                 default: // Off
                     gpsColor  = 0x00999999;   // gray

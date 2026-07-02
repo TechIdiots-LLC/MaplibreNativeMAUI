@@ -519,7 +519,7 @@ public class MlnMapHost : HwndHost
     private Border? _gpsBtnBearing;    // bottom button — bearing reset
     private TextBlock? _gpsTrackingIcon;
 
-    private enum GpsTrackingMode { Off, Show, Follow }
+    private enum GpsTrackingMode { Off, Show, Follow, FollowBearing }
     private GpsTrackingMode _gpsTrackingMode = GpsTrackingMode.Off;
     private double _lastGpsLat, _lastGpsLon;
     private float  _lastGpsBearing, _lastGpsAccuracy;
@@ -1140,7 +1140,7 @@ public class MlnMapHost : HwndHost
             Foreground          = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
             Tag                 = "bearing",
         };
-        _gpsBtnBearing = MakeNavButton(null, ResetNorth);
+        _gpsBtnBearing = MakeNavButton(null, GpsBearingButtonPressed);
         SetButtonCorners(_gpsBtnBearing, 0, 0, 4, 4);
         _gpsBtnBearing.Child = bearingIcon;
 
@@ -1177,10 +1177,11 @@ public class MlnMapHost : HwndHost
     {
         _gpsTrackingMode = _gpsTrackingMode switch
         {
-            GpsTrackingMode.Off    => GpsTrackingMode.Show,
-            GpsTrackingMode.Show   => GpsTrackingMode.Follow,
-            GpsTrackingMode.Follow => GpsTrackingMode.Off,
-            _                      => GpsTrackingMode.Off,
+            GpsTrackingMode.Off           => GpsTrackingMode.Show,
+            GpsTrackingMode.Show          => GpsTrackingMode.Follow,
+            GpsTrackingMode.Follow        => GpsTrackingMode.FollowBearing,
+            GpsTrackingMode.FollowBearing => GpsTrackingMode.Off,
+            _                             => GpsTrackingMode.Off,
         };
 
         ApplyGpsMode();
@@ -1196,10 +1197,12 @@ public class MlnMapHost : HwndHost
         else if (_hasGpsFix)
         {
             _pendingLocInd = new LocIndParams(_lastGpsLat, _lastGpsLon, _lastGpsBearing, Math.Max(5f, _lastGpsAccuracy));
-            if (_gpsTrackingMode == GpsTrackingMode.Follow)
+            if (_gpsTrackingMode is GpsTrackingMode.Follow or GpsTrackingMode.FollowBearing)
             {
-                double zoom = _map?.Zoom ?? 14;
-                CenterOn(_lastGpsLat, _lastGpsLon, zoom < 8 ? 14 : zoom);
+                double zoom          = _map?.Zoom ?? 14;
+                double cameraZoom    = zoom < 8 ? 14 : zoom;
+                double cameraBearing = _gpsTrackingMode == GpsTrackingMode.FollowBearing ? _lastGpsBearing : (_map?.Bearing ?? 0);
+                _map?.EaseTo(_lastGpsLat, _lastGpsLon, cameraZoom, cameraBearing, _map.Pitch, durationMs: 300);
             }
             if (_styleReady && _style != null)
                 ApplyPendingLocationIndicator();
@@ -1224,11 +1227,15 @@ public class MlnMapHost : HwndHost
 
         _pendingLocInd = new LocIndParams(lat, lon, bearing, Math.Max(5f, accuracyMeters));
 
-        if (_gpsTrackingMode == GpsTrackingMode.Follow)
+        bool follow     = _gpsTrackingMode is GpsTrackingMode.Follow or GpsTrackingMode.FollowBearing;
+        bool useBearing = _gpsTrackingMode == GpsTrackingMode.FollowBearing;
+
+        if (follow && _map != null)
         {
-            double zoom = _map?.Zoom ?? 14;
-            if (isFirstFix) CenterOn(lat, lon, zoom < 8 ? 14 : zoom);
-            else            PanTo(lat, lon);
+            double cameraZoom    = _map.Zoom < 8 ? 14 : _map.Zoom;
+            double cameraBearing = useBearing ? bearing : _map.Bearing;
+            if (isFirstFix) _map.JumpTo(lat, lon, cameraZoom, cameraBearing, _map.Pitch);
+            else            _map.EaseTo(lat, lon, _map.Zoom, cameraBearing, _map.Pitch, durationMs: 200);
         }
 
         if (_styleReady && _style != null)
@@ -1253,12 +1260,31 @@ public class MlnMapHost : HwndHost
                 _gpsTrackingIcon.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0x70, 0xC5));
                 _gpsBtnTracking!.Background = new SolidColorBrush(Color.FromRgb(0xE3, 0xF2, 0xFF));
                 break;
+            case GpsTrackingMode.FollowBearing:
+                _gpsTrackingIcon.Text       = "\u25B2";   // ▲ navigation triangle / heading-up
+                _gpsTrackingIcon.Foreground = new SolidColorBrush(Color.FromRgb(0xF5, 0x7C, 0x00));
+                _gpsBtnTracking!.Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xF3, 0xE0));
+                break;
             default:  // Off
                 _gpsTrackingIcon.Text       = "\u25CB";   // ○ empty circle
                 _gpsTrackingIcon.Foreground = new SolidColorBrush(Color.FromRgb(0x99, 0x99, 0x99));
                 _gpsBtnTracking!.Background = Brushes.White;
                 break;
         }
+    }
+
+    /// <summary>
+    /// GPS bearing button: in FollowBearing, drops to Follow (stops heading-up rotation) then
+    /// resets bearing to north; in all other states just resets bearing to north.
+    /// </summary>
+    private void GpsBearingButtonPressed()
+    {
+        if (_gpsTrackingMode == GpsTrackingMode.FollowBearing)
+        {
+            _gpsTrackingMode = GpsTrackingMode.Follow;
+            RefreshGpsTrackingButton();
+        }
+        ResetNorth();
     }
 
     private void RefreshGpsBearingButton()

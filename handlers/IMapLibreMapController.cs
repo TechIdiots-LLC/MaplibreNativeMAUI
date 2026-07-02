@@ -24,6 +24,16 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
     /// <summary>Fired when a style image is missing. The string is the image ID.</summary>
     public event Action<string>? OnStyleImageMissingReceived;
     
+    // GPS control
+    /// <summary>
+    /// Feed a GPS location fix to the GPS control overlay.  The current GPS
+    /// tracking mode (Off / Show / Follow) determines whether the location
+    /// indicator is shown and whether the camera follows the position.
+    /// Safe to call before the style is loaded; the position is cached and
+    /// applied once the style is ready.
+    /// </summary>
+    void UpdateGpsLocation(double lat, double lon, float bearing = 0, float accuracyMeters = 10);
+
     // Sources
     public void AddGeoJsonSource(string sourceName, string source);
 
