@@ -377,6 +377,8 @@ public class MlnMapHost : HwndHost
     // Monitor work area — keeps popups above the taskbar
     [DllImport("user32.dll")]
     private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromPoint(POINT pt, uint dwFlags);
     [DllImport("user32.dll", EntryPoint = "GetMonitorInfoW")]
     private static extern bool GetMonitorInfoW(IntPtr hMonitor, ref WpfMonitorInfo mi);
     private const uint MONITOR_DEFAULTTONEAREST = 2;
@@ -392,18 +394,20 @@ public class MlnMapHost : HwndHost
     private struct WpfRect { public int Left, Top, Right, Bottom; }
 
     /// <summary>
-    /// Returns the work area of the monitor containing the map window, in WPF
-    /// logical (device-independent) pixels.  Falls back to the primary work area.
+    /// Returns the work area of the monitor containing the given DEVICE-pixel point,
+    /// expressed in WPF logical (device-independent) pixels.
+    /// Each popup passes its own intended center position so the correct monitor is
+    /// queried even when the map window spans two screens (multi-monitor).
+    /// Falls back to <see cref="SystemParameters.WorkArea"/> on failure.
     /// </summary>
-    private Rect GetWorkAreaLogical()
+    private Rect GetWorkAreaLogicalAt(Point devicePt)
     {
-        if (_childHwnd == IntPtr.Zero) return SystemParameters.WorkArea;
-        var mi = new WpfMonitorInfo { cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<WpfMonitorInfo>() };
-        var hMon = MonitorFromWindow(_childHwnd, MONITOR_DEFAULTTONEAREST);
-        if (hMon == IntPtr.Zero || !GetMonitorInfoW(hMon, ref mi)) return SystemParameters.WorkArea;
-        // Convert physical pixels to logical (WPF device-independent) units
         var src = PresentationSource.FromVisual(this);
         if (src?.CompositionTarget == null) return SystemParameters.WorkArea;
+        var mi   = new WpfMonitorInfo { cbSize = (uint)Marshal.SizeOf<WpfMonitorInfo>() };
+        var pt   = new POINT { X = (int)devicePt.X, Y = (int)devicePt.Y };
+        var hMon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+        if (hMon == IntPtr.Zero || !GetMonitorInfoW(hMon, ref mi)) return SystemParameters.WorkArea;
         var toLogical = src.CompositionTarget.TransformFromDevice;
         var tl = toLogical.Transform(new Point(mi.rcWork.Left,  mi.rcWork.Top));
         var br = toLogical.Transform(new Point(mi.rcWork.Right, mi.rcWork.Bottom));
@@ -1133,15 +1137,18 @@ public class MlnMapHost : HwndHost
         // Compute position relative to this HwndHost
         double hOff = ActualWidth - panelW - margin;
         double vOff = margin;
-        // Clamp to monitor work area so the popup doesn't appear behind the taskbar
+        // Clamp to the work area of the monitor this popup will land on.
+        // Computing centerDevice BEFORE calling GetWorkAreaLogicalAt ensures the
+        // correct monitor is selected even when the map spans two screens.
         try
         {
-            var wa     = GetWorkAreaLogical();
-            var origin = PointToScreen(new Point(0, 0)); // device px
+            var centerDevice = PointToScreen(new Point(hOff + panelW / 2.0, vOff + panelH / 2.0));
+            var wa     = GetWorkAreaLogicalAt(centerDevice);
+            var origin = PointToScreen(new Point(0, 0)); // device px (element origin)
             var src    = PresentationSource.FromVisual(this);
             if (src?.CompositionTarget != null)
             {
-                var toLogical  = src.CompositionTarget.TransformFromDevice;
+                var toLogical     = src.CompositionTarget.TransformFromDevice;
                 var originLogical = toLogical.Transform(origin);
                 double maxH = wa.Right  - originLogical.X - panelW;
                 double maxV = wa.Bottom - originLogical.Y - panelH;
@@ -1362,14 +1369,16 @@ public class MlnMapHost : HwndHost
         const int panelH = 29 * 2 + 1;  // 2 buttons + 1 px separator
         double hOff = ActualWidth  - panelW - margin;
         double vOff = ActualHeight - panelH - margin;
+        // Clamp to the work area of the monitor this popup will land on.
         try
         {
-            var wa     = GetWorkAreaLogical();
+            var centerDevice = PointToScreen(new Point(hOff + panelW / 2.0, vOff + panelH / 2.0));
+            var wa     = GetWorkAreaLogicalAt(centerDevice);
             var origin = PointToScreen(new Point(0, 0));
             var src    = PresentationSource.FromVisual(this);
             if (src?.CompositionTarget != null)
             {
-                var toLogical    = src.CompositionTarget.TransformFromDevice;
+                var toLogical     = src.CompositionTarget.TransformFromDevice;
                 var originLogical = toLogical.Transform(origin);
                 double maxH = wa.Right  - originLogical.X - panelW;
                 double maxV = wa.Bottom - originLogical.Y - panelH;
@@ -1632,10 +1641,12 @@ public class MlnMapHost : HwndHost
             ? _attrButtonBorder!.ActualHeight
             : (_attrButtonBorder?.DesiredSize.Height > 0 ? _attrButtonBorder!.DesiredSize.Height : 22))) - margin;
         double btnHOff = leftMargin;
-        // Clamp to work area to prevent popups appearing behind the taskbar
+        // Clamp to the work area of the monitor the attribution popup will land on.
         try
         {
-            var wa     = GetWorkAreaLogical();
+            // Use the attribution popup's center to look up the right monitor.
+            var centerDevice = PointToScreen(new Point(attrHOff, attrVOff + attrH / 2.0));
+            var wa     = GetWorkAreaLogicalAt(centerDevice);
             var origin = PointToScreen(new Point(0, 0));
             var src    = PresentationSource.FromVisual(this);
             if (src?.CompositionTarget != null)

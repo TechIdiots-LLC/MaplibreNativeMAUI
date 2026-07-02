@@ -341,6 +341,8 @@ public class MapLibreMapController : IMapLibreMapController
     // Monitor work area — used to clamp overlays so they never show behind the taskbar
     [DllImport("user32.dll")]
     private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromPoint(POINT pt, uint dwFlags);
     [DllImport("user32.dll", EntryPoint = "GetMonitorInfoW")]
     private static extern bool GetMonitorInfoW(IntPtr hMonitor, ref MONITORINFO mi);
     private const uint MONITOR_DEFAULTTONEAREST = 2;
@@ -1311,6 +1313,22 @@ public class MapLibreMapController : IMapLibreMapController
         return mapH >= (int)(MinMapHeightForNav * _pixelRatio);
     }
 
+    /// <summary>
+    /// Returns the monitor work area (screen area excluding the taskbar) for the
+    /// monitor that contains the given screen-pixel point.  Used to clamp each
+    /// overlay to its own monitor's work area independently, so controls that
+    /// land on a secondary monitor are not incorrectly clamped to the primary.
+    /// Falls back to an unconstrained rect on failure.
+    /// </summary>
+    private RECT GetWorkAreaForPoint(int cx, int cy)
+    {
+        var mi   = new MONITORINFO { cbSize = (uint)Marshal.SizeOf<MONITORINFO>() };
+        var hMon = MonitorFromPoint(new POINT { X = cx, Y = cy }, MONITOR_DEFAULTTONEAREST);
+        if (hMon != IntPtr.Zero && GetMonitorInfoW(hMon, ref mi))
+            return mi.rcWork;
+        return new RECT { Left = int.MinValue, Top = int.MinValue, Right = int.MaxValue, Bottom = int.MaxValue };
+    }
+
     /// <summary>Position overlays relative to the GL popup window.</summary>
     private void PositionOverlays()
     {
@@ -1323,27 +1341,17 @@ public class MapLibreMapController : IMapLibreMapController
         int btnSizePx = (int)(NavButtonSize  * _pixelRatio);
         bool navFits  = mapH >= (int)(MinMapHeightForNav * _pixelRatio);
 
-        // Clamp overlay positions to the monitor's work area (the visible screen
-        // area excluding the taskbar) so overlays never appear behind the taskbar.
-        var moninf = new MONITORINFO { cbSize = (uint)Marshal.SizeOf<MONITORINFO>() };
-        var hMon   = MonitorFromWindow(_childHwnd, MONITOR_DEFAULTTONEAREST);
-        // Default work area = unconstrained (safe fallback if monitor lookup fails)
-        int waLeft = int.MinValue, waTop = int.MinValue, waRight = int.MaxValue, waBottom = int.MaxValue;
-        if (hMon != IntPtr.Zero && GetMonitorInfoW(hMon, ref moninf))
-        {
-            waLeft   = moninf.rcWork.Left;
-            waTop    = moninf.rcWork.Top;
-            waRight  = moninf.rcWork.Right;
-            waBottom = moninf.rcWork.Bottom;
-        }
-
         if (_navHwnd != IntPtr.Zero && _showNavControls && navFits)
         {
             int panelH = btnSizePx * 3 + 2;  // +2 for separator lines
             int navX   = wr.Left + mapW - btnSizePx - marginPx;
             int navY   = wr.Top  + marginPx;
-            navX = Math.Max(waLeft, Math.Min(navX, waRight  - btnSizePx));
-            navY = Math.Max(waTop,  Math.Min(navY, waBottom - panelH));
+            // Clamp to the work area of the monitor this overlay will land on.
+            // Using MonitorFromPoint per-overlay (not MonitorFromWindow) ensures the
+            // correct monitor is queried even when the map window spans two screens.
+            var navWa = GetWorkAreaForPoint(navX + btnSizePx / 2, navY + panelH / 2);
+            navX = Math.Max(navWa.Left, Math.Min(navX, navWa.Right  - btnSizePx));
+            navY = Math.Max(navWa.Top,  Math.Min(navY, navWa.Bottom - panelH));
             var nr = (navX, navY, btnSizePx, panelH);
             if (nr != _lastNavRect)
             {
@@ -1386,8 +1394,9 @@ public class MapLibreMapController : IMapLibreMapController
             int attrH = _cachedAttrMeasure.cy + padV * 2;
             int attrX = wr.Left + marginPx;                       // bottom-left, avoids nav overlap
             int attrY = wr.Top  + mapH - attrH - marginPx;
-            attrX = Math.Max(waLeft, Math.Min(attrX, waRight  - attrW));
-            attrY = Math.Max(waTop,  Math.Min(attrY, waBottom - attrH));
+            var attrWa = GetWorkAreaForPoint(attrX + attrW / 2, attrY + attrH / 2); // per-overlay monitor
+            attrX = Math.Max(attrWa.Left, Math.Min(attrX, attrWa.Right  - attrW));
+            attrY = Math.Max(attrWa.Top,  Math.Min(attrY, attrWa.Bottom - attrH));
             var ar = (attrX, attrY, attrW, attrH);
             if (ar != _lastAttrRect)
             {
@@ -1408,8 +1417,9 @@ public class MapLibreMapController : IMapLibreMapController
             int gpsPanelH    = gpsBtnSizePx * 2 + 1;  // 2 buttons + 1 separator
             int gpsX = wr.Left + mapW - gpsBtnSizePx - marginPx;
             int gpsY = wr.Top  + mapH - gpsPanelH - marginPx;
-            gpsX = Math.Max(waLeft, Math.Min(gpsX, waRight  - gpsBtnSizePx));
-            gpsY = Math.Max(waTop,  Math.Min(gpsY, waBottom - gpsPanelH));
+            var gpsWa = GetWorkAreaForPoint(gpsX + gpsBtnSizePx / 2, gpsY + gpsPanelH / 2); // per-overlay monitor
+            gpsX = Math.Max(gpsWa.Left, Math.Min(gpsX, gpsWa.Right  - gpsBtnSizePx));
+            gpsY = Math.Max(gpsWa.Top,  Math.Min(gpsY, gpsWa.Bottom - gpsPanelH));
             var gr = (gpsX, gpsY, gpsBtnSizePx, gpsPanelH);
             if (gr != _lastGpsRect)
             {
