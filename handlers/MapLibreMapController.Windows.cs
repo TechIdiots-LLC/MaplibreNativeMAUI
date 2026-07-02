@@ -338,6 +338,21 @@ public class MapLibreMapController : IMapLibreMapController
     private static readonly IntPtr HWND_TOP     = IntPtr.Zero;
     private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
 
+    // Monitor work area — used to clamp overlays so they never show behind the taskbar
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+    [DllImport("user32.dll", EntryPoint = "GetMonitorInfoW")]
+    private static extern bool GetMonitorInfoW(IntPtr hMonitor, ref MONITORINFO mi);
+    private const uint MONITOR_DEFAULTTONEAREST = 2;
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MONITORINFO
+    {
+        public uint cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public uint dwFlags;
+    }
+
     private const string GlWindowClass = "MapLibreCabiGL";
     private static WndProcDelegate? _wndProcKeepAlive;
     private static bool _classRegistered;
@@ -413,6 +428,10 @@ public class MapLibreMapController : IMapLibreMapController
     private IntPtr _navHwnd   = IntPtr.Zero;
     private WndProcDelegate? _navWndProc;   // keep-alive
     private bool   _showNavControls = true;
+    // Compass drag state — drag on the compass button to set bearing (horiz) and pitch (vert)
+    private bool _compassDragging;
+    private int  _compassDragStartX, _compassDragStartY;
+    private int  _compassDragLastX,  _compassDragLastY;
     // Attribution — bottom-left corner, auto-width text band
     private IntPtr _attrHwnd  = IntPtr.Zero;
     private WndProcDelegate? _attrWndProc;  // keep-alive
@@ -1304,11 +1323,27 @@ public class MapLibreMapController : IMapLibreMapController
         int btnSizePx = (int)(NavButtonSize  * _pixelRatio);
         bool navFits  = mapH >= (int)(MinMapHeightForNav * _pixelRatio);
 
+        // Clamp overlay positions to the monitor's work area (the visible screen
+        // area excluding the taskbar) so overlays never appear behind the taskbar.
+        var moninf = new MONITORINFO { cbSize = (uint)Marshal.SizeOf<MONITORINFO>() };
+        var hMon   = MonitorFromWindow(_childHwnd, MONITOR_DEFAULTTONEAREST);
+        // Default work area = unconstrained (safe fallback if monitor lookup fails)
+        int waLeft = int.MinValue, waTop = int.MinValue, waRight = int.MaxValue, waBottom = int.MaxValue;
+        if (hMon != IntPtr.Zero && GetMonitorInfoW(hMon, ref moninf))
+        {
+            waLeft   = moninf.rcWork.Left;
+            waTop    = moninf.rcWork.Top;
+            waRight  = moninf.rcWork.Right;
+            waBottom = moninf.rcWork.Bottom;
+        }
+
         if (_navHwnd != IntPtr.Zero && _showNavControls && navFits)
         {
             int panelH = btnSizePx * 3 + 2;  // +2 for separator lines
             int navX   = wr.Left + mapW - btnSizePx - marginPx;
             int navY   = wr.Top  + marginPx;
+            navX = Math.Max(waLeft, Math.Min(navX, waRight  - btnSizePx));
+            navY = Math.Max(waTop,  Math.Min(navY, waBottom - panelH));
             var nr = (navX, navY, btnSizePx, panelH);
             if (nr != _lastNavRect)
             {
@@ -1351,6 +1386,8 @@ public class MapLibreMapController : IMapLibreMapController
             int attrH = _cachedAttrMeasure.cy + padV * 2;
             int attrX = wr.Left + marginPx;                       // bottom-left, avoids nav overlap
             int attrY = wr.Top  + mapH - attrH - marginPx;
+            attrX = Math.Max(waLeft, Math.Min(attrX, waRight  - attrW));
+            attrY = Math.Max(waTop,  Math.Min(attrY, waBottom - attrH));
             var ar = (attrX, attrY, attrW, attrH);
             if (ar != _lastAttrRect)
             {
@@ -1371,6 +1408,8 @@ public class MapLibreMapController : IMapLibreMapController
             int gpsPanelH    = gpsBtnSizePx * 2 + 1;  // 2 buttons + 1 separator
             int gpsX = wr.Left + mapW - gpsBtnSizePx - marginPx;
             int gpsY = wr.Top  + mapH - gpsPanelH - marginPx;
+            gpsX = Math.Max(waLeft, Math.Min(gpsX, waRight  - gpsBtnSizePx));
+            gpsY = Math.Max(waTop,  Math.Min(gpsY, waBottom - gpsPanelH));
             var gr = (gpsX, gpsY, gpsBtnSizePx, gpsPanelH);
             if (gr != _lastGpsRect)
             {
@@ -1425,19 +1464,81 @@ public class MapLibreMapController : IMapLibreMapController
             case WM_PAINT:
                 PaintNavPanel(hWnd);
                 return IntPtr.Zero;
+
             case WM_LBUTTONDOWN:
             {
                 int btnSizePx = (int)(NavButtonSize * _pixelRatio);
+                int x = (short)(unchecked((int)lParam.ToInt64()) & 0xFFFF);
                 int y = (short)((unchecked((int)lParam.ToInt64()) >> 16) & 0xFFFF);
                 int btn = y / (btnSizePx + 1);
                 switch (btn)
                 {
-                    case 0: ZoomIn();    break;  // top button = zoom in (+)
-                    case 1: ZoomOut();   break;  // middle     = zoom out (−)
-                    case 2: ResetNorth();break;  // bottom     = compass/reset-north
+                    case 0: ZoomIn();  break;  // top    = zoom in (+)
+                    case 1: ZoomOut(); break;  // middle = zoom out (−)
+                    case 2:            // bottom = compass — start drag; click is handled on MouseUp
+                        _compassDragging  = true;
+                        _compassDragStartX = _compassDragLastX = x;
+                        _compassDragStartY = _compassDragLastY = y;
+                        SetCapture(_navHwnd);
+                        break;
                 }
                 return IntPtr.Zero;
             }
+
+            case WM_MOUSEMOVE:
+            {
+                if (!_compassDragging) break;
+                int btnSizePx = (int)(NavButtonSize * _pixelRatio);
+                int x = (short)(unchecked((int)lParam.ToInt64()) & 0xFFFF);
+                int y = (short)((unchecked((int)lParam.ToInt64()) >> 16) & 0xFFFF);
+
+                // Center of the compass button (3rd slot)
+                int cx = btnSizePx / 2;
+                int cy = (btnSizePx * 2 + 2) + btnSizePx / 2;
+
+                // Bearing: angular delta around the button center
+                // Mirrors maplibre-gl-js MouseRotateWrapper — uses angle between
+                // (lastX, curY)→center and (curX, curY)→center so only horizontal
+                // movement drives rotation without a discontinuity at the center.
+                double ang1 = Math.Atan2(_compassDragLastY - cy, _compassDragLastX - cx);
+                double ang2 = Math.Atan2(y - cy,               x - cx);
+                double bearingDelta = (ang2 - ang1) * 180.0 / Math.PI;
+                while (bearingDelta >  180) bearingDelta -= 360;
+                while (bearingDelta < -180) bearingDelta += 360;
+
+                // Pitch: direct vertical drag (*−0.5 so dragging up increases tilt)
+                double pitchDelta = (y - _compassDragLastY) * -0.5;
+                double newPitch   = Math.Max(0, Math.Min(60, GetPitch() + pitchDelta));
+
+                if (Math.Abs(bearingDelta) > 0.01 || Math.Abs(pitchDelta) > 0.01)
+                {
+                    var center = GetCenter();
+                    JumpTo(center.Latitude, center.Longitude, GetZoom(),
+                           GetBearing() + bearingDelta, newPitch);
+                    _renderNeedsUpdate = true;
+                }
+
+                _compassDragLastX = x;
+                _compassDragLastY = y;
+                return IntPtr.Zero;
+            }
+
+            case WM_LBUTTONUP:
+            {
+                if (_compassDragging)
+                {
+                    ReleaseCapture();
+                    _compassDragging = false;
+                    int x = (short)(unchecked((int)lParam.ToInt64()) & 0xFFFF);
+                    int y = (short)((unchecked((int)lParam.ToInt64()) >> 16) & 0xFFFF);
+                    // Click (no significant drag) → reset north
+                    if (Math.Abs(x - _compassDragStartX) <= 4 && Math.Abs(y - _compassDragStartY) <= 4)
+                        ResetNorth();
+                    return IntPtr.Zero;
+                }
+                break;
+            }
+
             case WM_NCHITTEST: return HTCLIENT;
         }
         return DefWindowProcA(hWnd, msg, wParam, lParam);
@@ -1704,7 +1805,7 @@ public class MapLibreMapController : IMapLibreMapController
             double bearing = GetBearing();
             uint bearingColor = Math.Abs(bearing) > 0.5 ? 0x00E58800u : 0x00555555u;
             SetTextColor(hdc, bearingColor);
-            PaintCenteredText(hdc, "\u2191", btnSizePx + 1, btnSizePx, btnSizePx);  // ↑
+            PaintCenteredText(hdc, "\u21BA", btnSizePx + 1, btnSizePx, btnSizePx);  // ↺ reset-to-north
 
             SelectObject(hdc, oldFont);
         }

@@ -374,6 +374,42 @@ public class MlnMapHost : HwndHost
     private struct POINT { public int X, Y; }
     [DllImport("user32.dll")] private static extern bool ScreenToClient(IntPtr hWnd, ref POINT lpPoint);
 
+    // Monitor work area — keeps popups above the taskbar
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+    [DllImport("user32.dll", EntryPoint = "GetMonitorInfoW")]
+    private static extern bool GetMonitorInfoW(IntPtr hMonitor, ref WpfMonitorInfo mi);
+    private const uint MONITOR_DEFAULTTONEAREST = 2;
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WpfMonitorInfo
+    {
+        public uint  cbSize;
+        public WpfRect rcMonitor;
+        public WpfRect rcWork;
+        public uint  dwFlags;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WpfRect { public int Left, Top, Right, Bottom; }
+
+    /// <summary>
+    /// Returns the work area of the monitor containing the map window, in WPF
+    /// logical (device-independent) pixels.  Falls back to the primary work area.
+    /// </summary>
+    private Rect GetWorkAreaLogical()
+    {
+        if (_childHwnd == IntPtr.Zero) return SystemParameters.WorkArea;
+        var mi = new WpfMonitorInfo { cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<WpfMonitorInfo>() };
+        var hMon = MonitorFromWindow(_childHwnd, MONITOR_DEFAULTTONEAREST);
+        if (hMon == IntPtr.Zero || !GetMonitorInfoW(hMon, ref mi)) return SystemParameters.WorkArea;
+        // Convert physical pixels to logical (WPF device-independent) units
+        var src = PresentationSource.FromVisual(this);
+        if (src?.CompositionTarget == null) return SystemParameters.WorkArea;
+        var toLogical = src.CompositionTarget.TransformFromDevice;
+        var tl = toLogical.Transform(new Point(mi.rcWork.Left,  mi.rcWork.Top));
+        var br = toLogical.Transform(new Point(mi.rcWork.Right, mi.rcWork.Bottom));
+        return new Rect(tl, br);
+    }
+
     [DllImport("opengl32.dll")] private static extern IntPtr wglCreateContext(IntPtr hDC);
     [DllImport("opengl32.dll")] private static extern bool   wglDeleteContext(IntPtr hGLRC);
     [DllImport("opengl32.dll")] private static extern bool   wglMakeCurrent(IntPtr hDC, IntPtr hGLRC);
@@ -1092,10 +1128,32 @@ public class MlnMapHost : HwndHost
     {
         if (_navPopup == null || !_initialized) return;
         const int margin = 10;
-        // With PlacementMode.Relative, offsets are in logical pixels relative to the
-        // PlacementTarget (this HwndHost). No PointToScreen conversion needed.
-        _navPopup.HorizontalOffset = ActualWidth - 29 - margin;
-        _navPopup.VerticalOffset   = margin;
+        const int panelW = 29;
+        const int panelH = 29 * 3 + 2;  // 3 buttons + 2 separator px
+        // Compute position relative to this HwndHost
+        double hOff = ActualWidth - panelW - margin;
+        double vOff = margin;
+        // Clamp to monitor work area so the popup doesn't appear behind the taskbar
+        try
+        {
+            var wa     = GetWorkAreaLogical();
+            var origin = PointToScreen(new Point(0, 0)); // device px
+            var src    = PresentationSource.FromVisual(this);
+            if (src?.CompositionTarget != null)
+            {
+                var toLogical  = src.CompositionTarget.TransformFromDevice;
+                var originLogical = toLogical.Transform(origin);
+                double maxH = wa.Right  - originLogical.X - panelW;
+                double maxV = wa.Bottom - originLogical.Y - panelH;
+                double minH = wa.Left   - originLogical.X;
+                double minV = wa.Top    - originLogical.Y;
+                hOff = Math.Max(minH, Math.Min(hOff, maxH));
+                vOff = Math.Max(minV, Math.Min(vOff, maxV));
+            }
+        }
+        catch { /* non-critical; fall back to unclamped position */ }
+        _navPopup.HorizontalOffset = hOff;
+        _navPopup.VerticalOffset   = vOff;
     }
 
     private void UpdateNavPopupOpen()
@@ -1131,7 +1189,7 @@ public class MlnMapHost : HwndHost
         // Bottom button: reset bearing to north
         var bearingIcon = new TextBlock
         {
-            Text                = "\u2191",   // ↑
+            Text                = "\u21BA",  // ↺ reset bearing (distinct from the compass drag button)
             FontSize            = 16,
             FontWeight          = FontWeights.Bold,
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -1299,10 +1357,31 @@ public class MlnMapHost : HwndHost
     private void PositionGpsPopup()
     {
         if (_gpsPopup == null || !_initialized) return;
-        const int margin    = 10;
-        const int panelH    = 29 * 2 + 1;   // 2 buttons + 1 px separator
-        _gpsPopup.HorizontalOffset = ActualWidth - 29 - margin;
-        _gpsPopup.VerticalOffset   = ActualHeight - panelH - margin;
+        const int margin = 10;
+        const int panelW = 29;
+        const int panelH = 29 * 2 + 1;  // 2 buttons + 1 px separator
+        double hOff = ActualWidth  - panelW - margin;
+        double vOff = ActualHeight - panelH - margin;
+        try
+        {
+            var wa     = GetWorkAreaLogical();
+            var origin = PointToScreen(new Point(0, 0));
+            var src    = PresentationSource.FromVisual(this);
+            if (src?.CompositionTarget != null)
+            {
+                var toLogical    = src.CompositionTarget.TransformFromDevice;
+                var originLogical = toLogical.Transform(origin);
+                double maxH = wa.Right  - originLogical.X - panelW;
+                double maxV = wa.Bottom - originLogical.Y - panelH;
+                double minH = wa.Left   - originLogical.X;
+                double minV = wa.Top    - originLogical.Y;
+                hOff = Math.Max(minH, Math.Min(hOff, maxH));
+                vOff = Math.Max(minV, Math.Min(vOff, maxV));
+            }
+        }
+        catch { /* non-critical; fall back to unclamped position */ }
+        _gpsPopup.HorizontalOffset = hOff;
+        _gpsPopup.VerticalOffset   = vOff;
     }
 
     private void UpdateGpsPopupOpen()
@@ -1547,16 +1626,36 @@ public class MlnMapHost : HwndHost
         double attrH = _attributionBorder?.ActualHeight > 0
             ? _attributionBorder.ActualHeight
             : (_attributionBorder?.DesiredSize.Height > 0 ? _attributionBorder.DesiredSize.Height : 22);
-        _attributionPopup.HorizontalOffset = leftMargin;
-        _attributionPopup.VerticalOffset   = ActualHeight - attrH - margin;
+        double attrVOff = ActualHeight - attrH - margin;
+        double attrHOff = leftMargin;
+        double btnVOff  = ActualHeight - ((_attrButtonBorder?.ActualHeight > 0
+            ? _attrButtonBorder!.ActualHeight
+            : (_attrButtonBorder?.DesiredSize.Height > 0 ? _attrButtonBorder!.DesiredSize.Height : 22))) - margin;
+        double btnHOff = leftMargin;
+        // Clamp to work area to prevent popups appearing behind the taskbar
+        try
+        {
+            var wa     = GetWorkAreaLogical();
+            var origin = PointToScreen(new Point(0, 0));
+            var src    = PresentationSource.FromVisual(this);
+            if (src?.CompositionTarget != null)
+            {
+                var toLogical     = src.CompositionTarget.TransformFromDevice;
+                var originLogical = toLogical.Transform(origin);
+                double maxV  = wa.Bottom - originLogical.Y - attrH;
+                double minV  = wa.Top    - originLogical.Y;
+                attrVOff = Math.Max(minV, Math.Min(attrVOff, maxV));
+                btnVOff  = Math.Max(minV, Math.Min(btnVOff,  maxV));
+            }
+        }
+        catch { /* non-critical */ }
+        _attributionPopup.HorizontalOffset = attrHOff;
+        _attributionPopup.VerticalOffset   = attrVOff;
 
         if (_attrButtonPopup != null)
         {
-            double btnH = _attrButtonBorder?.ActualHeight > 0
-                ? _attrButtonBorder.ActualHeight
-                : (_attrButtonBorder?.DesiredSize.Height > 0 ? _attrButtonBorder.DesiredSize.Height : 22);
-            _attrButtonPopup.HorizontalOffset = leftMargin;
-            _attrButtonPopup.VerticalOffset   = ActualHeight - btnH - margin;
+            _attrButtonPopup.HorizontalOffset = btnHOff;
+            _attrButtonPopup.VerticalOffset   = btnVOff;
         }
     }
 
