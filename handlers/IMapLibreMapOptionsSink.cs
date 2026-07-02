@@ -50,5 +50,14 @@ public interface IMapLibreMapOptionsSink
     /// <summary>Show or hide the GPS tracking control overlay.</summary>
     void SetShowGpsControl(bool show);
 
+    /// <summary>Set the corner the navigation control is anchored to.</summary>
+    void SetNavigationControlPosition(MapControlCorner corner);
+
+    /// <summary>Set the corner the GPS control is anchored to.</summary>
+    void SetGpsControlPosition(MapControlCorner corner);
+
+    /// <summary>Set the corner the attribution control is anchored to.</summary>
+    void SetAttributionControlPosition(MapControlCorner corner);
+
     //void SetLocationEngineProperties(LocationEngineRequest? locationEngineRequest);
 }

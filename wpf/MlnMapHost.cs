@@ -71,7 +71,11 @@ public class MlnMapHost : HwndHost
 
     private static void OnShowNavChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
-        if (d is MlnMapHost h) h.UpdateNavPopupOpen();
+        if (d is not MlnMapHost h) return;
+        h.UpdateNavPopupOpen();
+        // Stacked controls below the nav panel shift up/down as it is hidden/shown.
+        h.PositionGpsPopup();
+        h.PositionAttributionPopup();
     }
 
     public bool ShowGpsControl
@@ -81,7 +85,54 @@ public class MlnMapHost : HwndHost
     }
     public static readonly DependencyProperty ShowGpsControlProperty =
         DependencyProperty.Register(nameof(ShowGpsControl), typeof(bool), typeof(MlnMapHost),
-            new PropertyMetadata(true, (d, _) => { if (d is MlnMapHost h) h.UpdateGpsPopupOpen(); }));
+            new PropertyMetadata(true, (d, _) => { if (d is MlnMapHost h) { h.UpdateGpsPopupOpen(); h.PositionAttributionPopup(); } }));
+
+    /// <summary>
+    /// Corner the navigation control is anchored to. When multiple controls share
+    /// a corner they stack (navigation, then GPS, then attribution). Default TopRight.
+    /// </summary>
+    public MapControlCorner NavigationControlPosition
+    {
+        get => (MapControlCorner)GetValue(NavigationControlPositionProperty);
+        set => SetValue(NavigationControlPositionProperty, value);
+    }
+    public static readonly DependencyProperty NavigationControlPositionProperty =
+        DependencyProperty.Register(nameof(NavigationControlPosition), typeof(MapControlCorner), typeof(MlnMapHost),
+            new PropertyMetadata(MapControlCorner.TopRight, OnControlPositionChanged));
+
+    /// <summary>
+    /// Corner the GPS control is anchored to. When multiple controls share a
+    /// corner they stack (navigation, then GPS, then attribution). Default TopRight.
+    /// </summary>
+    public MapControlCorner GpsControlPosition
+    {
+        get => (MapControlCorner)GetValue(GpsControlPositionProperty);
+        set => SetValue(GpsControlPositionProperty, value);
+    }
+    public static readonly DependencyProperty GpsControlPositionProperty =
+        DependencyProperty.Register(nameof(GpsControlPosition), typeof(MapControlCorner), typeof(MlnMapHost),
+            new PropertyMetadata(MapControlCorner.TopRight, OnControlPositionChanged));
+
+    /// <summary>
+    /// Corner the attribution control is anchored to. When multiple controls share
+    /// a corner they stack (navigation, then GPS, then attribution). Default BottomLeft.
+    /// </summary>
+    public MapControlCorner AttributionControlPosition
+    {
+        get => (MapControlCorner)GetValue(AttributionControlPositionProperty);
+        set => SetValue(AttributionControlPositionProperty, value);
+    }
+    public static readonly DependencyProperty AttributionControlPositionProperty =
+        DependencyProperty.Register(nameof(AttributionControlPosition), typeof(MapControlCorner), typeof(MlnMapHost),
+            new PropertyMetadata(MapControlCorner.BottomLeft, OnControlPositionChanged));
+
+    private static void OnControlPositionChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is not MlnMapHost h) return;
+        h.PositionNavPopup();
+        h.PositionGpsPopup();
+        h.PositionAttributionPopup();
+    }
 
     // ── Public non-DP properties ──────────────────────────────────────────────
 
@@ -1128,15 +1179,41 @@ public class MlnMapHost : HwndHost
     private static void SetButtonCorners(Border b, double topLeft, double topRight, double bottomRight, double bottomLeft)
         => b.CornerRadius = new CornerRadius(topLeft, topRight, bottomRight, bottomLeft);
 
+    // ── Control corner + stacking helpers ─────────────────────────────────────
+
+    private const double CtrlMargin   = 10;
+    private const double CtrlStackGap = 10;
+    private const double NavPanelH    = 29 * 3 + 2;  // 3 buttons + 2 separators
+    private const double GpsPanelH    = 29 * 2 + 1;  // 2 buttons + 1 separator
+
+    private static bool CornerIsLeft(MapControlCorner c) => c is MapControlCorner.TopLeft or MapControlCorner.BottomLeft;
+    private static bool CornerIsTop(MapControlCorner c)  => c is MapControlCorner.TopLeft or MapControlCorner.TopRight;
+
+    /// <summary>
+    /// Vertical offset contributed by controls that precede the given one in the
+    /// stack order (navigation → GPS → attribution) and share the same corner.
+    /// The first control sits at the corner; later ones stack inward.
+    /// </summary>
+    private double ControlStackOffset(MapControlCorner corner, int stackIndex)
+    {
+        double off = 0;
+        if (stackIndex > 0 && ShowNavigationControls && NavigationControlPosition == corner)
+            off += NavPanelH + CtrlStackGap;
+        if (stackIndex > 1 && ShowGpsControl && GpsControlPosition == corner)
+            off += GpsPanelH + CtrlStackGap;
+        return off;
+    }
+
     private void PositionNavPopup()
     {
         if (_navPopup == null || !_initialized) return;
-        const int margin = 10;
+        const int margin = (int)CtrlMargin;
         const int panelW = 29;
-        const int panelH = 29 * 3 + 2;  // 3 buttons + 2 separator px
-        // Compute position relative to this HwndHost
-        double hOff = ActualWidth - panelW - margin;
-        double vOff = margin;
+        const int panelH = (int)NavPanelH;  // 3 buttons + 2 separator px
+        var corner = NavigationControlPosition;
+        double off  = ControlStackOffset(corner, 0);  // nav is first → 0
+        double hOff = CornerIsLeft(corner) ? margin : ActualWidth  - panelW - margin;
+        double vOff = CornerIsTop(corner)  ? margin + off : ActualHeight - panelH - margin - off;
         // Clamp to the work area of the monitor this popup will land on.
         // Computing centerDevice BEFORE calling GetWorkAreaLogicalAt ensures the
         // correct monitor is selected even when the map spans two screens.
@@ -1366,9 +1443,12 @@ public class MlnMapHost : HwndHost
         if (_gpsPopup == null || !_initialized) return;
         const int margin = 10;
         const int panelW = 29;
-        const int panelH = 29 * 2 + 1;  // 2 buttons + 1 px separator
-        double hOff = ActualWidth  - panelW - margin;
-        double vOff = ActualHeight - panelH - margin;
+        const int panelH = (int)GpsPanelH;  // 2 buttons + 1 px separator
+        // Anchor to the configured corner, stacking inward when sharing with others.
+        var corner  = GpsControlPosition;
+        double off  = ControlStackOffset(corner, 1);  // gps is second (after nav)
+        double hOff = CornerIsLeft(corner) ? margin : ActualWidth  - panelW - margin;
+        double vOff = CornerIsTop(corner)  ? margin + off : ActualHeight - panelH - margin - off;
         // Clamp to the work area of the monitor this popup will land on.
         try
         {
@@ -1613,39 +1693,54 @@ public class MlnMapHost : HwndHost
         if (_attributionPopup == null || !_initialized) return;
 
         const double margin = 4;
+        var    corner = AttributionControlPosition;
+        bool   isLeft = CornerIsLeft(corner);
+        bool   isTop  = CornerIsTop(corner);
+        double off    = ControlStackOffset(corner, 2);  // attribution is last in stack order
 
         // Constrain attribution width to map width minus margins
         if (_attributionText != null)
             _attributionText.MaxWidth = Math.Max(100, ActualWidth - 8);
 
-        // Determine left offset, shifting left if the popup would overflow the right edge.
-        double leftMargin = margin;
-        if (_attributionBorder != null)
-        {
-            double popupWidth = _attributionBorder.ActualWidth > 0
-                ? _attributionBorder.ActualWidth
-                : _attributionBorder.DesiredSize.Width;
-            if (leftMargin + popupWidth > ActualWidth)
-                leftMargin = Math.Max(margin, ActualWidth - popupWidth - margin);
-        }
-
-        // Position each popup so its BOTTOM is margin px above the map's bottom edge.
-        // VerticalOffset (PlacementMode.Relative) sets the popup's TOP — so we subtract
-        // the popup's own height to make the bottom land at ActualHeight - margin.
+        double attrW = _attributionBorder?.ActualWidth > 0
+            ? _attributionBorder.ActualWidth
+            : (_attributionBorder?.DesiredSize.Width ?? 0);
         double attrH = _attributionBorder?.ActualHeight > 0
             ? _attributionBorder.ActualHeight
             : (_attributionBorder?.DesiredSize.Height > 0 ? _attributionBorder.DesiredSize.Height : 22);
-        double attrVOff = ActualHeight - attrH - margin;
-        double attrHOff = leftMargin;
-        double btnVOff  = ActualHeight - ((_attrButtonBorder?.ActualHeight > 0
-            ? _attrButtonBorder!.ActualHeight
-            : (_attrButtonBorder?.DesiredSize.Height > 0 ? _attrButtonBorder!.DesiredSize.Height : 22))) - margin;
-        double btnHOff = leftMargin;
+        double btnW = _attrButtonBorder?.ActualWidth > 0
+            ? _attrButtonBorder.ActualWidth
+            : (_attrButtonBorder?.DesiredSize.Width ?? 0);
+        double btnH = _attrButtonBorder?.ActualHeight > 0
+            ? _attrButtonBorder.ActualHeight
+            : (_attrButtonBorder?.DesiredSize.Height > 0 ? _attrButtonBorder.DesiredSize.Height : 22);
+
+        // Horizontal offset: anchor to the left or right edge. For left anchoring keep
+        // the existing overflow-shift so wide attribution never runs off the right edge.
+        double AttrHOff(double w)
+        {
+            if (isLeft)
+            {
+                double x = margin;
+                if (x + w > ActualWidth) x = Math.Max(margin, ActualWidth - w - margin);
+                return x;
+            }
+            return Math.Max(margin, ActualWidth - w - margin);
+        }
+        double attrHOff = AttrHOff(attrW);
+        double btnHOff  = AttrHOff(btnW);
+
+        // Vertical offset: PlacementMode.Relative sets the popup's TOP. For bottom
+        // anchoring we subtract the popup height so its bottom lands margin px above
+        // the map edge (minus any stacking offset). For top anchoring we add the offset.
+        double attrVOff = isTop ? margin + off : ActualHeight - attrH - margin - off;
+        double btnVOff  = isTop ? margin + off : ActualHeight - btnH  - margin - off;
+
         // Clamp to the work area of the monitor the attribution popup will land on.
         try
         {
             // Use the attribution popup's center to look up the right monitor.
-            var centerDevice = PointToScreen(new Point(attrHOff, attrVOff + attrH / 2.0));
+            var centerDevice = PointToScreen(new Point(attrHOff + attrW / 2.0, attrVOff + attrH / 2.0));
             var wa     = GetWorkAreaLogicalAt(centerDevice);
             var origin = PointToScreen(new Point(0, 0));
             var src    = PresentationSource.FromVisual(this);
@@ -1653,10 +1748,11 @@ public class MlnMapHost : HwndHost
             {
                 var toLogical     = src.CompositionTarget.TransformFromDevice;
                 var originLogical = toLogical.Transform(origin);
-                double maxV  = wa.Bottom - originLogical.Y - attrH;
-                double minV  = wa.Top    - originLogical.Y;
-                attrVOff = Math.Max(minV, Math.Min(attrVOff, maxV));
-                btnVOff  = Math.Max(minV, Math.Min(btnVOff,  maxV));
+                double attrMaxV = wa.Bottom - originLogical.Y - attrH;
+                double btnMaxV  = wa.Bottom - originLogical.Y - btnH;
+                double minV     = wa.Top    - originLogical.Y;
+                attrVOff = Math.Max(minV, Math.Min(attrVOff, attrMaxV));
+                btnVOff  = Math.Max(minV, Math.Min(btnVOff,  btnMaxV));
             }
         }
         catch { /* non-critical */ }

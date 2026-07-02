@@ -426,6 +426,11 @@ public class MapLibreMapController : IMapLibreMapController
     private MbglStyle?    _style;
 
     // ── Overlay windows ───────────────────────────────────────────────────────
+    // Corners each overlay is anchored to. When two share a corner they stack in
+    // the fixed order nav → gps → attribution, anchored from the corner inward.
+    private MapControlCorner _navCorner  = MapControlCorner.TopRight;
+    private MapControlCorner _gpsCorner  = MapControlCorner.TopRight;
+    private MapControlCorner _attrCorner = MapControlCorner.BottomLeft;
     // Nav panel (zoom-in, zoom-out, compass) — top-right corner, 29×90px logical
     private IntPtr _navHwnd   = IntPtr.Zero;
     private WndProcDelegate? _navWndProc;   // keep-alive
@@ -1338,14 +1343,39 @@ public class MapLibreMapController : IMapLibreMapController
         int mapH = wr.Bottom - wr.Top;
 
         int marginPx  = (int)(NavPanelMargin * _pixelRatio);
+        int stackGap  = marginPx;                       // gap between controls that share a corner
         int btnSizePx = (int)(NavButtonSize  * _pixelRatio);
         bool navFits  = mapH >= (int)(MinMapHeightForNav * _pixelRatio);
 
-        if (_navHwnd != IntPtr.Zero && _showNavControls && navFits)
+        // Panel heights are known up front; used to stack controls that share a corner.
+        int navPanelH = btnSizePx * 3 + 2;  // 3 buttons + 2 separator lines
+        int gpsPanelH = btnSizePx * 2 + 1;  // 2 buttons + 1 separator line
+
+        bool navVisible = _navHwnd != IntPtr.Zero && _showNavControls && navFits;
+        bool gpsVisible = _gpsHwnd != IntPtr.Zero && _showGpsControl;
+
+        // Vertical offset (away from the anchored horizontal edge) contributed by the
+        // controls that precede the given one in the stack order (nav → gps → attribution)
+        // and share the same corner. First control sits at the corner; the next stacks inward.
+        int StackOffset(MapControlCorner corner, int stackIndex)
         {
-            int panelH = btnSizePx * 3 + 2;  // +2 for separator lines
-            int navX   = wr.Left + mapW - btnSizePx - marginPx;
-            int navY   = wr.Top  + marginPx;
+            int off = 0;
+            if (stackIndex > 0 && navVisible && _navCorner == corner) off += navPanelH + stackGap;
+            if (stackIndex > 1 && gpsVisible && _gpsCorner == corner) off += gpsPanelH + stackGap;
+            return off;
+        }
+
+        static bool IsLeft(MapControlCorner c) => c is MapControlCorner.TopLeft or MapControlCorner.BottomLeft;
+        static bool IsTop(MapControlCorner c)  => c is MapControlCorner.TopLeft or MapControlCorner.TopRight;
+
+        if (navVisible)
+        {
+            int panelH = navPanelH;
+            int off    = StackOffset(_navCorner, 0);   // nav is first in stack order → always 0
+            int navX   = IsLeft(_navCorner) ? wr.Left + marginPx : wr.Left + mapW - btnSizePx - marginPx;
+            int navY   = IsTop(_navCorner)
+                ? wr.Top + marginPx + off
+                : wr.Top + mapH - marginPx - panelH - off;
             // Clamp to the work area of the monitor this overlay will land on.
             // Using MonitorFromPoint per-overlay (not MonitorFromWindow) ensures the
             // correct monitor is queried even when the map window spans two screens.
@@ -1392,8 +1422,11 @@ public class MapLibreMapController : IMapLibreMapController
 
             int attrW = _cachedAttrMeasure.cx + padH * 2;
             int attrH = _cachedAttrMeasure.cy + padV * 2;
-            int attrX = wr.Left + marginPx;                       // bottom-left, avoids nav overlap
-            int attrY = wr.Top  + mapH - attrH - marginPx;
+            int off   = StackOffset(_attrCorner, 2);   // attribution is last in stack order
+            int attrX = IsLeft(_attrCorner) ? wr.Left + marginPx : wr.Left + mapW - attrW - marginPx;
+            int attrY = IsTop(_attrCorner)
+                ? wr.Top + marginPx + off
+                : wr.Top + mapH - attrH - marginPx - off;
             var attrWa = GetWorkAreaForPoint(attrX + attrW / 2, attrY + attrH / 2); // per-overlay monitor
             attrX = Math.Max(attrWa.Left, Math.Min(attrX, attrWa.Right  - attrW));
             attrY = Math.Max(attrWa.Top,  Math.Min(attrY, attrWa.Bottom - attrH));
@@ -1410,13 +1443,14 @@ public class MapLibreMapController : IMapLibreMapController
         // minimum height (or grown back) since the last call.
         ShowOverlays();
 
-        // GPS panel — bottom-right corner, same x-alignment as nav panel
-        if (_gpsHwnd != IntPtr.Zero && _showGpsControl)
+        if (gpsVisible)
         {
             int gpsBtnSizePx = btnSizePx;  // same button size as nav
-            int gpsPanelH    = gpsBtnSizePx * 2 + 1;  // 2 buttons + 1 separator
-            int gpsX = wr.Left + mapW - gpsBtnSizePx - marginPx;
-            int gpsY = wr.Top  + mapH - gpsPanelH - marginPx;
+            int off  = StackOffset(_gpsCorner, 1);   // gps is second in stack order (after nav)
+            int gpsX = IsLeft(_gpsCorner) ? wr.Left + marginPx : wr.Left + mapW - gpsBtnSizePx - marginPx;
+            int gpsY = IsTop(_gpsCorner)
+                ? wr.Top + marginPx + off
+                : wr.Top + mapH - gpsPanelH - marginPx - off;
             var gpsWa = GetWorkAreaForPoint(gpsX + gpsBtnSizePx / 2, gpsY + gpsPanelH / 2); // per-overlay monitor
             gpsX = Math.Max(gpsWa.Left, Math.Min(gpsX, gpsWa.Right  - gpsBtnSizePx));
             gpsY = Math.Max(gpsWa.Top,  Math.Min(gpsY, gpsWa.Bottom - gpsPanelH));
@@ -1968,6 +2002,27 @@ public class MapLibreMapController : IMapLibreMapController
     {
         _showNavControls = show;
         ShowOverlays();
+    }
+
+    public void SetNavigationControlPosition(MapControlCorner corner)
+    {
+        if (_navCorner == corner) return;
+        _navCorner = corner;
+        PositionOverlays();
+    }
+
+    public void SetGpsControlPosition(MapControlCorner corner)
+    {
+        if (_gpsCorner == corner) return;
+        _gpsCorner = corner;
+        PositionOverlays();
+    }
+
+    public void SetAttributionControlPosition(MapControlCorner corner)
+    {
+        if (_attrCorner == corner) return;
+        _attrCorner = corner;
+        PositionOverlays();
     }
 
     public void SetShowAttributionControl(bool show, string? customAttribution)

@@ -26,4 +26,7 @@ public partial class MapLibreMapBuilder : IMapLibreMapOptionsSink
     public void SetShowNavigationControls(bool show)        { }
     public void SetShowAttributionControl(bool show, string? customAttribution) { }
     public void SetShowGpsControl(bool show)                { }
+    public void SetNavigationControlPosition(MapControlCorner corner)  { }
+    public void SetGpsControlPosition(MapControlCorner corner)         { }
+    public void SetAttributionControlPosition(MapControlCorner corner) { }
 }

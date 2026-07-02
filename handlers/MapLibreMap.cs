@@ -47,6 +47,15 @@ public class MapLibreMap : StackLayout
     /// <summary>Extra attribution text appended after source-derived attributions.</summary>
     public static readonly BindableProperty CustomAttributionProperty =
         BindableProperty.Create(nameof(CustomAttribution), typeof(string), typeof(MapLibreMap));
+    /// <summary>Corner the navigation control is anchored to. Default <see cref="MapControlCorner.TopRight"/>.</summary>
+    public static readonly BindableProperty NavigationControlPositionProperty =
+        BindableProperty.Create(nameof(NavigationControlPosition), typeof(MapControlCorner), typeof(MapLibreMap), defaultValue: MapControlCorner.TopRight);
+    /// <summary>Corner the GPS control is anchored to. Default <see cref="MapControlCorner.TopRight"/>.</summary>
+    public static readonly BindableProperty GpsControlPositionProperty =
+        BindableProperty.Create(nameof(GpsControlPosition), typeof(MapControlCorner), typeof(MapLibreMap), defaultValue: MapControlCorner.TopRight);
+    /// <summary>Corner the attribution control is anchored to. Default <see cref="MapControlCorner.BottomLeft"/>.</summary>
+    public static readonly BindableProperty AttributionControlPositionProperty =
+        BindableProperty.Create(nameof(AttributionControlPosition), typeof(MapControlCorner), typeof(MapLibreMap), defaultValue: MapControlCorner.BottomLeft);
 
     public static readonly BindableProperty MapReadyCommandProperty = BindableProperty.Create(nameof(MapReadyCommand), typeof(ICommand), typeof(MapLibreMap));
     public static readonly BindableProperty StyleLoadedCommandProperty = BindableProperty.Create(nameof(StyleLoadedCommand), typeof(ICommand), typeof(MapLibreMap));
@@ -244,6 +253,36 @@ public class MapLibreMap : StackLayout
     {
         get => (string?)GetValue(CustomAttributionProperty);
         set => SetValue(CustomAttributionProperty, value);
+    }
+
+    /// <summary>
+    /// Corner the navigation control is anchored to. When multiple controls share
+    /// a corner they stack (navigation, then GPS, then attribution).
+    /// </summary>
+    public MapControlCorner NavigationControlPosition
+    {
+        get => (MapControlCorner)GetValue(NavigationControlPositionProperty);
+        set => SetValue(NavigationControlPositionProperty, value);
+    }
+
+    /// <summary>
+    /// Corner the GPS control is anchored to. When multiple controls share a
+    /// corner they stack (navigation, then GPS, then attribution).
+    /// </summary>
+    public MapControlCorner GpsControlPosition
+    {
+        get => (MapControlCorner)GetValue(GpsControlPositionProperty);
+        set => SetValue(GpsControlPositionProperty, value);
+    }
+
+    /// <summary>
+    /// Corner the attribution control is anchored to. When multiple controls share
+    /// a corner they stack (navigation, then GPS, then attribution).
+    /// </summary>
+    public MapControlCorner AttributionControlPosition
+    {
+        get => (MapControlCorner)GetValue(AttributionControlPositionProperty);
+        set => SetValue(AttributionControlPositionProperty, value);
     }
 
     public void AddGeoJsonSource(string sourceName, FeatureCollection collection)

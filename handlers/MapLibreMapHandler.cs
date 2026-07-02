@@ -25,6 +25,9 @@ public partial class MapLibreMapHandler
             [nameof(MapLibreMap.ShowAttributionControl)]   = MapShowAttributionControl,
             [nameof(MapLibreMap.CustomAttribution)]        = MapCustomAttribution,
             [nameof(MapLibreMap.ShowGpsControl)]           = MapShowGpsControl,
+            [nameof(MapLibreMap.NavigationControlPosition)]  = MapNavigationControlPosition,
+            [nameof(MapLibreMap.GpsControlPosition)]         = MapGpsControlPosition,
+            [nameof(MapLibreMap.AttributionControlPosition)] = MapAttributionControlPosition,
         };
         
     public static void MapStyleUrl(MapLibreMapHandler handler, MapLibreMap view)
@@ -97,4 +100,13 @@ public partial class MapLibreMapHandler
 
     public static void MapShowGpsControl(MapLibreMapHandler handler, MapLibreMap view)
         => handler.UpdateShowGpsControl(view.ShowGpsControl);
+
+    public static void MapNavigationControlPosition(MapLibreMapHandler handler, MapLibreMap view)
+        => handler.UpdateNavigationControlPosition(view.NavigationControlPosition);
+
+    public static void MapGpsControlPosition(MapLibreMapHandler handler, MapLibreMap view)
+        => handler.UpdateGpsControlPosition(view.GpsControlPosition);
+
+    public static void MapAttributionControlPosition(MapLibreMapHandler handler, MapLibreMap view)
+        => handler.UpdateAttributionControlPosition(view.AttributionControlPosition);
 }
