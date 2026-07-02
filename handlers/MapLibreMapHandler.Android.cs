@@ -26,8 +26,8 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, FrameLayout>
         _controller.OnCameraMoveReceived            += VirtualView.OnCameraMove;
         _controller.OnCameraIdleReceived            += VirtualView.OnCameraIdle;
         _controller.OnCameraTrackingChangedReceived += VirtualView.OnCameraTrackingChanged;
-        _controller.OnMapClickReceived              += VirtualView.OnMapClick;
-        _controller.OnMapLongClickReceived          += VirtualView.OnMapLongClick;
+        _controller.OnMapClickReceived              += (ll, sx, sy) => VirtualView.OnMapClick(ll, sx, sy);
+        _controller.OnMapLongClickReceived          += (ll, sx, sy) => VirtualView.OnMapLongClick(ll, sx, sy);
         _controller.OnUserLocationUpdateReceived    += VirtualView.OnUserLocationUpdate;
 
         return _controller.View;
@@ -62,4 +62,5 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, FrameLayout>
     }
     public void UpdateShowNavigationControls(bool show) => _controller.SetShowNavigationControls(show);
     public void UpdateShowAttributionControl(bool show, string? customAttribution) => _controller.SetShowAttributionControl(show, customAttribution);
+    public void UpdateShowGpsControl(bool show)         => _controller.SetShowGpsControl(show);
 }

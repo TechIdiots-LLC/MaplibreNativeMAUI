@@ -94,8 +94,8 @@ public class MapLibreMapController : IMapLibreMapController
     public event Action?                     OnCameraIdleReceived;
     public event Action<int>?                OnCameraTrackingChangedReceived;
     public event Action?                     OnCameraTrackingDismissedReceived;
-    public event Func<LatLng, bool>?         OnMapClickReceived;
-    public event Func<LatLng, bool>?         OnMapLongClickReceived;
+    public event Func<LatLng, double, double, bool>?         OnMapClickReceived;
+    public event Func<LatLng, double, double, bool>?         OnMapLongClickReceived;
     public event Action<Style>?              OnStyleLoadedReceived;
     public event Action<Location>?           OnUserLocationUpdateReceived;
     public event Action<string>?             OnDidFailLoadingMapReceived;
@@ -287,6 +287,8 @@ public class MapLibreMapController : IMapLibreMapController
     public void SetAttributionButtonGravity(int v)            { }
     public void SetAttributionButtonMargins(int x, int y)     { }
     public void SetShowNavigationControls(bool show)          { }
+    public void SetShowGpsControl(bool show)                  { }
+    public void UpdateGpsLocation(double lat, double lon, float bearing = 0, float accuracyMeters = 10) { }
     public void SetShowAttributionControl(bool show, string? customAttribution)
     {
         _showAttrControl   = show;

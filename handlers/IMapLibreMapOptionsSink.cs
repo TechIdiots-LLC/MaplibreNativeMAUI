@@ -47,5 +47,8 @@ public interface IMapLibreMapOptionsSink
     /// </summary>
     void SetShowAttributionControl(bool show, string? customAttribution);
 
+    /// <summary>Show or hide the GPS tracking control overlay.</summary>
+    void SetShowGpsControl(bool show);
+
     //void SetLocationEngineProperties(LocationEngineRequest? locationEngineRequest);
 }

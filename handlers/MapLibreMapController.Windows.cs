@@ -338,6 +338,21 @@ public class MapLibreMapController : IMapLibreMapController
     private static readonly IntPtr HWND_TOP     = IntPtr.Zero;
     private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
 
+    // Monitor work area — used to clamp overlays so they never show behind the taskbar
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+    [DllImport("user32.dll", EntryPoint = "GetMonitorInfoW")]
+    private static extern bool GetMonitorInfoW(IntPtr hMonitor, ref MONITORINFO mi);
+    private const uint MONITOR_DEFAULTTONEAREST = 2;
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MONITORINFO
+    {
+        public uint cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public uint dwFlags;
+    }
+
     private const string GlWindowClass = "MapLibreCabiGL";
     private static WndProcDelegate? _wndProcKeepAlive;
     private static bool _classRegistered;
@@ -413,6 +428,10 @@ public class MapLibreMapController : IMapLibreMapController
     private IntPtr _navHwnd   = IntPtr.Zero;
     private WndProcDelegate? _navWndProc;   // keep-alive
     private bool   _showNavControls = true;
+    // Compass drag state — drag on the compass button to set bearing (horiz) and pitch (vert)
+    private bool _compassDragging;
+    private int  _compassDragStartX, _compassDragStartY;
+    private int  _compassDragLastX,  _compassDragLastY;
     // Attribution — bottom-left corner, auto-width text band
     private IntPtr _attrHwnd  = IntPtr.Zero;
     private WndProcDelegate? _attrWndProc;  // keep-alive
@@ -421,6 +440,19 @@ public class MapLibreMapController : IMapLibreMapController
     private string  _attrText = string.Empty;  // cached, rebuilt on StyleLoaded
     private IntPtr  _attrFont = IntPtr.Zero;
     private IntPtr  _navFont  = IntPtr.Zero;
+    // GPS control panel — bottom-right corner, 29×(2×29+1)px logical
+    // Two buttons: GPS tracking state (top) + bearing reset (bottom)
+    private IntPtr _gpsHwnd   = IntPtr.Zero;
+    private WndProcDelegate? _gpsWndProc;   // keep-alive
+    private bool   _showGpsControl = true;
+    private IntPtr _gpsFont  = IntPtr.Zero;
+    /// <summary>GPS tracking mode — matches Android TrackingMode enum.</summary>
+    private enum GpsTrackingMode { Off, Show, Follow, FollowBearing }
+    private GpsTrackingMode _gpsMode = GpsTrackingMode.Off;
+    // Last received GPS fix — cached so SHOW mode can display it immediately when enabled
+    private double _lastGpsLat, _lastGpsLon;
+    private float  _lastGpsBearing, _lastGpsAccuracy;
+    private bool   _hasGpsFix;
     // Hit-testing constants (logical pixels, scaled by _pixelRatio internally)
     private const int NavButtonSize   = 29;   // px
     private const int NavPanelMargin  = 10;   // from map edge
@@ -462,8 +494,8 @@ public class MapLibreMapController : IMapLibreMapController
     public event Action?                                 OnCameraIdleReceived;
     public event Action<int>?                            OnCameraTrackingChangedReceived;
     public event Action?                                 OnCameraTrackingDismissedReceived;
-    public event Func<LatLng, bool>?                     OnMapClickReceived;
-    public event Func<LatLng, bool>?                     OnMapLongClickReceived;
+    public event Func<LatLng, double, double, bool>?                     OnMapClickReceived;
+    public event Func<LatLng, double, double, bool>?                     OnMapLongClickReceived;
     public event Action<Maps.Style>?                     OnStyleLoadedReceived;
     public event Action<Location>?                       OnUserLocationUpdateReceived;
     public event Action<string>?                         OnDidFailLoadingMapReceived;
@@ -714,6 +746,9 @@ public class MapLibreMapController : IMapLibreMapController
                 break;
             case "onCameraDidChange":
                 OnCameraIdleReceived?.Invoke();
+                // Repaint the GPS bearing button — its colour reflects current map bearing
+                if (_gpsHwnd != IntPtr.Zero && IsWindowVisible(_gpsHwnd))
+                    InvalidateRect(_gpsHwnd, IntPtr.Zero, false);
                 break;
             case "onDidFailLoadingMap":
                 OnDidFailLoadingMapReceived?.Invoke(detail ?? string.Empty);
@@ -1155,8 +1190,35 @@ public class MapLibreMapController : IMapLibreMapController
                 OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, "Segoe UI");
         }
 
+        CreateGpsOverlay();
         PositionOverlays();
         ShowOverlays();
+    }
+
+    // ── GPS control overlay ───────────────────────────────────────────────────
+
+    // Cached GPS panel rect to skip redundant SetWindowPos calls
+    private (int x, int y, int w, int h) _lastGpsRect;
+
+    private void CreateGpsOverlay()
+    {
+        EnsureOverlayClassRegistered();
+        _gpsWndProc = GpsOverlayWndProc;
+        _gpsHwnd = CreateWindowExA(
+            WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+            OverlayClass, "",
+            WS_POPUP | WS_VISIBLE | WS_CLIPSIBLINGS,
+            0, 0, 1, 1,
+            _effectiveParentHwnd, IntPtr.Zero, GetModuleHandleW(IntPtr.Zero), IntPtr.Zero);
+        if (_gpsHwnd != IntPtr.Zero)
+        {
+            SetWindowPos(_gpsHwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            SetWindowLongPtr(_gpsHwnd, GWLP_WNDPROC,
+                Marshal.GetFunctionPointerForDelegate(_gpsWndProc));
+            int fontH = -(int)(_pixelRatio * 14);
+            _gpsFont = CreateFontW(fontH, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET,
+                OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, "Segoe UI Symbol");
+        }
     }
 
     private static readonly string _ctrlDiagPath =
@@ -1218,6 +1280,12 @@ public class MapLibreMapController : IMapLibreMapController
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW_OR_HIDE(
                     _showAttrControl && _initialized && _attrText.Length > 0));
         }
+        if (_gpsHwnd != IntPtr.Zero)
+        {
+            SetWindowPos(_gpsHwnd, IntPtr.Zero, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW_OR_HIDE(
+                    _showGpsControl && _initialized));
+        }
     }
 
     private static uint SWP_SHOWWINDOW_OR_HIDE(bool show)
@@ -1255,11 +1323,27 @@ public class MapLibreMapController : IMapLibreMapController
         int btnSizePx = (int)(NavButtonSize  * _pixelRatio);
         bool navFits  = mapH >= (int)(MinMapHeightForNav * _pixelRatio);
 
+        // Clamp overlay positions to the monitor's work area (the visible screen
+        // area excluding the taskbar) so overlays never appear behind the taskbar.
+        var moninf = new MONITORINFO { cbSize = (uint)Marshal.SizeOf<MONITORINFO>() };
+        var hMon   = MonitorFromWindow(_childHwnd, MONITOR_DEFAULTTONEAREST);
+        // Default work area = unconstrained (safe fallback if monitor lookup fails)
+        int waLeft = int.MinValue, waTop = int.MinValue, waRight = int.MaxValue, waBottom = int.MaxValue;
+        if (hMon != IntPtr.Zero && GetMonitorInfoW(hMon, ref moninf))
+        {
+            waLeft   = moninf.rcWork.Left;
+            waTop    = moninf.rcWork.Top;
+            waRight  = moninf.rcWork.Right;
+            waBottom = moninf.rcWork.Bottom;
+        }
+
         if (_navHwnd != IntPtr.Zero && _showNavControls && navFits)
         {
             int panelH = btnSizePx * 3 + 2;  // +2 for separator lines
             int navX   = wr.Left + mapW - btnSizePx - marginPx;
             int navY   = wr.Top  + marginPx;
+            navX = Math.Max(waLeft, Math.Min(navX, waRight  - btnSizePx));
+            navY = Math.Max(waTop,  Math.Min(navY, waBottom - panelH));
             var nr = (navX, navY, btnSizePx, panelH);
             if (nr != _lastNavRect)
             {
@@ -1302,6 +1386,8 @@ public class MapLibreMapController : IMapLibreMapController
             int attrH = _cachedAttrMeasure.cy + padV * 2;
             int attrX = wr.Left + marginPx;                       // bottom-left, avoids nav overlap
             int attrY = wr.Top  + mapH - attrH - marginPx;
+            attrX = Math.Max(waLeft, Math.Min(attrX, waRight  - attrW));
+            attrY = Math.Max(waTop,  Math.Min(attrY, waBottom - attrH));
             var ar = (attrX, attrY, attrW, attrH);
             if (ar != _lastAttrRect)
             {
@@ -1314,6 +1400,24 @@ public class MapLibreMapController : IMapLibreMapController
         // Re-evaluate nav visibility — the map may have shrunk below the
         // minimum height (or grown back) since the last call.
         ShowOverlays();
+
+        // GPS panel — bottom-right corner, same x-alignment as nav panel
+        if (_gpsHwnd != IntPtr.Zero && _showGpsControl)
+        {
+            int gpsBtnSizePx = btnSizePx;  // same button size as nav
+            int gpsPanelH    = gpsBtnSizePx * 2 + 1;  // 2 buttons + 1 separator
+            int gpsX = wr.Left + mapW - gpsBtnSizePx - marginPx;
+            int gpsY = wr.Top  + mapH - gpsPanelH - marginPx;
+            gpsX = Math.Max(waLeft, Math.Min(gpsX, waRight  - gpsBtnSizePx));
+            gpsY = Math.Max(waTop,  Math.Min(gpsY, waBottom - gpsPanelH));
+            var gr = (gpsX, gpsY, gpsBtnSizePx, gpsPanelH);
+            if (gr != _lastGpsRect)
+            {
+                _lastGpsRect = gr;
+                SetWindowPos(_gpsHwnd, IntPtr.Zero, gpsX, gpsY, gpsBtnSizePx, gpsPanelH, SWP_NOACTIVATE | SWP_NOZORDER);
+                InvalidateRect(_gpsHwnd, IntPtr.Zero, true);
+            }
+        }
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -1327,12 +1431,16 @@ public class MapLibreMapController : IMapLibreMapController
         if (_childHwnd != IntPtr.Zero) KillTimer(_childHwnd, (IntPtr)OverlayZTimerId);
         if (_navFont  != IntPtr.Zero) { DeleteObject(_navFont);  _navFont  = IntPtr.Zero; }
         if (_attrFont != IntPtr.Zero) { DeleteObject(_attrFont); _attrFont = IntPtr.Zero; }
+        if (_gpsFont  != IntPtr.Zero) { DeleteObject(_gpsFont);  _gpsFont  = IntPtr.Zero; }
         if (_navHwnd  != IntPtr.Zero) { DestroyWindow(_navHwnd);  _navHwnd  = IntPtr.Zero; }
         if (_attrHwnd != IntPtr.Zero) { DestroyWindow(_attrHwnd); _attrHwnd = IntPtr.Zero; }
+        if (_gpsHwnd  != IntPtr.Zero) { DestroyWindow(_gpsHwnd);  _gpsHwnd  = IntPtr.Zero; }
         _navWndProc  = null;
         _attrWndProc = null;
+        _gpsWndProc  = null;
         _lastNavRect  = default;
         _lastAttrRect = default;
+        _lastGpsRect  = default;
         _attrCollapseTimer?.Dispose(); _attrCollapseTimer = null;
     }
 
@@ -1356,19 +1464,81 @@ public class MapLibreMapController : IMapLibreMapController
             case WM_PAINT:
                 PaintNavPanel(hWnd);
                 return IntPtr.Zero;
+
             case WM_LBUTTONDOWN:
             {
                 int btnSizePx = (int)(NavButtonSize * _pixelRatio);
+                int x = (short)(unchecked((int)lParam.ToInt64()) & 0xFFFF);
                 int y = (short)((unchecked((int)lParam.ToInt64()) >> 16) & 0xFFFF);
                 int btn = y / (btnSizePx + 1);
                 switch (btn)
                 {
-                    case 0: ZoomIn();    break;  // top button = zoom in (+)
-                    case 1: ZoomOut();   break;  // middle     = zoom out (−)
-                    case 2: ResetNorth();break;  // bottom     = compass/reset-north
+                    case 0: ZoomIn();  break;  // top    = zoom in (+)
+                    case 1: ZoomOut(); break;  // middle = zoom out (−)
+                    case 2:            // bottom = compass — start drag; click is handled on MouseUp
+                        _compassDragging  = true;
+                        _compassDragStartX = _compassDragLastX = x;
+                        _compassDragStartY = _compassDragLastY = y;
+                        SetCapture(_navHwnd);
+                        break;
                 }
                 return IntPtr.Zero;
             }
+
+            case WM_MOUSEMOVE:
+            {
+                if (!_compassDragging) break;
+                int btnSizePx = (int)(NavButtonSize * _pixelRatio);
+                int x = (short)(unchecked((int)lParam.ToInt64()) & 0xFFFF);
+                int y = (short)((unchecked((int)lParam.ToInt64()) >> 16) & 0xFFFF);
+
+                // Center of the compass button (3rd slot)
+                int cx = btnSizePx / 2;
+                int cy = (btnSizePx * 2 + 2) + btnSizePx / 2;
+
+                // Bearing: angular delta around the button center
+                // Mirrors maplibre-gl-js MouseRotateWrapper — uses angle between
+                // (lastX, curY)→center and (curX, curY)→center so only horizontal
+                // movement drives rotation without a discontinuity at the center.
+                double ang1 = Math.Atan2(_compassDragLastY - cy, _compassDragLastX - cx);
+                double ang2 = Math.Atan2(y - cy,               x - cx);
+                double bearingDelta = (ang2 - ang1) * 180.0 / Math.PI;
+                while (bearingDelta >  180) bearingDelta -= 360;
+                while (bearingDelta < -180) bearingDelta += 360;
+
+                // Pitch: direct vertical drag (*−0.5 so dragging up increases tilt)
+                double pitchDelta = (y - _compassDragLastY) * -0.5;
+                double newPitch   = Math.Max(0, Math.Min(60, GetPitch() + pitchDelta));
+
+                if (Math.Abs(bearingDelta) > 0.01 || Math.Abs(pitchDelta) > 0.01)
+                {
+                    var center = GetCenter();
+                    JumpTo(center.Latitude, center.Longitude, GetZoom(),
+                           GetBearing() + bearingDelta, newPitch);
+                    _renderNeedsUpdate = true;
+                }
+
+                _compassDragLastX = x;
+                _compassDragLastY = y;
+                return IntPtr.Zero;
+            }
+
+            case WM_LBUTTONUP:
+            {
+                if (_compassDragging)
+                {
+                    ReleaseCapture();
+                    _compassDragging = false;
+                    int x = (short)(unchecked((int)lParam.ToInt64()) & 0xFFFF);
+                    int y = (short)((unchecked((int)lParam.ToInt64()) >> 16) & 0xFFFF);
+                    // Click (no significant drag) → reset north
+                    if (Math.Abs(x - _compassDragStartX) <= 4 && Math.Abs(y - _compassDragStartY) <= 4)
+                        ResetNorth();
+                    return IntPtr.Zero;
+                }
+                break;
+            }
+
             case WM_NCHITTEST: return HTCLIENT;
         }
         return DefWindowProcA(hWnd, msg, wParam, lParam);
@@ -1429,6 +1599,217 @@ public class MapLibreMapController : IMapLibreMapController
         int x = (rowW - sz.cx) / 2;
         int y = rowY + (rowH - sz.cy) / 2;
         TextOutW(hdc, x, y, text, text.Length);
+    }
+
+    // ── GPS overlay WndProc ───────────────────────────────────────────────────
+
+    private IntPtr GpsOverlayWndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
+    {
+        switch (msg)
+        {
+            case WM_ERASEBKGND: return new IntPtr(1);
+            case WM_PAINT:
+                PaintGpsPanel(hWnd);
+                return IntPtr.Zero;
+            case WM_LBUTTONDOWN:
+            {
+                int btnSizePx = (int)(NavButtonSize * _pixelRatio);
+                int y = (short)((unchecked((int)lParam.ToInt64()) >> 16) & 0xFFFF);
+                int btn = y / (btnSizePx + 1);
+                switch (btn)
+                {
+                    case 0: CycleGpsMode();             break;  // top    = GPS tracking state
+                    case 1: GpsBearingButtonPressed(); break;  // bottom = reset north / drop FollowBearing→Follow
+                }
+                return IntPtr.Zero;
+            }
+            case WM_NCHITTEST: return HTCLIENT;
+        }
+        return DefWindowProcA(hWnd, msg, wParam, lParam);
+    }
+
+    /// <summary>Cycle GPS tracking mode: Off → Show → Follow → FollowBearing → Off.</summary>
+    private void CycleGpsMode()
+    {
+        _gpsMode = _gpsMode switch
+        {
+            GpsTrackingMode.Off           => GpsTrackingMode.Show,
+            GpsTrackingMode.Show          => GpsTrackingMode.Follow,
+            GpsTrackingMode.Follow        => GpsTrackingMode.FollowBearing,
+            GpsTrackingMode.FollowBearing => GpsTrackingMode.Off,
+            _                             => GpsTrackingMode.Off,
+        };
+
+        ApplyGpsMode();
+
+        // Repaint the button to reflect the new state
+        if (_gpsHwnd != IntPtr.Zero)
+            InvalidateRect(_gpsHwnd, IntPtr.Zero, true);
+    }
+
+    /// <summary>Apply the current GPS mode to the location indicator and camera.</summary>
+    private void ApplyGpsMode()
+    {
+        if (_gpsMode == GpsTrackingMode.Off)
+        {
+            ClearLocationIndicator();
+        }
+        else if (_hasGpsFix)
+        {
+            // (Re-)apply the last known GPS fix to the location indicator
+            _pendingLocInd = new LocIndParams(_lastGpsLat, _lastGpsLon, _lastGpsBearing, Math.Max(5f, _lastGpsAccuracy));
+            if (_gpsMode is GpsTrackingMode.Follow or GpsTrackingMode.FollowBearing)
+            {
+                double cameraZoom    = GetZoom() < 8 ? 14 : GetZoom();
+                double cameraBearing = _gpsMode == GpsTrackingMode.FollowBearing ? _lastGpsBearing : GetBearing();
+                EaseTo(_lastGpsLat, _lastGpsLon, cameraZoom, cameraBearing, GetPitch(), durationMs: 300);
+            }
+            if (_styleReady && _style != null)
+                ApplyPendingLocationIndicator();
+            _renderNeedsUpdate = true;
+        }
+    }
+
+    /// <summary>
+    /// Feed a GPS location update to the controller.
+    /// The controller stores the fix and applies it according to the current
+    /// <see cref="GpsTrackingMode"/> (Off = ignored; Show = update dot only;
+    /// Follow = update dot + re-centre camera).
+    /// </summary>
+    public void UpdateGpsLocation(double lat, double lon, float bearing = 0, float accuracyMeters = 10)
+    {
+        _lastGpsLat      = lat;
+        _lastGpsLon      = lon;
+        _lastGpsBearing  = bearing;
+        _lastGpsAccuracy = accuracyMeters;
+        bool isFirstFix  = !_hasGpsFix;
+        _hasGpsFix       = true;
+
+        if (_gpsMode == GpsTrackingMode.Off) return;
+
+        bool follow        = _gpsMode is GpsTrackingMode.Follow or GpsTrackingMode.FollowBearing;
+        bool useBearing    = _gpsMode == GpsTrackingMode.FollowBearing;
+        _pendingLocInd     = new LocIndParams(lat, lon, bearing, Math.Max(5f, accuracyMeters));
+
+        if (follow)
+        {
+            double cameraZoom    = GetZoom() < 8 ? 14 : GetZoom();
+            double cameraBearing = useBearing ? bearing : GetBearing();
+            if (isFirstFix) JumpTo(lat, lon, cameraZoom, cameraBearing, GetPitch());
+            else            EaseTo(lat, lon, GetZoom(), cameraBearing, GetPitch(), durationMs: 200);
+        }
+
+        if (_styleReady && _style != null)
+            ApplyPendingLocationIndicator();
+        _renderNeedsUpdate = true;
+        _map?.TriggerRepaint();
+
+        // Refresh the GPS button (state indicator icon may change on first fix)
+        if (isFirstFix && _gpsHwnd != IntPtr.Zero)
+            InvalidateRect(_gpsHwnd, IntPtr.Zero, true);
+    }
+
+    /// <summary>
+    /// Bearing button pressed: if in FollowBearing mode, drop to Follow (stop rotating) and
+    /// reset bearing to north; otherwise just reset bearing to north.
+    /// </summary>
+    private void GpsBearingButtonPressed()
+    {
+        if (_gpsMode == GpsTrackingMode.FollowBearing)
+        {
+            _gpsMode = GpsTrackingMode.Follow;
+            if (_gpsHwnd != IntPtr.Zero)
+                InvalidateRect(_gpsHwnd, IntPtr.Zero, true);
+        }
+        ResetNorth();
+    }
+
+    public void SetShowGpsControl(bool show)
+    {
+        _showGpsControl = show;
+        ShowOverlays();
+    }
+
+    private void PaintGpsPanel(IntPtr hWnd)
+    {
+        var ps = new PAINTSTRUCT { rgbReserved = new byte[32] };
+        var hdc = BeginPaint(hWnd, out ps);
+        try
+        {
+            GetClientRect(hWnd, out var rc);
+            int btnSizePx = rc.Right;
+
+            // ── Background ───────────────────────────────────────────────────
+            var bgBrush   = CreateSolidBrush(0x00FFFFFF);
+            var borderPen = CreatePen(PS_SOLID, 1, 0x00CCCCCC);
+            var oldBrush  = SelectObject(hdc, bgBrush);
+            var oldPen    = SelectObject(hdc, borderPen);
+            RoundRect(hdc, 0, 0, rc.Right, rc.Bottom, 6, 6);
+            SelectObject(hdc, oldBrush);
+            SelectObject(hdc, oldPen);
+            DeleteObject(bgBrush);
+            DeleteObject(borderPen);
+
+            // ── Divider ───────────────────────────────────────────────────────
+            var divPen = CreatePen(PS_SOLID, 1, 0x00E0E0E0);
+            var divOld = SelectObject(hdc, divPen);
+            MoveToEx(hdc, 4, btnSizePx, IntPtr.Zero);
+            LineTo(hdc, btnSizePx - 4, btnSizePx);
+            SelectObject(hdc, divOld);
+            DeleteObject(divPen);
+
+            SetBkMode(hdc, TRANSPARENT);
+            var oldFont = SelectObject(hdc, _gpsFont != IntPtr.Zero ? _gpsFont : IntPtr.Zero);
+
+            // ── GPS button (top) — colour reflects tracking state ─────────────
+            // OFF:    ⊙ gray     SHOW: ⊙ blue    FOLLOW: ◎ teal/blue bg tint
+            uint gpsColor;
+            string gpsSymbol;
+            switch (_gpsMode)
+            {
+                case GpsTrackingMode.Show:
+                    gpsColor  = 0x00E58800;   // BGR blue = #1E88E5
+                    gpsSymbol = "\u2299";      // ⊙ circled dot
+                    break;
+                case GpsTrackingMode.Follow:
+                    // Highlight the button with a tinted background
+                    var tintBrush = CreateSolidBrush(0x00FFF3E0);  // RGB(224,243,255) light blue tint
+                    var tintOld   = SelectObject(hdc, tintBrush);
+                    RoundRect(hdc, 1, 1, btnSizePx - 1, btnSizePx - 1, 4, 4);
+                    SelectObject(hdc, tintOld);
+                    DeleteObject(tintBrush);
+                    gpsColor  = 0x00C57000;   // RGB(0,112,197) deep blue = #0070C5
+                    gpsSymbol = "\u25CE";      // ◎ bullseye / follow
+                    break;
+                case GpsTrackingMode.FollowBearing:
+                    // Orange-tinted background — indicates active bearing-rotation navigation mode
+                    var tintBrush2 = CreateSolidBrush(0x00E0F3FF);  // RGB(255,243,224) warm orange tint
+                    var tintOld2   = SelectObject(hdc, tintBrush2);
+                    RoundRect(hdc, 1, 1, btnSizePx - 1, btnSizePx - 1, 4, 4);
+                    SelectObject(hdc, tintOld2);
+                    DeleteObject(tintBrush2);
+                    gpsColor  = 0x00007CF5;   // RGB(245,124,0) orange-amber = #F57C00
+                    gpsSymbol = "\u25B2";      // ▲ navigation triangle / heading-up
+                    break;
+                default: // Off
+                    gpsColor  = 0x00999999;   // gray
+                    gpsSymbol = "\u25CB";      // ○ empty circle
+                    break;
+            }
+            SetTextColor(hdc, gpsColor);
+            PaintCenteredText(hdc, gpsSymbol, 0, btnSizePx, btnSizePx);
+
+            // ── Bearing reset button (bottom) ─────────────────────────────────
+            // Shows the north-arrow "↑" in neutral gray; changes to blue accent
+            // when the map is rotated away from north (bearing != ~0°).
+            double bearing = GetBearing();
+            uint bearingColor = Math.Abs(bearing) > 0.5 ? 0x00E58800u : 0x00555555u;
+            SetTextColor(hdc, bearingColor);
+            PaintCenteredText(hdc, "\u21BA", btnSizePx + 1, btnSizePx, btnSizePx);  // ↺ reset-to-north
+
+            SelectObject(hdc, oldFont);
+        }
+        finally { EndPaint(hWnd, ref ps); }
     }
 
     // ── Attribution overlay WndProc ────────────────────────────────────────────
@@ -1632,6 +2013,8 @@ public class MapLibreMapController : IMapLibreMapController
             SetWindowPos(_navHwnd,  HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         if (_attrHwnd != IntPtr.Zero)
             SetWindowPos(_attrHwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        if (_gpsHwnd  != IntPtr.Zero)
+            SetWindowPos(_gpsHwnd,  HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     }
 
     private IntPtr PopupWndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
@@ -1707,7 +2090,7 @@ public class MapLibreMapController : IMapLibreMapController
                         _map != null)
                     {
                         var ll = _map.LatLngForPixel(upX, upY);
-                        OnMapClickReceived?.Invoke(new LatLng(ll.Lat, ll.Lon));
+                        OnMapClickReceived?.Invoke(new LatLng(ll.Lat, ll.Lon), upX, upY);
                     }
                 }
                 return IntPtr.Zero;

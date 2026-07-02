@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:maplibre="clr-namespace:MapLibreNative.Maui.Handlers;assembly=MapLibreNative.Maui.Handlers"
+             xmlns:local="clr-namespace:MauiSample"
+             x:DataType="local:GpsControlViewModel"
+             x:Class="MauiSample.GpsControlPage"
+             Title="GPS Control">
+
+    <Grid RowDefinitions="*, Auto">
+
+        <!--
+            MapLibreMap with ShowGpsControl="True" (the default) shows the
+            GPS overlay panel bottom-right: a 3-state tracking button
+            (Off / Show / Follow) above a bearing-reset button.
+
+            Tap the GPS button to cycle:
+              ○  Off    — location indicator hidden
+              ⊙  Show   — blue dot at last fix, camera free
+              ◎  Follow — blue dot + camera re-centres on every GPS update
+        -->
+        <maplibre:MapLibreMap
+            Grid.Row="0"
+            x:Name="Map"
+            StyleUrl="https://demotiles.maplibre.org/style.json"
+            ShowGpsControl="True"
+            ShowNavigationControls="True" />
+
+        <!-- Controls -->
+        <VerticalStackLayout Grid.Row="1" Spacing="8" Padding="12">
+
+            <Label FontAttributes="Bold" Text="GPS Overlay Demo" FontSize="16" />
+
+            <Label TextColor="Gray" FontSize="12" Text=
+                "Tap the ○/⊙/◎ button on the map to cycle tracking mode.&#x0a;Use Start Simulation to feed synthetic GPS fixes." />
+
+            <HorizontalStackLayout Spacing="8">
+                <Button Text="▶  Start Simulation"
+                        Command="{Binding StartSimulationCommand}"
+                        BackgroundColor="#1E88E5" TextColor="White"
+                        Padding="12,6" />
+                <Button Text="⏹  Stop"
+                        Command="{Binding StopSimulationCommand}"
+                        BackgroundColor="#E53935" TextColor="White"
+                        Padding="12,6" />
+            </HorizontalStackLayout>
+
+            <!-- Status line -->
+            <Label Text="{Binding Status}" FontSize="12" TextColor="Gray" />
+
+        </VerticalStackLayout>
+
+    </Grid>
+</ContentPage>

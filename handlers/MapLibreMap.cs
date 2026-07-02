@@ -32,6 +32,12 @@ public class MapLibreMap : StackLayout
     public static readonly BindableProperty ShowNavigationControlsProperty =
         BindableProperty.Create(nameof(ShowNavigationControls), typeof(bool), typeof(MapLibreMap), defaultValue: true);
     /// <summary>
+    /// Show the GPS tracking control overlay (3-state location button + bearing reset).
+    /// Default <c>true</c>.
+    /// </summary>
+    public static readonly BindableProperty ShowGpsControlProperty =
+        BindableProperty.Create(nameof(ShowGpsControl), typeof(bool), typeof(MapLibreMap), defaultValue: true);
+    /// <summary>
     /// Show an always-visible attribution overlay (OSM requires this).
     /// Attributions are collected from all loaded TileJSON sources plus
     /// <see cref="CustomAttribution"/>. Default <c>true</c>.
@@ -220,6 +226,12 @@ public class MapLibreMap : StackLayout
     {
         get => (bool)GetValue(ShowNavigationControlsProperty);
         set => SetValue(ShowNavigationControlsProperty, value);
+    }
+
+    public bool ShowGpsControl
+    {
+        get => (bool)GetValue(ShowGpsControlProperty);
+        set => SetValue(ShowGpsControlProperty, value);
     }
 
     public bool ShowAttributionControl
@@ -495,22 +507,26 @@ public class MapLibreMap : StackLayout
         CameraTrackingDismissedCommand?.Execute(null);
     }
 
-    internal bool OnMapClick(LatLng latLng)
+    internal bool OnMapClick(LatLng latLng, double screenX = 0, double screenY = 0)
     {
         var args = new MapClickEventArgs
         {
-            LatLng = latLng
+            LatLng  = latLng,
+            ScreenX = screenX,
+            ScreenY = screenY,
         };
         MapClick?.Invoke(this, args);
         MapClickCommand?.Execute(latLng);
         return false;
     }
 
-    internal bool OnMapLongClick(LatLng latLng)
+    internal bool OnMapLongClick(LatLng latLng, double screenX = 0, double screenY = 0)
     {
         var args = new MapClickEventArgs
         {
-            LatLng = latLng
+            LatLng  = latLng,
+            ScreenX = screenX,
+            ScreenY = screenY,
         };
         MapLongClick?.Invoke(this, args);
         MapLongClickCommand?.Execute(latLng);

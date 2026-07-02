@@ -7,6 +7,29 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 3.3.0
+### ✨ Features and improvements
+- **GPS overlay control (Windows MAUI + WPF)** — A new GPS panel is drawn as a floating overlay in the bottom-right corner of the map (next to the existing navigation controls), matching the style and shadow of the nav and attribution panels.  The panel contains two buttons: a GPS tracking-mode button (top) and a bearing/north-reset button (bottom).  Controlled via a new `ShowGpsControl` bindable property on `MapLibreMap` (default `true`) and a matching `ShowGpsControl` dependency property on `MlnMapHost`.  All non-Windows platforms (Android, MaciOS) receive a no-op stub so existing code compiles without conditionals.
+
+- **4-state GPS tracking cycle** — The GPS button cycles through four modes on each click:
+  - **○ Off** (gray) — no location indicator, camera free.
+  - **⊙ Show** (blue `#1E88E5`) — blue accuracy-circle + bearing dot at the last fix; camera remains free.
+  - **◎ Follow** (deep blue `#0070C5`, light-blue button tint) — dot shown and the camera re-centres on every incoming GPS fix (north-up).
+  - **▲ FollowBearing** (orange-amber `#F57C00`, warm button tint) — dot shown, camera follows location *and* rotates so the current GPS bearing is always "heading up", matching Google Maps turn-by-turn navigation mode.
+
+- **Smart bearing-reset button** — The ↑ button in the GPS panel behaves contextually: in **FollowBearing** mode it drops back to **Follow** (stops heading-up rotation) *and* resets the camera bearing to north in a single animated step; in all other modes it resets bearing to north as before.
+
+- **`IMapLibreMapController.UpdateGpsLocation`** — New method on the shared controller interface: `void UpdateGpsLocation(double lat, double lon, float bearing = 0, float accuracyMeters = 10)`.  On Windows this drives the location indicator layer and all camera-follow logic; Android and MaciOS receive no-op stubs.  The method caches the last fix so switching from Off→Show or Off→Follow immediately places the dot without waiting for a new fix.
+
+- **MAUI sample: GPS control demo page** — New "GPS" tab added to `MauiSample` (`GpsControlPage` + `GpsControlViewModel`).  A `IDispatcherTimer`-driven simulation walks seven waypoints around Seattle every 1.5 s, calling `controller.UpdateGpsLocation()` on each tick.  The page explains the three tracking-mode buttons and includes Start/Stop simulation controls.  Registered in `AppShell.xaml` between the Markers and DD Test tabs.
+
+- **WPF sample: GPS simulation** — `WpfExample` gains a "GPS sim: ▶ Start / ⏹ Stop" toolbar section.  A `DispatcherTimer` steps through the same Seattle waypoint loop, calling `MapHost.UpdateGpsLocation()`, and updates the status bar with the current fix details.  `ShowGpsControl="True"` is set on the `MlnMapHost` element so the GPS overlay is visible by default.
+
+### 🐞 Bug fixes
+- **Windows: hillshade and color-relief layers rendered with grey/white artifacts** — The Windows WGL backend was constructed with `ContextMode::Unique`, which causes mbgl's GL state cache to *not* call `setDirtyState()` at the start of each frame.  Because the C# host calls `glBindFramebuffer(0)`, `glViewport`, `glClearColor`, and `glClear` before each `Render()` invocation, mbgl's cached GL state diverged from the actual driver state; on multi-pass effects such as hillshade and color-relief this manifested as missing or incorrect draws.  Fixed by switching to `ContextMode::Shared` in `WGLBackend`, which causes `Context::createCommandEncoder()` to call `setDirtyState()` unconditionally so all blend, stencil, program, and texture state is re-applied each frame.  The existing `assumeFramebufferBinding` / `assumeViewport` calls in `updateAssumedState()` are retained because `setDirtyState()` explicitly skips those (as documented in `context.cpp`).
+
+- **Android/MaciOS: `OnMapClickReceived` and `OnMapLongClickReceived` missing screen coordinates** — The event delegates on Android were typed `Func<LatLng, bool>?`, omitting the `double screenX, double screenY` parameters that were added to the Windows implementation in 3.2.8 (`MapClickEventArgs.ScreenX`/`ScreenY`).  Updated to `Func<LatLng, double, double, bool>?` and both `OnSingleTapConfirmed` and `OnLongPress` gesture-detector callbacks now compute and forward the physical screen coordinates.  **Breaking change** for any Android/MaciOS code that subscribed to these events with the old two-parameter lambda.
+
 ## 3.2.10
 ### ✨ Features and improvements
 - **WPF sample: data-driven circle-color test harness** — `WpfExample` gains a "Run Data-Driven Circle Test" button (and a `--autotest` CLI flag for unattended/CI use) that adds a shared GeoJSON source at runtime with circle layers using literal, `property`+`stops`, `case`, and `match` `circle-color` forms, plus a vector-tile comparison against the public MapLibre demotiles source (`source-layer "centroids"`), and logs `QueryRenderedFeaturesInBox` results for each to `%TEMP%\maplibre_datadriven_test.log`. Written to investigate a VistumblerCS report of circle layers rendering zero features; kept as a regression check for this class of bug. (An initial pass at this investigation concluded the renderer was fine and pinned the bug entirely on a consuming app's server `.htaccess` mislabeling 404 responses as gzip — that header bug was real and is fixed upstream in the consuming app, but it was not the whole story; see the source-layer fix below, found by extending this same harness to a populated vector source.)
