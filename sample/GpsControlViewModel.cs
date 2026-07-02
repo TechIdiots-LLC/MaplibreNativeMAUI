@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using MapLibreNative.Maui;
 
 namespace MauiSample;
 
@@ -33,6 +34,10 @@ public partial class GpsControlViewModel : ObservableObject
 
     // Delegate set by the page to push GPS fixes into the map controller.
     public Action<double, double, float, float>? SendGpsUpdate { get; set; }
+
+    // The four corners a map overlay control can be anchored to; bound to the
+    // placement pickers so nav / GPS / attribution positions can be changed live.
+    public MapControlCorner[] Corners { get; } = Enum.GetValues<MapControlCorner>();
 
     // ── Observable state ──────────────────────────────────────────────────────
 

@@ -834,8 +834,9 @@ public class MapLibreMapController : IMapLibreMapController
         var parts = new System.Collections.Generic.List<string>(_style.GetSourceAttributions());
         if (!string.IsNullOrWhiteSpace(_customAttribution))
             parts.Add(_customAttribution!);
+        var attributions = MbglStyle.EnsureMapLibreAttribution(parts);
 
-        if (parts.Count == 0 || !_showAttrControl)
+        if (attributions.Count == 0 || !_showAttrControl)
         {
             _attrView.Visibility   = ViewStates.Gone;
             _attrButton.Visibility = ViewStates.Gone;
@@ -843,7 +844,7 @@ public class MapLibreMapController : IMapLibreMapController
         }
 
         _attrLoaded = true;
-        _attrView.TextFormatted = BuildAttributionSpanned(parts);
+        _attrView.TextFormatted = BuildAttributionSpanned(attributions);
         ExpandAttribution();
     }
 
@@ -878,7 +879,7 @@ public class MapLibreMapController : IMapLibreMapController
     }
 
     private static ISpanned BuildAttributionSpanned(
-        System.Collections.Generic.List<string> parts)
+        System.Collections.Generic.IReadOnlyList<string> parts)
     {
         // Parse each part's HTML <a href> tags into URLSpans so links are clickable.
         var sb  = new SpannableStringBuilder();

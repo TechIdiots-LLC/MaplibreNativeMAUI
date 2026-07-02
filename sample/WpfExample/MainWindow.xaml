@@ -83,11 +83,19 @@
             MlnMapHost is an HwndHost — it owns a child HWND backed by OpenGL.
             StyleUrl, ShowNavigationControls and events are set here; everything
             else (pan, zoom, double-tap) is handled internally by the control.
+
+            The *ControlPosition properties anchor each overlay to a corner
+            (TopLeft/TopRight/BottomLeft/BottomRight). Controls sharing a corner
+            stack automatically — here navigation and GPS both sit top-right, so
+            the GPS panel stacks below the navigation panel.
         -->
         <mlwpf:MlnMapHost x:Name="MapHost"
                            StyleUrl="https://demotiles.maplibre.org/style.json"
                            ShowNavigationControls="True"
                            ShowGpsControl="True"
+                           NavigationControlPosition="TopRight"
+                           GpsControlPosition="TopRight"
+                           AttributionControlPosition="BottomLeft"
                            MapReady="MapHost_MapReady"
                            StyleLoaded="MapHost_StyleLoaded"
                            CameraIdle="MapHost_CameraIdle" />

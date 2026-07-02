@@ -1545,7 +1545,7 @@ public class MlnMapHost : HwndHost
     private void RefreshAttribution()
     {
         if (_style == null) return;
-        var parts = _style.GetSourceAttributions();
+        var parts = MbglStyle.EnsureMapLibreAttribution(_style.GetSourceAttributions());
 
         var allInlines = new List<Inline>();
         var first = true;

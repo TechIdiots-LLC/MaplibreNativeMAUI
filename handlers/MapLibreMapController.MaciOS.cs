@@ -606,8 +606,9 @@ public class MapLibreMapController : IMapLibreMapController
         var parts = new System.Collections.Generic.List<string>(_style.GetSourceAttributions());
         if (!string.IsNullOrWhiteSpace(_customAttribution))
             parts.Add(_customAttribution!);
+        var attributions = MbglStyle.EnsureMapLibreAttribution(parts);
 
-        if (parts.Count == 0 || !_showAttrControl)
+        if (attributions.Count == 0 || !_showAttrControl)
         {
             _attrView.Hidden   = true;
             _attrButton.Hidden = true;
@@ -615,7 +616,7 @@ public class MapLibreMapController : IMapLibreMapController
         }
 
         _attrLoaded = true;
-        _attrView.AttributedText = BuildAttributionAttributedString(parts);
+        _attrView.AttributedText = BuildAttributionAttributedString(attributions);
         ExpandAttribution();
     }
 
@@ -649,7 +650,7 @@ public class MapLibreMapController : IMapLibreMapController
     }
 
     private static NSAttributedString BuildAttributionAttributedString(
-        System.Collections.Generic.List<string> parts)
+        System.Collections.Generic.IReadOnlyList<string> parts)
     {
         var result = new NSMutableAttributedString();
         var hrefRe = new Regex(
