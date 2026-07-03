@@ -421,7 +421,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     private readonly IntPtr _parentHwnd;
     private string? _styleString;
-    private readonly float   _pixelRatio;
+    private float            _pixelRatio;
 
     private IntPtr       _effectiveParentHwnd = IntPtr.Zero;
     private IntPtr       _childHwnd = IntPtr.Zero;
@@ -534,6 +534,14 @@ public class MapLibreMapController : IMapLibreMapController
     {
         if (_initialized || _parentHwnd == IntPtr.Zero) return;
         if (View.ActualWidth < 2 || View.ActualHeight < 2) return;
+
+        // The RasterizationScale handed to the constructor can be a stale 1.0 when the
+        // XamlRoot has not yet resolved the monitor DPI. By the time the view is loaded
+        // XamlRoot reports the real scale (e.g. 2.25 at 225%), so refresh _pixelRatio
+        // here — before sizing the GL window and creating the frontend/map — otherwise
+        // the child window is sized in logical pixels and only fills 1/scale of the
+        // physical window, with the overlays pushed off the visible area.
+        RefreshPixelRatio();
 
         // AIRSPACE WORKAROUND: Create the GL window as a borderless top-level popup
         // OWNED BY (not parented to) the main XAML window. This bypasses WinUI's
@@ -793,10 +801,24 @@ public class MapLibreMapController : IMapLibreMapController
         }
     }
 
+    /// <summary>
+    /// Refreshes <see cref="_pixelRatio"/> from the live XamlRoot rasterization scale.
+    /// The scale passed to the constructor may be a stale 1.0 before the DPI resolves,
+    /// so this is called at init and on every resize (also handles moving the window
+    /// between monitors with different DPI).
+    /// </summary>
+    private void RefreshPixelRatio()
+    {
+        double scale = View.XamlRoot?.RasterizationScale ?? 0;
+        if (scale > 0.1)
+            _pixelRatio = (float)scale;
+    }
+
     private void OnViewSizeChanged(Microsoft.Maui.Graphics.Size newSize)
     {
         CtrlDiag($"OnViewSizeChanged {newSize.Width}x{newSize.Height} init={_initialized}");
         if (!_initialized) return;
+        RefreshPixelRatio();
         int physW = Math.Max(1, (int)(newSize.Width  * _pixelRatio));
         int physH = Math.Max(1, (int)(newSize.Height * _pixelRatio));
 
@@ -811,7 +833,6 @@ public class MapLibreMapController : IMapLibreMapController
     private void UpdateChildWindowPosition()
     {
         if (_childHwnd == IntPtr.Zero || !View.IsLoaded) return;
-
         // Popup is top-level → coordinates are SCREEN coords.
         // Get the View's position in XAML root, then translate via the owner
         // window's client-to-screen mapping.
