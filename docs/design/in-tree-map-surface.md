@@ -134,7 +134,7 @@ Add pages to `sample/` (and matching XAML in `sample/WpfExample`) that exercise 
 
 This is a feature, not a refactor, and is independent of the compositing work above — it can land first.
 
-**Implemented so far:** `Pin`, `Polyline`, `Polygon`, `Circle` under `handlers/Overlays` (declarative `StyleView` children; `Circle` uses the ported `GeographyUtils`/`Distance`).
+**Implemented so far:** `Pin`, `Polyline`, `Polygon`, `Circle` under `handlers/Overlays` (declarative `StyleView` children; `Circle` uses the ported `GeographyUtils`/`Distance`). `SymbolLayerProperties` fully implemented (layout + paint properties, `ToDictionary()`/`FromJson()`). `LayoutPropertyNames` in both WPF renderers expanded to match the Windows/Android controller's comprehensive set.
 
 ### Follow-up: proper marker via SymbolLayer + sprite (not the legacy annotation API)
 

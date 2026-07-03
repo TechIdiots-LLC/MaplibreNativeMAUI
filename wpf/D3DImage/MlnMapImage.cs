@@ -178,6 +178,7 @@ public class MlnMapImage : Grid
         BuildNavOverlay();
         BuildGpsOverlay();
         BuildAttributionOverlay();
+        RepositionControls();
 
         Loaded += (_, _) => TryInitialize();
         Unloaded += (_, _) => Teardown();
@@ -288,6 +289,25 @@ public class MlnMapImage : Grid
         if (_map == null) return;
         var (lat, lon) = _map.Center;
         _map.EaseTo(lat, lon, _map.Zoom - 1, _map.Bearing, _map.Pitch, durationMs: 250);
+        _renderNeedsUpdate = true;
+    }
+
+    /// <summary>Rotate the map by <paramref name="deltaDeg"/> (positive = clockwise).</summary>
+    public void RotateBy(double deltaDeg)
+    {
+        if (_map == null) return;
+        var (lat, lon) = _map.Center;
+        _map.EaseTo(lat, lon, _map.Zoom, _map.Bearing + deltaDeg, _map.Pitch, durationMs: 200);
+        _renderNeedsUpdate = true;
+    }
+
+    /// <summary>Tilt the map by <paramref name="deltaDeg"/>, clamped to 0–60°.</summary>
+    public void PitchBy(double deltaDeg)
+    {
+        if (_map == null) return;
+        var (lat, lon) = _map.Center;
+        double newPitch = Math.Max(0, Math.Min(60, _map.Pitch + deltaDeg));
+        _map.EaseTo(lat, lon, _map.Zoom, _map.Bearing, newPitch, durationMs: 200);
         _renderNeedsUpdate = true;
     }
 
@@ -406,8 +426,22 @@ public class MlnMapImage : Grid
 
     private static readonly HashSet<string> LayoutPropertyNames = new(StringComparer.Ordinal)
     {
-        "visibility", "symbol-placement", "symbol-spacing", "icon-image", "icon-size",
-        "text-field", "text-font", "text-size", "line-cap", "line-join", "fill-sort-key",
+        "visibility",
+        // symbol layout
+        "symbol-placement","symbol-spacing","symbol-avoid-edges","symbol-sort-key","symbol-z-order",
+        "icon-allow-overlap","icon-ignore-placement","icon-optional","icon-rotation-alignment",
+        "icon-size","icon-text-fit","icon-text-fit-padding","icon-image","icon-rotate",
+        "icon-padding","icon-keep-upright","icon-offset","icon-anchor","icon-pitch-alignment",
+        "text-pitch-alignment","text-rotation-alignment","text-field","text-font","text-size",
+        "text-max-width","text-line-height","text-letter-spacing","text-justify",
+        "text-radial-offset","text-variable-anchor","text-anchor","text-max-angle",
+        "text-writing-mode","text-rotate","text-padding","text-keep-upright","text-transform",
+        "text-offset","text-allow-overlap","text-ignore-placement","text-optional",
+        // line layout
+        "line-cap","line-join","line-miter-limit","line-round-limit","line-sort-key",
+        // fill layout
+        "fill-sort-key",
+        // circle layout
         "circle-sort-key",
     };
 
@@ -503,20 +537,158 @@ public class MlnMapImage : Grid
     // ── Nav overlay (real WPF children — the whole point) ──────────────────────
 
     private StackPanel? _navPanel;
+    private RotateTransform? _compassRotate;
 
     private void BuildNavOverlay()
     {
-        _navPanel = new StackPanel { Width = 30 };
-        _navPanel.Children.Add(MakeButton("+", ZoomIn, true));
-        _navPanel.Children.Add(MakeButton("−", ZoomOut, false));
+        _navPanel = new StackPanel { Width = NavPanelW };
+
+        _navPanel.Children.Add(BuildDpad());
+        _navPanel.Children.Add(new Border { Height = 1, Background = new SolidColorBrush(Color.FromRgb(218, 218, 218)) });
+
+        var zoomInBtn = MakeNavButton("+", ZoomIn);
+        SetButtonCorners(zoomInBtn, 0, 0, 0, 0);
+        _navPanel.Children.Add(zoomInBtn);
+
+        _navPanel.Children.Add(new Border { Height = 1, Background = new SolidColorBrush(Color.FromRgb(218, 218, 218)) });
+
+        var zoomOutBtn = MakeNavButton("\u2212", ZoomOut);
+        SetButtonCorners(zoomOutBtn, 0, 0, 4, 4);
+        _navPanel.Children.Add(zoomOutBtn);
+
         Children.Add(_navPanel);
     }
+
+    private Border BuildDpad()
+    {
+        var root = new Grid { Width = NavPanelW, Height = NavDpadH, Background = Brushes.White };
+
+        // 3×3 hit grid: edges = direction buttons, centre = reset, corners empty.
+        var grid = new Grid();
+        for (int i = 0; i < 3; i++)
+        {
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        }
+
+        void Add(UIElement el, int row, int col) { Grid.SetRow(el, row); Grid.SetColumn(el, col); grid.Children.Add(el); }
+
+        Add(MakeDpadArrow("\u25B2", () => PitchBy(10)),  0, 1);  // ▲ up    → more tilt
+        Add(MakeDpadArrow("\u25C0", () => RotateBy(-15)), 1, 0);  // ◀ left  → rotate ccw
+        Add(MakeDpadArrow(null,      ResetNorth),         1, 1);  // centre  → reset north
+        Add(MakeDpadArrow("\u25B6", () => RotateBy(15)),  1, 2);  // ▶ right → rotate cw
+        Add(MakeDpadArrow("\u25BC", () => PitchBy(-10)), 2, 1);  // ▼ down  → less tilt
+        root.Children.Add(grid);
+
+        // Hollow compass ring around the arrows (non-interactive).
+        double ringSize = NavDpadH * 0.80;
+        var ring = new System.Windows.Shapes.Ellipse
+        {
+            Width               = ringSize,
+            Height              = ringSize,
+            Stroke              = new SolidColorBrush(Color.FromRgb(204, 204, 204)),
+            StrokeThickness     = 1,
+            Fill                = Brushes.Transparent,
+            IsHitTestVisible    = false,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment   = VerticalAlignment.Center,
+        };
+        root.Children.Add(ring);
+
+        // North tick — a short blue mark at the top of the ring that rotates with bearing.
+        _compassRotate = new RotateTransform { Angle = 0 };
+        var northTick = new System.Windows.Shapes.Rectangle
+        {
+            Width               = 2,
+            Height              = NavDpadH * 0.14,
+            Fill                = new SolidColorBrush(Color.FromRgb(10, 102, 204)),
+            IsHitTestVisible    = false,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment   = VerticalAlignment.Top,
+            Margin              = new Thickness(0, (NavDpadH - ringSize) / 2, 0, 0),
+        };
+        var tickHost = new Grid
+        {
+            Width                 = NavDpadH,
+            Height                = NavDpadH,
+            IsHitTestVisible      = false,
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform       = _compassRotate,
+        };
+        tickHost.Children.Add(northTick);
+        root.Children.Add(tickHost);
+
+        return new Border
+        {
+            CornerRadius = new CornerRadius(4, 4, 0, 0),
+            ClipToBounds = true,
+            Child        = root,
+        };
+    }
+
+    private static Border MakeDpadArrow(string? text, Action onClick)
+    {
+        var btn = new Border
+        {
+            Background = Brushes.Transparent,
+            Cursor     = Cursors.Hand,
+        };
+        if (text != null)
+        {
+            btn.Child = new TextBlock
+            {
+                Text                = text,
+                FontSize            = 8,
+                Foreground          = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33)),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment   = VerticalAlignment.Center,
+                IsHitTestVisible    = false,
+            };
+        }
+        btn.MouseEnter += (_, _) => btn.Background = new SolidColorBrush(Color.FromArgb(30, 0, 0, 0));
+        btn.MouseLeave += (_, _) => btn.Background = Brushes.Transparent;
+        btn.MouseLeftButtonUp += (_, e) => { onClick(); e.Handled = true; };
+        return btn;
+    }
+
+    private static Border MakeNavButton(string? text, Action onClick)
+    {
+        var btn = new Border
+        {
+            Width      = NavPanelW,
+            Height     = 29,
+            Background = Brushes.White,
+            Cursor     = Cursors.Hand,
+        };
+        if (text != null)
+        {
+            btn.Child = new TextBlock
+            {
+                Text                = text,
+                FontSize            = 18,
+                FontWeight          = FontWeights.Normal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment   = VerticalAlignment.Center,
+                IsHitTestVisible    = false,
+            };
+        }
+        btn.MouseEnter  += (_, _) => btn.Background = new SolidColorBrush(Color.FromRgb(240, 240, 240));
+        btn.MouseLeave  += (_, _) => btn.Background = Brushes.White;
+        btn.MouseLeftButtonUp += (_, e) => { onClick(); e.Handled = true; };
+        return btn;
+    }
+
+    private static void SetButtonCorners(Border b, double topLeft, double topRight, double bottomRight, double bottomLeft)
+        => b.CornerRadius = new CornerRadius(topLeft, topRight, bottomRight, bottomLeft);
 
     // ── Control positioning (corner anchoring + stacking) ──────────────────────
 
     private const double ControlEdgeMargin = 10;
-    private const double ControlPanelHeight = 60; // 2 buttons × 30px
-    private const double ControlStackGap = 10;
+    private const double ControlStackGap    = 10;
+    private const double NavPanelW           = 29;          // matches GPS button width so controls align when stacked
+    private const double NavDpadH            = 29;          // round d-pad height (square with panel width)
+    private const double NavPanelH           = NavDpadH + 29 * 2 + 2;  // d-pad + 2 zoom buttons + 2 separator px
+    private const double GpsPanelH           = 29 * 2 + 1;  // 2 buttons + 1 separator
 
     private void RepositionControls()
     {
@@ -525,10 +697,10 @@ public class MlnMapImage : Grid
 
         if (_gpsPanel != null)
         {
-            // Stack the GPS panel below/above the nav panel when they share a corner.
+            // Stack the GPS panel inward from the nav panel when they share a corner.
             bool sharesNav = ShowNavigationControls && _navPanel?.Visibility == Visibility.Visible
                              && GpsControlPosition == NavigationControlPosition;
-            double off = sharesNav ? ControlPanelHeight + ControlStackGap : 0;
+            double off = sharesNav ? NavPanelH + ControlStackGap : 0;
             ApplyCorner(_gpsPanel, GpsControlPosition, off);
         }
 
@@ -590,8 +762,11 @@ public class MlnMapImage : Grid
                     StyleLoaded?.Invoke(this, EventArgs.Empty);
                 });
                 break;
+            case "onCameraIsChanging":
+                Dispatcher.BeginInvoke(RefreshCompassRotation);
+                break;
             case "onCameraDidChange":
-                Dispatcher.BeginInvoke(RefreshGpsBearingButton);
+                Dispatcher.BeginInvoke(() => { RefreshGpsBearingButton(); RefreshCompassRotation(); CameraIdle?.Invoke(this, EventArgs.Empty); });
                 break;
             case "onDidFinishRenderingFramePlacementChanged":
                 _map?.TriggerRepaint();
@@ -782,15 +957,15 @@ public class MlnMapImage : Grid
             : new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55));
     }
 
+    private void RefreshCompassRotation()
+    {
+        if (_compassRotate == null || _map == null) return;
+        _compassRotate.Angle = -_map.Bearing;
+    }
+
     private void BuildGpsOverlay()
     {
-        _gpsPanel = new StackPanel
-        {
-            HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(0, 80, 10, 0),
-            Width = 30,
-        };
+        _gpsPanel = new StackPanel { Width = NavPanelW };
         _gpsTrackingIcon = new TextBlock
         {
             Text = "○",

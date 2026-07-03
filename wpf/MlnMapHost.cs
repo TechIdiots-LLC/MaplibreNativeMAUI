@@ -1974,8 +1974,22 @@ public class MlnMapHost : HwndHost
 
     private static readonly HashSet<string> LayoutPropertyNames = new(StringComparer.Ordinal)
     {
-        "visibility", "symbol-placement", "symbol-spacing", "icon-image", "icon-size",
-        "text-field", "text-font", "text-size", "line-cap", "line-join", "fill-sort-key",
+        "visibility",
+        // symbol layout
+        "symbol-placement","symbol-spacing","symbol-avoid-edges","symbol-sort-key","symbol-z-order",
+        "icon-allow-overlap","icon-ignore-placement","icon-optional","icon-rotation-alignment",
+        "icon-size","icon-text-fit","icon-text-fit-padding","icon-image","icon-rotate",
+        "icon-padding","icon-keep-upright","icon-offset","icon-anchor","icon-pitch-alignment",
+        "text-pitch-alignment","text-rotation-alignment","text-field","text-font","text-size",
+        "text-max-width","text-line-height","text-letter-spacing","text-justify",
+        "text-radial-offset","text-variable-anchor","text-anchor","text-max-angle",
+        "text-writing-mode","text-rotate","text-padding","text-keep-upright","text-transform",
+        "text-offset","text-allow-overlap","text-ignore-placement","text-optional",
+        // line layout
+        "line-cap","line-join","line-miter-limit","line-round-limit","line-sort-key",
+        // fill layout
+        "fill-sort-key",
+        // circle layout
         "circle-sort-key",
     };
 
