@@ -80,25 +80,22 @@
 
         <!-- ── Map ── -->
         <!--
-            MlnMapHost is an HwndHost — it owns a child HWND backed by OpenGL.
-            StyleUrl, ShowNavigationControls and events are set here; everything
-            else (pan, zoom, double-tap) is handled internally by the control.
-
-            The *ControlPosition properties anchor each overlay to a corner
-            (TopLeft/TopRight/BottomLeft/BottomRight). Controls sharing a corner
-            stack automatically — here navigation and GPS both sit top-right, so
-            the GPS panel stacks below the navigation panel.
+            MlnMapImage is a D3DImage-backed WPF ImageSource — the map renders into
+            a D3D9 surface via WGL_NV_DX_interop2 and the WPF compositor samples it
+            directly.  No airspace: WPF content draws over the map normally.
+            Nav / GPS / attribution controls are real XAML children stacked inside
+            the Grid at the corners specified by the *ControlPosition properties.
         -->
-        <mlwpf:MlnMapHost x:Name="MapHost"
-                           StyleUrl="https://demotiles.maplibre.org/style.json"
-                           ShowNavigationControls="True"
-                           ShowGpsControl="True"
-                           NavigationControlPosition="TopRight"
-                           GpsControlPosition="TopRight"
-                           AttributionControlPosition="BottomLeft"
-                           MapReady="MapHost_MapReady"
-                           StyleLoaded="MapHost_StyleLoaded"
-                           CameraIdle="MapHost_CameraIdle" />
+        <mlwpf:MlnMapImage x:Name="MapHost"
+                            StyleUrl="https://demotiles.maplibre.org/style.json"
+                            ShowNavigationControls="True"
+                            ShowGpsControl="True"
+                            NavigationControlPosition="TopRight"
+                            GpsControlPosition="TopRight"
+                            AttributionControlPosition="BottomLeft"
+                            MapReady="MapHost_MapReady"
+                            StyleLoaded="MapHost_StyleLoaded"
+                            CameraIdle="MapHost_CameraIdle" />
     </DockPanel>
 
 </Window>
