@@ -60,6 +60,38 @@ public class MlnMapImage : Grid
         }
     }
 
+    public bool ShowGpsControl
+    {
+        get => (bool)GetValue(ShowGpsControlProperty);
+        set => SetValue(ShowGpsControlProperty, value);
+    }
+    public static readonly DependencyProperty ShowGpsControlProperty =
+        DependencyProperty.Register(nameof(ShowGpsControl), typeof(bool), typeof(MlnMapImage),
+            new PropertyMetadata(true, (d, e) =>
+            {
+                if (d is MlnMapImage m && m._gpsPanel != null)
+                    m._gpsPanel.Visibility = (bool)e.NewValue ? Visibility.Visible : Visibility.Collapsed;
+            }));
+
+    public bool ShowAttributionControl
+    {
+        get => (bool)GetValue(ShowAttributionControlProperty);
+        set => SetValue(ShowAttributionControlProperty, value);
+    }
+    public static readonly DependencyProperty ShowAttributionControlProperty =
+        DependencyProperty.Register(nameof(ShowAttributionControl), typeof(bool), typeof(MlnMapImage),
+            new PropertyMetadata(true, (d, e) =>
+            {
+                if (d is MlnMapImage m && m._attrBorder != null)
+                    m._attrBorder.Visibility = (bool)e.NewValue ? Visibility.Visible : Visibility.Collapsed;
+            }));
+
+    /// <summary>When true, each GPS fix re-centres the map. Controlled by the GPS tracking mode.</summary>
+    public bool FollowLocation { get; set; } = true;
+
+    /// <summary>When false the location indicator always points north (bearing suppressed).</summary>
+    public bool ShowBearing { get; set; } = true;
+
     // ── Events ────────────────────────────────────────────────────────────────
 
     public event EventHandler? MapReady;
@@ -77,7 +109,7 @@ public class MlnMapImage : Grid
     private MbglStyle? _style;
     private DispatcherTimer? _renderTimer;
 
-    private bool _initialized, _renderNeedsUpdate = true, _surfaceDirty = true;
+    private bool _initialized, _renderNeedsUpdate = true, _surfaceDirty = true, _styleReady;
     private float _dpi = 1f;
     private int _physW = 1, _physH = 1;
 
@@ -95,6 +127,8 @@ public class MlnMapImage : Grid
         Children.Add(_image);
 
         BuildNavOverlay();
+        BuildGpsOverlay();
+        BuildAttributionOverlay();
 
         Loaded += (_, _) => TryInitialize();
         Unloaded += (_, _) => Teardown();
@@ -320,10 +354,17 @@ public class MlnMapImage : Grid
             case "onDidFinishLoadingStyle":
                 Dispatcher.BeginInvoke(() =>
                 {
+                    _styleReady = true;
+                    _locIndLayer = null; // invalidated by style reload
                     _style = _map?.GetStyle();
                     _renderNeedsUpdate = true;
+                    if (_pendingLocInd.HasValue) ApplyPendingLocationIndicator();
+                    RefreshAttribution();
                     StyleLoaded?.Invoke(this, EventArgs.Empty);
                 });
+                break;
+            case "onCameraDidChange":
+                Dispatcher.BeginInvoke(RefreshGpsBearingButton);
                 break;
             case "onDidFinishRenderingFramePlacementChanged":
                 _map?.TriggerRepaint();
@@ -331,14 +372,347 @@ public class MlnMapImage : Grid
         }
     }
 
+    // ── Extra camera helpers ───────────────────────────────────────────────────
+
+    /// <summary>Rotate the map back to north (bearing 0).</summary>
+    public void ResetNorth()
+    {
+        if (_map == null) return;
+        var (lat, lon) = _map.Center;
+        _map.EaseTo(lat, lon, _map.Zoom, bearing: 0, _map.Pitch, durationMs: 300);
+        _renderNeedsUpdate = true;
+    }
+
+    private void PanTo(double lat, double lon)
+    {
+        if (_map == null) return;
+        _map.EaseTo(lat, lon, _map.Zoom, _map.Bearing, _map.Pitch, durationMs: 200);
+        _renderNeedsUpdate = true;
+    }
+
+    // ── Location indicator ("blue dot") ────────────────────────────────────────
+
+    private const string LocIndLayerId = "mln_image_location";
+    private MbglLayer? _locIndLayer;
+    private record struct LocIndParams(double Lat, double Lon, float Bearing, float AccuracyM);
+    private LocIndParams? _pendingLocInd;
+
+    /// <summary>Show (or update) the user-location blue dot. Safe to call before the style loads.</summary>
+    public void UpdateLocationIndicator(double lat, double lon, float bearing = 0, float accuracyMeters = 10)
+    {
+        bool isFirstFix = !_pendingLocInd.HasValue;
+        _pendingLocInd = new LocIndParams(lat, lon, bearing, Math.Max(5f, accuracyMeters));
+        if (FollowLocation)
+        {
+            if (isFirstFix) CenterOn(lat, lon);
+            else PanTo(lat, lon);
+        }
+        if (_styleReady && _style != null) ApplyPendingLocationIndicator();
+    }
+
+    public void ClearLocationIndicator()
+    {
+        _pendingLocInd = null;
+        _locIndLayer = null;
+        if (_style != null && _styleReady && _style.HasLayer(LocIndLayerId))
+            _style.RemoveLayer(LocIndLayerId);
+        _renderNeedsUpdate = true;
+    }
+
+    private void ApplyPendingLocationIndicator()
+    {
+        if (_pendingLocInd == null || _style == null) return;
+        var p = _pendingLocInd.Value;
+        var ic = System.Globalization.CultureInfo.InvariantCulture;
+        if (_locIndLayer == null)
+        {
+            if (_style.HasLayer(LocIndLayerId)) _style.RemoveLayer(LocIndLayerId);
+            _locIndLayer = _style.AddLocationIndicatorLayer(LocIndLayerId);
+            _locIndLayer.SetPaintProperty("accuracy-radius-color", "\"rgba(30,136,229,0.3)\"");
+            _locIndLayer.SetPaintProperty("accuracy-radius-border-color", "\"rgba(30,136,229,0.85)\"");
+        }
+        _locIndLayer.SetPaintProperty("location", $"[{p.Lat.ToString(ic)},{p.Lon.ToString(ic)},0]");
+        _locIndLayer.SetPaintProperty("bearing", (ShowBearing ? p.Bearing : 0f).ToString(ic));
+        _locIndLayer.SetPaintProperty("accuracy-radius", p.AccuracyM.ToString(ic));
+        _renderNeedsUpdate = true;
+    }
+
+    // ── GPS control ────────────────────────────────────────────────────────────
+
+    private enum GpsTrackingMode { Off, Show, Follow, FollowBearing }
+    private GpsTrackingMode _gpsTrackingMode = GpsTrackingMode.Off;
+    private double _lastGpsLat, _lastGpsLon;
+    private float _lastGpsBearing, _lastGpsAccuracy;
+    private bool _hasGpsFix;
+
+    private StackPanel? _gpsPanel;
+    private Border? _gpsBtnTracking;
+    private TextBlock? _gpsTrackingIcon;
+    private Border? _gpsBtnBearing;
+    private TextBlock? _gpsBearingIcon;
+
+    /// <summary>Feed a GPS fix; honoured per the current tracking mode (Off / Show / Follow / FollowBearing).</summary>
+    public void UpdateGpsLocation(double lat, double lon, float bearing = 0, float accuracyMeters = 10)
+    {
+        _lastGpsLat = lat; _lastGpsLon = lon; _lastGpsBearing = bearing; _lastGpsAccuracy = accuracyMeters;
+        bool isFirstFix = !_hasGpsFix;
+        _hasGpsFix = true;
+        if (_gpsTrackingMode == GpsTrackingMode.Off) return;
+
+        _pendingLocInd = new LocIndParams(lat, lon, bearing, Math.Max(5f, accuracyMeters));
+        bool follow = _gpsTrackingMode is GpsTrackingMode.Follow or GpsTrackingMode.FollowBearing;
+        bool useBearing = _gpsTrackingMode == GpsTrackingMode.FollowBearing;
+        if (follow && _map != null)
+        {
+            double cameraZoom = _map.Zoom < 8 ? 14 : _map.Zoom;
+            double cameraBearing = useBearing ? bearing : _map.Bearing;
+            if (isFirstFix) _map.JumpTo(lat, lon, cameraZoom, cameraBearing, _map.Pitch);
+            else _map.EaseTo(lat, lon, _map.Zoom, cameraBearing, _map.Pitch, durationMs: 200);
+        }
+        if (_styleReady && _style != null) ApplyPendingLocationIndicator();
+        _renderNeedsUpdate = true;
+        if (isFirstFix) RefreshGpsTrackingButton();
+    }
+
+    private void CycleGpsMode()
+    {
+        _gpsTrackingMode = _gpsTrackingMode switch
+        {
+            GpsTrackingMode.Off => GpsTrackingMode.Show,
+            GpsTrackingMode.Show => GpsTrackingMode.Follow,
+            GpsTrackingMode.Follow => GpsTrackingMode.FollowBearing,
+            GpsTrackingMode.FollowBearing => GpsTrackingMode.Off,
+            _ => GpsTrackingMode.Off,
+        };
+        ApplyGpsMode();
+        RefreshGpsTrackingButton();
+    }
+
+    private void ApplyGpsMode()
+    {
+        if (_gpsTrackingMode == GpsTrackingMode.Off)
+        {
+            ClearLocationIndicator();
+        }
+        else if (_hasGpsFix)
+        {
+            _pendingLocInd = new LocIndParams(_lastGpsLat, _lastGpsLon, _lastGpsBearing, Math.Max(5f, _lastGpsAccuracy));
+            if (_gpsTrackingMode is GpsTrackingMode.Follow or GpsTrackingMode.FollowBearing && _map != null)
+            {
+                double zoom = _map.Zoom < 8 ? 14 : _map.Zoom;
+                double cameraBearing = _gpsTrackingMode == GpsTrackingMode.FollowBearing ? _lastGpsBearing : _map.Bearing;
+                _map.EaseTo(_lastGpsLat, _lastGpsLon, zoom, cameraBearing, _map.Pitch, durationMs: 300);
+            }
+            if (_styleReady && _style != null) ApplyPendingLocationIndicator();
+            _renderNeedsUpdate = true;
+        }
+    }
+
+    private void GpsBearingButtonPressed()
+    {
+        if (_gpsTrackingMode == GpsTrackingMode.FollowBearing)
+        {
+            _gpsTrackingMode = GpsTrackingMode.Follow;
+            RefreshGpsTrackingButton();
+        }
+        ResetNorth();
+    }
+
+    private void RefreshGpsTrackingButton()
+    {
+        if (_gpsTrackingIcon == null || _gpsBtnTracking == null) return;
+        switch (_gpsTrackingMode)
+        {
+            case GpsTrackingMode.Show:
+                _gpsTrackingIcon.Text = "⊙";
+                _gpsTrackingIcon.Foreground = new SolidColorBrush(Color.FromRgb(0x1E, 0x88, 0xE5));
+                _gpsBtnTracking.Background = Brushes.White;
+                break;
+            case GpsTrackingMode.Follow:
+                _gpsTrackingIcon.Text = "◎";
+                _gpsTrackingIcon.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0x70, 0xC5));
+                _gpsBtnTracking.Background = new SolidColorBrush(Color.FromRgb(0xE3, 0xF2, 0xFF));
+                break;
+            case GpsTrackingMode.FollowBearing:
+                _gpsTrackingIcon.Text = "▲";
+                _gpsTrackingIcon.Foreground = new SolidColorBrush(Color.FromRgb(0xF5, 0x7C, 0x00));
+                _gpsBtnTracking.Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xF3, 0xE0));
+                break;
+            default:
+                _gpsTrackingIcon.Text = "○";
+                _gpsTrackingIcon.Foreground = new SolidColorBrush(Color.FromRgb(0x99, 0x99, 0x99));
+                _gpsBtnTracking.Background = Brushes.White;
+                break;
+        }
+    }
+
+    private void RefreshGpsBearingButton()
+    {
+        if (_gpsBearingIcon == null) return;
+        double bearing = _map?.Bearing ?? 0;
+        _gpsBearingIcon.Foreground = Math.Abs(bearing) > 0.5
+            ? new SolidColorBrush(Color.FromRgb(0x1E, 0x88, 0xE5))
+            : new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55));
+    }
+
+    private void BuildGpsOverlay()
+    {
+        _gpsPanel = new StackPanel
+        {
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 80, 10, 0),
+            Width = 30,
+        };
+        _gpsTrackingIcon = new TextBlock
+        {
+            Text = "○",
+            FontSize = 15,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x99, 0x99, 0x99)),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        _gpsBtnTracking = MakeIconButton(_gpsTrackingIcon, CycleGpsMode, true);
+        _gpsBearingIcon = new TextBlock
+        {
+            Text = "↺",
+            FontSize = 15,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        _gpsBtnBearing = MakeIconButton(_gpsBearingIcon, GpsBearingButtonPressed, false);
+        _gpsPanel.Children.Add(_gpsBtnTracking);
+        _gpsPanel.Children.Add(_gpsBtnBearing);
+        Children.Add(_gpsPanel);
+    }
+
+    private static Border MakeIconButton(TextBlock icon, Action onClick, bool top)
+    {
+        var b = new Border
+        {
+            Height = 30,
+            Background = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.FromRgb(218, 218, 218)),
+            BorderThickness = new Thickness(1, top ? 1 : 0, 1, 1),
+            CornerRadius = top ? new CornerRadius(4, 4, 0, 0) : new CornerRadius(0, 0, 4, 4),
+            Cursor = Cursors.Hand,
+            Child = icon,
+        };
+        b.MouseLeftButtonUp += (_, e) => { onClick(); e.Handled = true; };
+        return b;
+    }
+
+    // ── Attribution ────────────────────────────────────────────────────────────
+
+    private Border? _attrBorder;
+    private TextBlock? _attrTextBlock;
+    private string _attrText = string.Empty;
+    private bool _attrCollapsed = true;
+    private DispatcherTimer? _attrCollapseTimer;
+
+    private void BuildAttributionOverlay()
+    {
+        _attrTextBlock = new TextBlock
+        {
+            Text = "ⓘ",
+            FontSize = 10,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = 320,
+        };
+        _attrBorder = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(235, 0xF8, 0xF8, 0xF8)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(0xD0, 0xD0, 0xD0)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(6, 3, 6, 3),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(10, 0, 0, 10),
+            Cursor = Cursors.Hand,
+            Visibility = Visibility.Collapsed,
+            Child = _attrTextBlock,
+        };
+        _attrBorder.MouseLeftButtonUp += (_, e) =>
+        {
+            if (_attrCollapsed) ExpandAttribution(); else CollapseAttribution();
+            e.Handled = true;
+        };
+        Children.Add(_attrBorder);
+    }
+
+    private void RefreshAttribution()
+    {
+        if (_style == null || _attrTextBlock == null || _attrBorder == null) return;
+        var parts = MbglStyle.EnsureMapLibreAttribution(_style.GetSourceAttributions());
+        var sb = new System.Text.StringBuilder();
+        foreach (var part in parts)
+        {
+            var text = StripHtml(part);
+            if (text.Length == 0) continue;
+            if (sb.Length > 0) sb.Append(" | ");
+            sb.Append(text);
+        }
+        _attrText = sb.ToString();
+        if (_attrText.Length > 0 && ShowAttributionControl)
+        {
+            _attrBorder.Visibility = Visibility.Visible;
+            ExpandAttribution();
+        }
+        else
+        {
+            _attrBorder.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void ExpandAttribution()
+    {
+        if (_attrTextBlock == null || _attrText.Length == 0) return;
+        _attrCollapsed = false;
+        _attrTextBlock.Text = _attrText;
+        _attrCollapseTimer?.Stop();
+        _attrCollapseTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        _attrCollapseTimer.Tick += (_, _) => CollapseAttribution();
+        _attrCollapseTimer.Start();
+    }
+
+    private void CollapseAttribution()
+    {
+        _attrCollapseTimer?.Stop();
+        _attrCollapseTimer = null;
+        if (_attrTextBlock == null) return;
+        _attrCollapsed = true;
+        _attrTextBlock.Text = "ⓘ"; // ⓘ
+    }
+
+    private static string StripHtml(string html)
+    {
+        if (string.IsNullOrEmpty(html)) return string.Empty;
+        var sb = new System.Text.StringBuilder(html.Length);
+        bool inTag = false;
+        foreach (char c in html)
+        {
+            if (c == '<') inTag = true;
+            else if (c == '>') inTag = false;
+            else if (!inTag) sb.Append(c);
+        }
+        return sb.ToString().Trim();
+    }
+
     private void Teardown()
     {
         _renderTimer?.Stop();
         _renderTimer = null;
+        _attrCollapseTimer?.Stop();
+        _attrCollapseTimer = null;
         _map?.Dispose(); _map = null;
         _frontend?.Dispose(); _frontend = null;
         _runLoop?.Dispose(); _runLoop = null;
         _interop?.Dispose(); _interop = null;
         _initialized = false;
+        _styleReady = false;
+        _locIndLayer = null;
     }
 }

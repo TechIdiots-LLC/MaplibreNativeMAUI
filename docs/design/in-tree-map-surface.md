@@ -3,7 +3,7 @@
 **Status:** in progress. **Scope:** the host/controller layer per platform. No change to the `mln-cabi` C ABI.
 
 **Implementation status**
-- ✅ **WPF — `D3DImage`:** implemented as `MlnMapImage` + `GlDxInteropContext` (Vortice.Direct3D9). Renders MapLibre into a shared D3D9Ex surface via `WGL_NV_DX_interop2`, presents through `D3DImage`, hosts the nav control as a real WPF child. Kept alongside `MlnMapHost` (the default). Needs on-GPU validation of the interop path. (GPS/attribution controls for this renderer are still a follow-up — currently nav only.)
+- ✅ **WPF — `D3DImage`:** implemented as `MlnMapImage` + `GlDxInteropContext` (Vortice.Direct3D9). Renders MapLibre into a shared D3D9Ex surface via `WGL_NV_DX_interop2`, presents through `D3DImage`, and hosts all three on-map controls (nav / GPS / attribution) as real WPF children — GPS tracking modes + location indicator ("blue dot") and attribution fetch/expand match `MlnMapHost`. Kept alongside `MlnMapHost` (the default). Needs on-GPU validation of the interop path.
 - ✅ **MAUI Windows — `SwapChainPanel`:** `SwapChainMapView` + `GlDxgiInteropContext` (Vortice.Direct3D11/DXGI + `ISwapChainPanelNative`), integrated into `MapLibreMapController.Windows` behind `UseSwapChainPanel` / `MAPLIBRE_WIN_RENDERER=swapchain`. mbgl renders through the GL→DXGI bridge (FBO backed by a shared D3D11 offscreen texture via `WGL_NV_DX_interop2`, `CopyResource`'d into the composition swap chain's back buffer, then Present; element-level vertical flip). All three on-map controls (nav / GPS / attribution) are real XAML children wired to the existing renderer-agnostic logic. Needs on-GPU validation; `WS_POPUP` remains the default.
 - ⬜ **Android (`TextureView`)** and **iOS/mac (already in-tree):** not started.
 
