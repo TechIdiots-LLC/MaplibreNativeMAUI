@@ -27,17 +27,18 @@ using MapLibreNative.Maui.WPF.D3DImageRenderer;
 namespace MapLibreNative.Maui.WPF;
 
 /// <summary>
-/// A WPF MapLibre map control backed by a <see cref="System.Windows.Interop.D3DImage"/>, so the map
-/// is a real element in the visual tree and its controls are ordinary WPF children.
+/// A WPF MapLibre map control backed by a <see cref="System.Windows.Media.Imaging.WriteableBitmap"/>:
+/// MapLibre renders into an off-screen GL framebuffer; each frame the pixels are read back with
+/// <c>glReadPixels</c> and pushed into the bitmap.  The bitmap is displayed by an ordinary WPF
+/// <see cref="Image"/> element, so on-map controls are real WPF children with correct z-order and
+/// clipping — no HwndHost, no airspace, no Popup windows.
 /// </summary>
 public class MlnMapImage : Grid
 {
     [DllImport("opengl32.dll")] private static extern void glViewport(int x, int y, int w, int h);
-    [DllImport("opengl32.dll")] private static extern void glClearColor(float r, float g, float b, float a);
-    [DllImport("opengl32.dll")] private static extern void glClear(uint mask);
-    private const uint GL_COLOR_BUFFER_BIT = 0x00004000;
-    private const uint GL_DEPTH_BUFFER_BIT = 0x00000100;
-    private const uint GL_STENCIL_BUFFER_BIT = 0x00000400;
+    [DllImport("opengl32.dll")] private static extern void glReadPixels(int x, int y, int w, int h, uint fmt, uint type, IntPtr data);
+    private const uint GL_BGRA        = 0x80E1;  // GL 1.2 — all modern drivers
+    private const uint GL_UNSIGNED_BYTE = 0x1401;
 
     // ── Dependency properties ─────────────────────────────────────────────────
 
@@ -150,7 +151,7 @@ public class MlnMapImage : Grid
     // ── State ─────────────────────────────────────────────────────────────────
 
     private readonly Image _image = new() { Stretch = Stretch.Fill };
-    private readonly D3DImage _d3dImage = new();
+    private WriteableBitmap? _bitmap;
     private GlDxInteropContext? _interop;
     private MbglRunLoop? _runLoop;
     private MbglFrontend? _frontend;
@@ -158,7 +159,7 @@ public class MlnMapImage : Grid
     private MbglStyle? _style;
     private DispatcherTimer? _renderTimer;
 
-    private bool _initialized, _renderNeedsUpdate = true, _surfaceDirty = true, _styleReady;
+    private bool _initialized, _renderNeedsUpdate = true, _styleReady;
     private float _dpi = 1f;
     private int _physW = 1, _physH = 1;
 
@@ -169,10 +170,9 @@ public class MlnMapImage : Grid
     public MlnMapImage()
     {
         Background = Brushes.Transparent; // ensure hit-testing over the whole map
-        // OpenGL renders bottom-left origin; D3DImage samples top-left → flip vertically.
+        // GL renders bottom-left origin; WPF WriteableBitmap is top-left → flip vertically.
         _image.RenderTransformOrigin = new Point(0.5, 0.5);
         _image.RenderTransform = new ScaleTransform(1, -1);
-        _image.Source = _d3dImage;
         Children.Add(_image);
 
         BuildNavOverlay();
@@ -201,7 +201,7 @@ public class MlnMapImage : Grid
         _interop = new GlDxInteropContext();
         _interop.Initialize();
         _interop.Resize(_physW, _physH);
-        _surfaceDirty = true;
+        CreateBitmap(_physW, _physH);
 
         _runLoop = new MbglRunLoop();
         _frontend = new MbglFrontend(_interop.Hdc, _interop.GlContext, _physW, _physH, _dpi,
@@ -235,36 +235,34 @@ public class MlnMapImage : Grid
         _physW = w; _physH = h;
         _interop.MakeCurrent();
         _interop.Resize(w, h);
-        _surfaceDirty = true;
+        CreateBitmap(w, h);
         _frontend.SetSize(w, h);
         _map.SetSize(w, h);
         _renderNeedsUpdate = true;
     }
 
+    private void CreateBitmap(int w, int h)
+    {
+        // DPI = 96 * _dpi → logical size = w / _dpi = ActualWidth, so the image fills the grid exactly.
+        _bitmap = new WriteableBitmap(w, h, 96 * _dpi, 96 * _dpi, PixelFormats.Bgra32, null);
+        _image.Source = _bitmap;
+    }
+
     private void OnRenderTick(object? sender, EventArgs e)
     {
         _runLoop?.RunOnce();
-        if (!_renderNeedsUpdate || _interop == null || _frontend == null) return;
+        if (!_renderNeedsUpdate || _interop == null || _frontend == null || _bitmap == null) return;
         _renderNeedsUpdate = false;
 
         _interop.MakeCurrent();
-        _interop.Lock();
-        _interop.BindFramebuffer();
         glViewport(0, 0, _interop.Width, _interop.Height);
-        glClearColor(0.85f, 0.90f, 0.97f, 1f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-        try { _frontend.Render(); } catch { /* swallow per-frame render faults */ }
-        _interop.Unlock();
+        try { _frontend.Render(); } catch { return; /* swallow per-frame render faults */ }
 
-        if (!_d3dImage.IsFrontBufferAvailable) return;
-        _d3dImage.Lock();
-        if (_surfaceDirty)
-        {
-            _d3dImage.SetBackBuffer(D3DResourceType.IDirect3DSurface9, _interop.D3DSurfacePointer, true);
-            _surfaceDirty = false;
-        }
-        _d3dImage.AddDirtyRect(new Int32Rect(0, 0, _interop.Width, _interop.Height));
-        _d3dImage.Unlock();
+        // Read pixels (GL bottom-left → WPF top-left; _image has ScaleTransform(1,-1) to compensate).
+        _bitmap.Lock();
+        _interop.ReadPixels(_bitmap.BackBuffer);
+        _bitmap.AddDirtyRect(new Int32Rect(0, 0, _physW, _physH));
+        _bitmap.Unlock();
     }
 
     // ── Camera API ────────────────────────────────────────────────────────────
