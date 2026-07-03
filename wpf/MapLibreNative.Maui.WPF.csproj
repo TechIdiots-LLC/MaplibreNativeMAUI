@@ -28,4 +28,10 @@
     <ProjectReference Include="..\bindings\MapLibreNative.Maui.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- D3D9Ex interop for the airspace-free D3DImage renderer (MlnMapImage).
+         Only the classic HwndHost path (MlnMapHost) works without this. -->
+    <PackageReference Include="Vortice.Direct3D9" Version="3.8.3" />
+  </ItemGroup>
+
 </Project>
