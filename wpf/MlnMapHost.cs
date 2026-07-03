@@ -1290,8 +1290,8 @@ public class MlnMapHost : HwndHost
 
     private const double CtrlMargin   = 10;
     private const double CtrlStackGap = 10;
-    private const double NavPanelW    = 40;          // d-pad diameter → nav panel width
-    private const double NavDpadH     = 40;          // round d-pad height
+    private const double NavPanelW    = 29;          // matches zoom/GPS button width so controls align when stacked
+    private const double NavDpadH     = 29;          // round d-pad height (square with the panel width)
     private const double NavPanelH    = NavDpadH + 29 * 2 + 2;  // d-pad + 2 zoom buttons + 2 separators
     private const double GpsPanelH    = 29 * 2 + 1;  // 2 buttons + 1 separator
 

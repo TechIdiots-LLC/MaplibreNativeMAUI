@@ -466,7 +466,7 @@ public class MapLibreMapController : IMapLibreMapController
     private bool   _hasGpsFix;
     // Hit-testing constants (logical pixels, scaled by _pixelRatio internally)
     private const int NavButtonSize   = 29;   // px (zoom button height)
-    private const int NavDpadSize     = 40;   // px — round rotate/pitch d-pad; also the nav panel width
+    private const int NavDpadSize     = NavButtonSize;   // px — round d-pad; matches button width so nav/zoom/GPS align when stacked
     private const int NavPanelMargin  = 10;   // from map edge
     private const int AttrPadH        = 6;    // horizontal text padding
     private const int AttrPadV        = 3;    // vertical text padding
