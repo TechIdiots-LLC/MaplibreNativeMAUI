@@ -143,7 +143,7 @@ This is a feature, not a refactor, and is independent of the compositing work ab
 
 1. ✅ ~~Implement `SymbolLayerProperties.ToDictionary()` (currently a stub that throws)~~ — **Done.** Full layout + paint property set (`icon-image/size/anchor/allow-overlap/offset/rotate`, `text-field/font/size/anchor/offset/halo-*/transform/max-width`, etc.) implemented with `ToDictionary()` and `FromJson()`.
 2. ✅ ~~Surface `AddImage` (sprite registration) through `IMapLibreMapController` / `MapLibreMap` on Android, iOS/mac and Windows~~ — **Done.** `AddSpriteImage(imageId, width, height, rgba, pixelRatio, sdf)` and `RemoveSpriteImage(imageId)` added to `IMapLibreMapController`, implemented in all three platform controllers, and exposed on `MapLibreMap`.
-3. Register a default marker sprite (or let `Pin` supply an image) and switch `Pin` to a SymbolLayer, keeping `Label`/`Address` as `text-field`.
+3. \u2705 ~~Register a default marker sprite (or let `Pin` supply an image) and switch `Pin` to a SymbolLayer, keeping `Label`/`Address` as `text-field`~~ \u2014 **Done.** `Pin` generates a 24\u00d724 premultiplied-RGBA white antialiased circle at startup, registers it as `"mln_marker"` (SDF, `pixelRatio=1`) via `AddSpriteImage` on each `BuildOverlay`, then renders via `SymbolLayerProperties`: `icon-anchor:"bottom"`, `icon-color` from `TintColor`, `icon-halo-*` from `StrokeColor`/`StrokeWidth`, and an optional `text-field` / `text-*` block when `Label` is set. `CircleLayer` code removed.
 
 This is a cross-platform task (touches the per-platform controllers), which is why the circle marker shipped as the working interim.
 
