@@ -100,7 +100,8 @@ public sealed class SwapChainMapView : IDisposable
         _panel.RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5);
         _panel.RenderTransform = new WUXM.ScaleTransform { ScaleX = 1, ScaleY = -1 };
         View.Children.Add(_panel);
-        BuildNavOverlay();
+        // Nav / GPS / attribution controls are added by MapLibreMapController.Windows as XAML
+        // children of its View (so all overlays are positioned/wired from one place).
 
         _panel.Loaded += (_, _) => Start();
         _panel.Unloaded += (_, _) => Stop();
@@ -309,43 +310,6 @@ public sealed class SwapChainMapView : IDisposable
         _map.OnDoubleTap(p.X, p.Y);
         _renderNeedsUpdate = true;
         e.Handled = true;
-    }
-
-    // ── Nav overlay (real XAML children — the whole point) ─────────────────────
-
-    private void BuildNavOverlay()
-    {
-        var panel = new WUXC.StackPanel
-        {
-            HorizontalAlignment = WUX.HorizontalAlignment.Right,
-            VerticalAlignment = WUX.VerticalAlignment.Top,
-            Margin = new WUX.Thickness(0, 10, 10, 0),
-            Width = 30,
-        };
-        panel.Children.Add(MakeButton("＋", ZoomIn, true));
-        panel.Children.Add(MakeButton("－", ZoomOut, false));
-        View.Children.Add(panel);
-    }
-
-    private static WUXC.Border MakeButton(string glyph, Action onClick, bool top)
-    {
-        var b = new WUXC.Border
-        {
-            Height = 30,
-            Background = new WUXM.SolidColorBrush(Microsoft.UI.Colors.White),
-            BorderBrush = new WUXM.SolidColorBrush(Windows.UI.Color.FromArgb(255, 218, 218, 218)),
-            BorderThickness = new WUX.Thickness(1, top ? 1 : 0, 1, 1),
-            CornerRadius = top ? new WUX.CornerRadius(4, 4, 0, 0) : new WUX.CornerRadius(0, 0, 4, 4),
-            Child = new WUXC.TextBlock
-            {
-                Text = glyph,
-                FontSize = 16,
-                HorizontalAlignment = WUX.HorizontalAlignment.Center,
-                VerticalAlignment = WUX.VerticalAlignment.Center,
-            },
-        };
-        b.Tapped += (_, e) => { onClick(); e.Handled = true; };
-        return b;
     }
 
     // ── mbgl observer ─────────────────────────────────────────────────────────

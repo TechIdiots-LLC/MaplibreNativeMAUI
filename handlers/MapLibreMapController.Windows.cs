@@ -6,6 +6,9 @@ using MapLibreNative.Maui.Handlers.Geometry;
 using Map = MapLibreNative.Maui.Handlers.Maps.Map;
 using Style = MapLibreNative.Maui.Handlers.Maps.Style;
 using Location = Microsoft.Maui.Devices.Sensors.Location;
+using WUX = Microsoft.UI.Xaml;
+using WUXC = Microsoft.UI.Xaml.Controls;
+using WUXM = Microsoft.UI.Xaml.Media;
 
 namespace MapLibreNative.Maui.Handlers;
 
@@ -508,6 +511,15 @@ public class MapLibreMapController : IMapLibreMapController
     // Non-null when the SwapChainPanel renderer is active; owns the surface + mbgl objects.
     private WinUI.SwapChainMapView? _swapView;
 
+    // XAML overlay controls for the SwapChainPanel renderer (real in-tree children of View).
+    private WUXC.StackPanel? _swapNavPanel;
+    private WUXC.StackPanel? _swapGpsPanel;
+    private WUXC.Border?     _swapGpsTopBtn;
+    private WUXC.TextBlock?  _swapGpsTopIcon;
+    private WUXC.TextBlock?  _swapGpsBottomIcon;
+    private WUXC.Border?     _swapAttrBorder;
+    private WUXC.TextBlock?  _swapAttrText;
+
     /// <summary>The WinUI placeholder element the handler uses as the platform view.</summary>
     public Microsoft.UI.Xaml.Controls.Grid View { get; } = new();
 
@@ -567,15 +579,140 @@ public class MapLibreMapController : IMapLibreMapController
         {
             _style = _swapView.Style;
             _styleReady = true;
+            RefreshAttributionText();   // build attribution from the new style's sources
             OnStyleLoadedReceived?.Invoke(new Style(null));
         };
-        _swapView.DidBecomeIdle += (_, _) => OnDidBecomeIdleReceived?.Invoke();
-        _swapView.CameraIdle    += (_, _) => OnCameraIdleReceived?.Invoke();
+        _swapView.DidBecomeIdle += (_, _) =>
+        {
+            if (_attrText.Length == 0) RefreshAttributionText();
+            OnDidBecomeIdleReceived?.Invoke();
+        };
+        _swapView.CameraIdle    += (_, _) => { RefreshSwapChainGps(); OnCameraIdleReceived?.Invoke(); };
         _swapView.MapClicked    += (_, e) => OnMapClickReceived?.Invoke(new LatLng(e.Lat, e.Lon), e.X, e.Y);
 
         View.Children.Add(_swapView.View);
+        CreateSwapChainOverlays();
         View.Unloaded += (_, _) => DisposeNative();
     }
+
+    // ── SwapChainPanel XAML overlays (nav / GPS / attribution) ─────────────────
+
+    private void CreateSwapChainOverlays()
+    {
+        // Navigation (zoom) — top-right corner.
+        _swapNavPanel = new WUXC.StackPanel
+        {
+            HorizontalAlignment = WUX.HorizontalAlignment.Right,
+            VerticalAlignment = WUX.VerticalAlignment.Top,
+            Margin = new WUX.Thickness(0, 10, 10, 0),
+            Width = 30,
+        };
+        _swapNavPanel.Children.Add(MakeSwapButton("＋", () => _swapView?.ZoomIn(), true));
+        _swapNavPanel.Children.Add(MakeSwapButton("－", () => _swapView?.ZoomOut(), false));
+        View.Children.Add(_swapNavPanel);
+
+        // GPS control — top-right, stacked below the nav panel.
+        _swapGpsPanel = new WUXC.StackPanel
+        {
+            HorizontalAlignment = WUX.HorizontalAlignment.Right,
+            VerticalAlignment = WUX.VerticalAlignment.Top,
+            Margin = new WUX.Thickness(0, 90, 10, 0),
+            Width = 30,
+            Visibility = _showGpsControl ? WUX.Visibility.Visible : WUX.Visibility.Collapsed,
+        };
+        _swapGpsTopBtn = MakeSwapButton("○", CycleGpsMode, true);
+        _swapGpsTopIcon = (WUXC.TextBlock)_swapGpsTopBtn.Child;
+        var gpsBottom = MakeSwapButton("↺", GpsBearingButtonPressed, false);
+        _swapGpsBottomIcon = (WUXC.TextBlock)gpsBottom.Child;
+        _swapGpsPanel.Children.Add(_swapGpsTopBtn);
+        _swapGpsPanel.Children.Add(gpsBottom);
+        View.Children.Add(_swapGpsPanel);
+
+        // Attribution — bottom-left, collapsed ⓘ that expands on tap.
+        _swapAttrText = new WUXC.TextBlock
+        {
+            Text = "ⓘ",
+            FontSize = 11,
+            Foreground = new WUXM.SolidColorBrush(Windows.UI.Color.FromArgb(255, 85, 85, 85)),
+            TextWrapping = WUX.TextWrapping.Wrap,
+            MaxWidth = 320,
+        };
+        _swapAttrBorder = new WUXC.Border
+        {
+            Background = new WUXM.SolidColorBrush(Windows.UI.Color.FromArgb(235, 248, 248, 248)),
+            BorderBrush = new WUXM.SolidColorBrush(Windows.UI.Color.FromArgb(255, 208, 208, 208)),
+            BorderThickness = new WUX.Thickness(1),
+            CornerRadius = new WUX.CornerRadius(4),
+            Padding = new WUX.Thickness(6, 3, 6, 3),
+            HorizontalAlignment = WUX.HorizontalAlignment.Left,
+            VerticalAlignment = WUX.VerticalAlignment.Bottom,
+            Margin = new WUX.Thickness(10, 0, 0, 10),
+            Child = _swapAttrText,
+            Visibility = _showAttrControl ? WUX.Visibility.Visible : WUX.Visibility.Collapsed,
+        };
+        _swapAttrBorder.Tapped += (_, e) =>
+        {
+            if (_attrCollapsed) ExpandAttribution(); else CollapseAttribution();
+            e.Handled = true;
+        };
+        View.Children.Add(_swapAttrBorder);
+
+        RefreshSwapChainGps();
+    }
+
+    private static WUXC.Border MakeSwapButton(string glyph, Action onClick, bool top)
+    {
+        var b = new WUXC.Border
+        {
+            Height = 30,
+            Background = new WUXM.SolidColorBrush(Microsoft.UI.Colors.White),
+            BorderBrush = new WUXM.SolidColorBrush(Windows.UI.Color.FromArgb(255, 218, 218, 218)),
+            BorderThickness = new WUX.Thickness(1, top ? 1 : 0, 1, 1),
+            CornerRadius = top ? new WUX.CornerRadius(4, 4, 0, 0) : new WUX.CornerRadius(0, 0, 4, 4),
+            Child = new WUXC.TextBlock
+            {
+                Text = glyph,
+                FontSize = 15,
+                HorizontalAlignment = WUX.HorizontalAlignment.Center,
+                VerticalAlignment = WUX.VerticalAlignment.Center,
+            },
+        };
+        b.Tapped += (_, e) => { onClick(); e.Handled = true; };
+        return b;
+    }
+
+    /// <summary>Updates the GPS button glyphs/colours from the current tracking mode + bearing.</summary>
+    private void RefreshSwapChainGps()
+    {
+        if (_swapGpsTopIcon == null || _swapGpsTopBtn == null || _swapGpsBottomIcon == null) return;
+
+        (string glyph, Windows.UI.Color fg, Windows.UI.Color bg) = _gpsMode switch
+        {
+            GpsTrackingMode.Show          => ("⊙", Rgb(0x1E, 0x88, 0xE5), Rgb(255, 255, 255)),
+            GpsTrackingMode.Follow        => ("◎", Rgb(0x00, 0x70, 0xC5), Rgb(0xE0, 0xF3, 0xFF)),
+            GpsTrackingMode.FollowBearing => ("▲", Rgb(0xF5, 0x7C, 0x00), Rgb(0xFF, 0xF3, 0xE0)),
+            _                             => ("○", Rgb(0x99, 0x99, 0x99), Rgb(255, 255, 255)),
+        };
+        _swapGpsTopIcon.Text = glyph;
+        _swapGpsTopIcon.Foreground = new WUXM.SolidColorBrush(fg);
+        _swapGpsTopBtn.Background = new WUXM.SolidColorBrush(bg);
+
+        bool rotated = Math.Abs(GetBearing()) > 0.5;
+        _swapGpsBottomIcon.Foreground = new WUXM.SolidColorBrush(rotated ? Rgb(0x1E, 0x88, 0xE5) : Rgb(0x55, 0x55, 0x55));
+    }
+
+    /// <summary>Updates the attribution control text from <c>_attrText</c> / collapsed state (UI thread safe).</summary>
+    private void RefreshSwapChainAttribution()
+    {
+        if (_swapAttrText == null) return;
+        _swapAttrText.DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_swapAttrText == null || _swapAttrBorder == null) return;
+            _swapAttrText.Text = _attrCollapsed || _attrText.Length == 0 ? "ⓘ" : _attrText;
+        });
+    }
+
+    private static Windows.UI.Color Rgb(int r, int g, int b) => Windows.UI.Color.FromArgb(255, (byte)r, (byte)g, (byte)b);
 
     private void TryInitialize()
     {
@@ -1813,6 +1950,7 @@ public class MapLibreMapController : IMapLibreMapController
         // Repaint the button to reflect the new state
         if (_gpsHwnd != IntPtr.Zero)
             InvalidateRect(_gpsHwnd, IntPtr.Zero, true);
+        RefreshSwapChainGps();
     }
 
     /// <summary>Apply the current GPS mode to the location indicator and camera.</summary>
@@ -1875,6 +2013,7 @@ public class MapLibreMapController : IMapLibreMapController
         // Refresh the GPS button (state indicator icon may change on first fix)
         if (isFirstFix && _gpsHwnd != IntPtr.Zero)
             InvalidateRect(_gpsHwnd, IntPtr.Zero, true);
+        if (isFirstFix) RefreshSwapChainGps();
     }
 
     /// <summary>
@@ -1888,6 +2027,7 @@ public class MapLibreMapController : IMapLibreMapController
             _gpsMode = GpsTrackingMode.Follow;
             if (_gpsHwnd != IntPtr.Zero)
                 InvalidateRect(_gpsHwnd, IntPtr.Zero, true);
+            RefreshSwapChainGps();
         }
         ResetNorth();
     }
@@ -1895,6 +2035,8 @@ public class MapLibreMapController : IMapLibreMapController
     public void SetShowGpsControl(bool show)
     {
         _showGpsControl = show;
+        if (_swapGpsPanel != null)
+            _swapGpsPanel.Visibility = show ? WUX.Visibility.Visible : WUX.Visibility.Collapsed;
         ShowOverlays();
     }
 
@@ -2174,6 +2316,8 @@ public class MapLibreMapController : IMapLibreMapController
         _showAttrControl   = show;
         _customAttribution = customAttribution;
         _attrCollapsed     = false;  // reset collapse when attribution settings change
+        if (_swapAttrBorder != null)
+            _swapAttrBorder.Visibility = show ? WUX.Visibility.Visible : WUX.Visibility.Collapsed;
         RefreshAttributionText();
     }
 
@@ -2186,6 +2330,7 @@ public class MapLibreMapController : IMapLibreMapController
             InvalidateRect(_attrHwnd, IntPtr.Zero, false);
             ShowOverlays();
         }
+        RefreshSwapChainAttribution();
         ScheduleAutoCollapse();
     }
 
@@ -2200,6 +2345,7 @@ public class MapLibreMapController : IMapLibreMapController
             PositionOverlays();
             InvalidateRect(_attrHwnd, IntPtr.Zero, false);
         }
+        RefreshSwapChainAttribution();
     }
 
     private void ScheduleAutoCollapse()
