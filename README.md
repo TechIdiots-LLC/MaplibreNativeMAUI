@@ -178,6 +178,41 @@ public IDictionary<string, object?> LineProperties => new Dictionary<string, obj
 
 ---
 
+## Overlay elements
+
+For the common "just draw a marker / line / shape here" cases you can use the high-level overlay
+elements instead of wiring sources and layers by hand. They mirror the
+`Microsoft.Maui.Controls.Maps` element model (`Pin`, `Polyline`, `Polygon`, `Circle`) but are
+declared as child elements of `MapLibreMap`. Each element materialises itself as a GeoJSON source
+plus style layer(s) when the style loads, so it renders **inside** the map surface and composites
+correctly on every platform. Changing a property (or mutating a `Geopath` collection) rebuilds it.
+
+| XAML type | Draws | Key properties |
+|---|---|---|
+| `Pin` | Circle marker | `Location`, `Label`, `Address`, `TintColor`; `MarkerClicked` |
+| `Polyline` | Line | `Geopath` (`IList<Location>`), `StrokeColor`, `StrokeWidth` |
+| `Polygon` | Filled area | `Geopath`, `FillColor`, `StrokeColor`, `StrokeWidth` |
+| `Circle` | Circle of a geographic radius | `Center`, `Radius` (`Distance`), `FillColor`, `StrokeColor`, `StrokeWidth` |
+
+```xaml
+xmlns:overlays="clr-namespace:MapLibreNative.Maui.Handlers.Overlays;assembly=MapLibreNative.Maui.Handlers"
+
+<maps:MapLibreMap StyleUrl="https://demotiles.maplibre.org/style.json">
+    <overlays:Pin Location="{Binding Home}" Label="Home" TintColor="Crimson" />
+    <overlays:Circle Center="{Binding Home}" Radius="{Binding Range}"
+                     FillColor="#3300A2FF" StrokeColor="#00A2FF" StrokeWidth="2" />
+</maps:MapLibreMap>
+```
+
+`Circle.Radius` uses the ported `MapLibreNative.Maui.Geometry.Distance` (e.g. `Distance.FromMeters(500)`),
+and the circle geometry is generated with `GeographyUtils.ToCircumferencePositions`.
+
+> Markers are drawn as circle markers today; a symbol/icon + text-label pin is a follow-up
+> (the underlying `SymbolLayerProperties` is not yet implemented). `MarkerClicked` is exposed but must
+> be wired from the map's click/feature-query pipeline.
+
+---
+
 ## Camera
 
 Use the controller (obtained from `MapReadyCommand` or `StyleLoadedCommand`) to manipulate the camera:
