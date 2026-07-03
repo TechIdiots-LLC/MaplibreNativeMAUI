@@ -439,6 +439,7 @@ public class MlnMapHost : HwndHost
     [DllImport("user32.dll")] private static extern int   ReleaseDC(IntPtr hWnd, IntPtr hDC);
     [DllImport("user32.dll")] private static extern IntPtr SetCapture(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern bool  ReleaseCapture();
+    [DllImport("user32.dll")] private static extern bool  GetClientRect(IntPtr hWnd, out WpfRect lpRect);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct POINT { public int X, Y; }
@@ -589,6 +590,12 @@ public class MlnMapHost : HwndHost
     private bool  _renderNeedsUpdate = true;
     private float _dpi = 1.0f;
     private int   _renderTickCount;
+    // Last physical pixel size we handed to mbgl (frontend/map). Kept in sync with the
+    // child window's actual client rect so the GL viewport, mbgl size and window size
+    // never disagree by the 1px WPF layout-rounding delta (which caused a flickering
+    // undrawn line along the top edge of the map).
+    private int   _lastPhysW;
+    private int   _lastPhysH;
 
     // ── Input state ───────────────────────────────────────────────────────────
 
@@ -696,11 +703,13 @@ public class MlnMapHost : HwndHost
         if (!IsVisible || ActualWidth < 2 || ActualHeight < 2 || _childHwnd == IntPtr.Zero) return;
 
         _dpi  = GetDpiScale();
-        int physW = Math.Max(1, (int)(ActualWidth  * _dpi));
-        int physH = Math.Max(1, (int)(ActualHeight * _dpi));
+        int physW = Math.Max(1, (int)Math.Round(ActualWidth  * _dpi));
+        int physH = Math.Max(1, (int)Math.Round(ActualHeight * _dpi));
         SetWindowPos(_childHwnd, IntPtr.Zero, 0, 0, physW, physH, 0x0040);
 
         _initialized = true;
+        _lastPhysW = physW;
+        _lastPhysH = physH;
         try { InitOpenGl(physW, physH);    Log("InitOpenGl OK"); }
         catch (Exception ex) { Log($"InitOpenGl EX: {ex}"); throw; }
         try { InitMaplibre(physW, physH);  Log("InitMaplibre OK"); }
@@ -849,8 +858,8 @@ public class MlnMapHost : HwndHost
         // the physical pixel dimensions in sync.
         float dpi = GetDpiScale();
         _dpi = dpi;
-        int wP = Math.Max(1, (int)(info.NewSize.Width  * dpi));
-        int hP = Math.Max(1, (int)(info.NewSize.Height * dpi));
+        int wP = Math.Max(1, (int)Math.Round(info.NewSize.Width  * dpi));
+        int hP = Math.Max(1, (int)Math.Round(info.NewSize.Height * dpi));
 
         if (_childHwnd != IntPtr.Zero)
             SetWindowPos(_childHwnd, IntPtr.Zero, 0, 0, wP, hP, 0x0056);
@@ -859,6 +868,8 @@ public class MlnMapHost : HwndHost
         {
             _frontend.SetSize(wP, hP);
             _map.SetSize(wP, hP);
+            _lastPhysW = wP;
+            _lastPhysH = hP;
             for (int i = 0; i < 4; i++) _runLoop?.RunOnce();
         }
         _renderNeedsUpdate = true;
@@ -1004,8 +1015,31 @@ public class MlnMapHost : HwndHost
             _renderNeedsUpdate = false;
             wglMakeCurrent(_hDC, _hGLRC);
 
-            int physW = Math.Max(1, (int)(ActualWidth  * _dpi));
-            int physH = Math.Max(1, (int)(ActualHeight * _dpi));
+            // Use the child window's ACTUAL client size rather than a freshly-truncated
+            // (int)(ActualHeight * dpi). WPF's HwndHost sizes the hosted window with its
+            // own device-pixel rounding; recomputing here with truncation can be 1px
+            // smaller, leaving the top row of the window undrawn -> a flickering line.
+            int physW, physH;
+            if (GetClientRect(_childHwnd, out var cr) && cr.Right > 0 && cr.Bottom > 0)
+            {
+                physW = cr.Right;
+                physH = cr.Bottom;
+            }
+            else
+            {
+                physW = Math.Max(1, (int)(ActualWidth  * _dpi));
+                physH = Math.Max(1, (int)(ActualHeight * _dpi));
+            }
+
+            // Keep mbgl's framebuffer exactly matching the window so it paints every row.
+            if ((physW != _lastPhysW || physH != _lastPhysH) && _map != null)
+            {
+                _frontend.SetSize(physW, physH);
+                _map.SetSize(physW, physH);
+                _lastPhysW = physW;
+                _lastPhysH = physH;
+            }
+
             _glBindFramebuffer?.Invoke(GL_FRAMEBUFFER, 0);
             glViewport(0, 0, physW, physH);
             glClearColor(0.85f, 0.90f, 0.97f, 1f);
