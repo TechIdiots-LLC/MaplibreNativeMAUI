@@ -122,6 +122,37 @@ public sealed class MbglStyle
         return result;
     }
 
+    /// <summary>
+    /// HTML fragment linking to the MapLibre project. This library is built on
+    /// MapLibre Native, so the project should always be credited — matching the
+    /// behaviour of maplibre-gl-js, which always shows a "MapLibre" link.
+    /// </summary>
+    public const string MapLibreAttributionHtml =
+        "<a href=\"https://maplibre.org/\" target=\"_blank\" rel=\"noopener nofollow\">MapLibre</a>";
+
+    /// <summary>
+    /// Returns <paramref name="parts"/> with a MapLibre attribution link prepended
+    /// when none of the existing parts already reference MapLibre (by link or text).
+    /// Used by every platform's attribution overlay so MapLibre is always credited.
+    /// </summary>
+    public static IReadOnlyList<string> EnsureMapLibreAttribution(IEnumerable<string> parts)
+    {
+        var list = new List<string>(parts);
+        bool hasMapLibre = false;
+        foreach (var p in list)
+        {
+            if (p is null) continue;
+            if (p.IndexOf("maplibre", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                hasMapLibre = true;
+                break;
+            }
+        }
+        if (!hasMapLibre)
+            list.Insert(0, MapLibreAttributionHtml);
+        return list;
+    }
+
     // ── Images ────────────────────────────────────────────────────────────────
 
     /// <summary>Add a sprite image. <paramref name="rgbaPremultiplied"/> must be

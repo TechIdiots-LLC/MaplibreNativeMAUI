@@ -57,8 +57,8 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
         _controller.OnCameraIdleReceived             += VirtualView.OnCameraIdle;
         _controller.OnCameraTrackingChangedReceived  += VirtualView.OnCameraTrackingChanged;
         _controller.OnCameraTrackingDismissedReceived += VirtualView.OnCameraTrackingDismissed;
-        _controller.OnMapClickReceived               += VirtualView.OnMapClick;
-        _controller.OnMapLongClickReceived           += VirtualView.OnMapLongClick;
+        _controller.OnMapClickReceived               += (ll, sx, sy) => VirtualView.OnMapClick(ll, sx, sy);
+        _controller.OnMapLongClickReceived           += (ll, sx, sy) => VirtualView.OnMapLongClick(ll, sx, sy);
         _controller.OnUserLocationUpdateReceived     += VirtualView.OnUserLocationUpdate;
 
         _controller.Init();
@@ -205,6 +205,10 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
     public void UpdateAttributionButtonMargins(int?[]? margin) { if (margin?.Length >= 2 && margin[0] != null && margin[1] != null) _controller.SetAttributionButtonMargins(margin[0]!.Value, margin[1]!.Value); }
     public void UpdateShowNavigationControls(bool show) => _controller.SetShowNavigationControls(show);
     public void UpdateShowAttributionControl(bool show, string? customAttribution) => _controller.SetShowAttributionControl(show, customAttribution);
+    public void UpdateShowGpsControl(bool show)         => _controller.SetShowGpsControl(show);
+    public void UpdateNavigationControlPosition(MapControlCorner corner)  => _controller.SetNavigationControlPosition(corner);
+    public void UpdateGpsControlPosition(MapControlCorner corner)         => _controller.SetGpsControlPosition(corner);
+    public void UpdateAttributionControlPosition(MapControlCorner corner) => _controller.SetAttributionControlPosition(corner);
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 

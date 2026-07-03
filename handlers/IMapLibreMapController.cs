@@ -15,8 +15,8 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
     public event Action? OnCameraIdleReceived;
     public event Action<int>? OnCameraTrackingChangedReceived;
     public event Action? OnCameraTrackingDismissedReceived;
-    public event Func<LatLng, bool>? OnMapClickReceived;
-    public event Func<LatLng, bool>? OnMapLongClickReceived;
+    public event Func<LatLng, double, double, bool>? OnMapClickReceived;
+    public event Func<LatLng, double, double, bool>? OnMapLongClickReceived;
     public event Action<Style>? OnStyleLoadedReceived;
     public event Action<Location>? OnUserLocationUpdateReceived;
     /// <summary>Fired when the map fails to load its style. The string is the error message.</summary>
@@ -24,6 +24,16 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
     /// <summary>Fired when a style image is missing. The string is the image ID.</summary>
     public event Action<string>? OnStyleImageMissingReceived;
     
+    // GPS control
+    /// <summary>
+    /// Feed a GPS location fix to the GPS control overlay.  The current GPS
+    /// tracking mode (Off / Show / Follow) determines whether the location
+    /// indicator is shown and whether the camera follows the position.
+    /// Safe to call before the style is loaded; the position is cached and
+    /// applied once the style is ready.
+    /// </summary>
+    void UpdateGpsLocation(double lat, double lon, float bearing = 0, float accuracyMeters = 10);
+
     // Sources
     public void AddGeoJsonSource(string sourceName, string source);
 

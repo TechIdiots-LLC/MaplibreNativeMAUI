@@ -36,6 +36,18 @@
                     Click="BtnDataDrivenTest_Click" Margin="2,0" Padding="6,2"
                     ToolTip="Adds runtime circle layers using literal, property-function (stops), case-expression and match-expression circle-color, then logs how many features render for each — see %TEMP%\maplibre_datadriven_test.log" />
 
+            <Separator Margin="4,0" />
+
+            <!-- GPS overlay simulation -->
+            <Label Content="GPS sim:" VerticalAlignment="Center" />
+            <Button x:Name="BtnGpsStart" Content="▶ Start"
+                    Click="BtnGpsStart_Click" Margin="2,0" Padding="6,2"
+                    ToolTip="Start simulated GPS walk through Seattle. Tap ○/⊙/◎ on the map to cycle Off/Show/Follow mode." />
+            <Button x:Name="BtnGpsStop" Content="⏹ Stop"
+                    Click="BtnGpsStop_Click" Margin="2,0" Padding="6,2"
+                    IsEnabled="False"
+                    ToolTip="Stop GPS simulation" />
+
         </ToolBar>
 
         <!-- ── Toolbar row 2: style picker + custom URL ── -->
@@ -71,10 +83,19 @@
             MlnMapHost is an HwndHost — it owns a child HWND backed by OpenGL.
             StyleUrl, ShowNavigationControls and events are set here; everything
             else (pan, zoom, double-tap) is handled internally by the control.
+
+            The *ControlPosition properties anchor each overlay to a corner
+            (TopLeft/TopRight/BottomLeft/BottomRight). Controls sharing a corner
+            stack automatically — here navigation and GPS both sit top-right, so
+            the GPS panel stacks below the navigation panel.
         -->
         <mlwpf:MlnMapHost x:Name="MapHost"
                            StyleUrl="https://demotiles.maplibre.org/style.json"
                            ShowNavigationControls="True"
+                           ShowGpsControl="True"
+                           NavigationControlPosition="TopRight"
+                           GpsControlPosition="TopRight"
+                           AttributionControlPosition="BottomLeft"
                            MapReady="MapHost_MapReady"
                            StyleLoaded="MapHost_StyleLoaded"
                            CameraIdle="MapHost_CameraIdle" />

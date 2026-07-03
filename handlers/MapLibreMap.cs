@@ -32,6 +32,12 @@ public class MapLibreMap : StackLayout
     public static readonly BindableProperty ShowNavigationControlsProperty =
         BindableProperty.Create(nameof(ShowNavigationControls), typeof(bool), typeof(MapLibreMap), defaultValue: true);
     /// <summary>
+    /// Show the GPS tracking control overlay (3-state location button + bearing reset).
+    /// Default <c>true</c>.
+    /// </summary>
+    public static readonly BindableProperty ShowGpsControlProperty =
+        BindableProperty.Create(nameof(ShowGpsControl), typeof(bool), typeof(MapLibreMap), defaultValue: true);
+    /// <summary>
     /// Show an always-visible attribution overlay (OSM requires this).
     /// Attributions are collected from all loaded TileJSON sources plus
     /// <see cref="CustomAttribution"/>. Default <c>true</c>.
@@ -41,6 +47,15 @@ public class MapLibreMap : StackLayout
     /// <summary>Extra attribution text appended after source-derived attributions.</summary>
     public static readonly BindableProperty CustomAttributionProperty =
         BindableProperty.Create(nameof(CustomAttribution), typeof(string), typeof(MapLibreMap));
+    /// <summary>Corner the navigation control is anchored to. Default <see cref="MapControlCorner.TopRight"/>.</summary>
+    public static readonly BindableProperty NavigationControlPositionProperty =
+        BindableProperty.Create(nameof(NavigationControlPosition), typeof(MapControlCorner), typeof(MapLibreMap), defaultValue: MapControlCorner.TopRight);
+    /// <summary>Corner the GPS control is anchored to. Default <see cref="MapControlCorner.TopRight"/>.</summary>
+    public static readonly BindableProperty GpsControlPositionProperty =
+        BindableProperty.Create(nameof(GpsControlPosition), typeof(MapControlCorner), typeof(MapLibreMap), defaultValue: MapControlCorner.TopRight);
+    /// <summary>Corner the attribution control is anchored to. Default <see cref="MapControlCorner.BottomLeft"/>.</summary>
+    public static readonly BindableProperty AttributionControlPositionProperty =
+        BindableProperty.Create(nameof(AttributionControlPosition), typeof(MapControlCorner), typeof(MapLibreMap), defaultValue: MapControlCorner.BottomLeft);
 
     public static readonly BindableProperty MapReadyCommandProperty = BindableProperty.Create(nameof(MapReadyCommand), typeof(ICommand), typeof(MapLibreMap));
     public static readonly BindableProperty StyleLoadedCommandProperty = BindableProperty.Create(nameof(StyleLoadedCommand), typeof(ICommand), typeof(MapLibreMap));
@@ -222,6 +237,12 @@ public class MapLibreMap : StackLayout
         set => SetValue(ShowNavigationControlsProperty, value);
     }
 
+    public bool ShowGpsControl
+    {
+        get => (bool)GetValue(ShowGpsControlProperty);
+        set => SetValue(ShowGpsControlProperty, value);
+    }
+
     public bool ShowAttributionControl
     {
         get => (bool)GetValue(ShowAttributionControlProperty);
@@ -232,6 +253,36 @@ public class MapLibreMap : StackLayout
     {
         get => (string?)GetValue(CustomAttributionProperty);
         set => SetValue(CustomAttributionProperty, value);
+    }
+
+    /// <summary>
+    /// Corner the navigation control is anchored to. When multiple controls share
+    /// a corner they stack (navigation, then GPS, then attribution).
+    /// </summary>
+    public MapControlCorner NavigationControlPosition
+    {
+        get => (MapControlCorner)GetValue(NavigationControlPositionProperty);
+        set => SetValue(NavigationControlPositionProperty, value);
+    }
+
+    /// <summary>
+    /// Corner the GPS control is anchored to. When multiple controls share a
+    /// corner they stack (navigation, then GPS, then attribution).
+    /// </summary>
+    public MapControlCorner GpsControlPosition
+    {
+        get => (MapControlCorner)GetValue(GpsControlPositionProperty);
+        set => SetValue(GpsControlPositionProperty, value);
+    }
+
+    /// <summary>
+    /// Corner the attribution control is anchored to. When multiple controls share
+    /// a corner they stack (navigation, then GPS, then attribution).
+    /// </summary>
+    public MapControlCorner AttributionControlPosition
+    {
+        get => (MapControlCorner)GetValue(AttributionControlPositionProperty);
+        set => SetValue(AttributionControlPositionProperty, value);
     }
 
     public void AddGeoJsonSource(string sourceName, FeatureCollection collection)
@@ -495,22 +546,26 @@ public class MapLibreMap : StackLayout
         CameraTrackingDismissedCommand?.Execute(null);
     }
 
-    internal bool OnMapClick(LatLng latLng)
+    internal bool OnMapClick(LatLng latLng, double screenX = 0, double screenY = 0)
     {
         var args = new MapClickEventArgs
         {
-            LatLng = latLng
+            LatLng  = latLng,
+            ScreenX = screenX,
+            ScreenY = screenY,
         };
         MapClick?.Invoke(this, args);
         MapClickCommand?.Execute(latLng);
         return false;
     }
 
-    internal bool OnMapLongClick(LatLng latLng)
+    internal bool OnMapLongClick(LatLng latLng, double screenX = 0, double screenY = 0)
     {
         var args = new MapClickEventArgs
         {
-            LatLng = latLng
+            LatLng  = latLng,
+            ScreenX = screenX,
+            ScreenY = screenY,
         };
         MapLongClick?.Invoke(this, args);
         MapLongClickCommand?.Execute(latLng);

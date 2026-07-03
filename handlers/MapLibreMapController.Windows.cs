@@ -132,6 +132,13 @@ public class MapLibreMapController : IMapLibreMapController
     [DllImport("gdi32.dll")]
     private static extern bool RoundRect(IntPtr hdc, int left, int top, int right, int bottom, int width, int height);
 
+    [DllImport("gdi32.dll")]
+    private static extern bool Ellipse(IntPtr hdc, int left, int top, int right, int bottom);
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr GetStockObject(int i);
+    private const int NULL_BRUSH = 5;
+
     [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
     private static extern bool TextOutW(IntPtr hdc, int x, int y, string text, int count);
 
@@ -338,6 +345,23 @@ public class MapLibreMapController : IMapLibreMapController
     private static readonly IntPtr HWND_TOP     = IntPtr.Zero;
     private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
 
+    // Monitor work area — used to clamp overlays so they never show behind the taskbar
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromPoint(POINT pt, uint dwFlags);
+    [DllImport("user32.dll", EntryPoint = "GetMonitorInfoW")]
+    private static extern bool GetMonitorInfoW(IntPtr hMonitor, ref MONITORINFO mi);
+    private const uint MONITOR_DEFAULTTONEAREST = 2;
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MONITORINFO
+    {
+        public uint cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public uint dwFlags;
+    }
+
     private const string GlWindowClass = "MapLibreCabiGL";
     private static WndProcDelegate? _wndProcKeepAlive;
     private static bool _classRegistered;
@@ -397,7 +421,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     private readonly IntPtr _parentHwnd;
     private string? _styleString;
-    private readonly float   _pixelRatio;
+    private float            _pixelRatio;
 
     private IntPtr       _effectiveParentHwnd = IntPtr.Zero;
     private IntPtr       _childHwnd = IntPtr.Zero;
@@ -409,6 +433,11 @@ public class MapLibreMapController : IMapLibreMapController
     private MbglStyle?    _style;
 
     // ── Overlay windows ───────────────────────────────────────────────────────
+    // Corners each overlay is anchored to. When two share a corner they stack in
+    // the fixed order nav → gps → attribution, anchored from the corner inward.
+    private MapControlCorner _navCorner  = MapControlCorner.TopRight;
+    private MapControlCorner _gpsCorner  = MapControlCorner.TopRight;
+    private MapControlCorner _attrCorner = MapControlCorner.BottomLeft;
     // Nav panel (zoom-in, zoom-out, compass) — top-right corner, 29×90px logical
     private IntPtr _navHwnd   = IntPtr.Zero;
     private WndProcDelegate? _navWndProc;   // keep-alive
@@ -421,8 +450,23 @@ public class MapLibreMapController : IMapLibreMapController
     private string  _attrText = string.Empty;  // cached, rebuilt on StyleLoaded
     private IntPtr  _attrFont = IntPtr.Zero;
     private IntPtr  _navFont  = IntPtr.Zero;
+    private IntPtr  _navArrowFont = IntPtr.Zero;  // smaller font for the d-pad direction glyphs
+    // GPS control panel — bottom-right corner, 29×(2×29+1)px logical
+    // Two buttons: GPS tracking state (top) + bearing reset (bottom)
+    private IntPtr _gpsHwnd   = IntPtr.Zero;
+    private WndProcDelegate? _gpsWndProc;   // keep-alive
+    private bool   _showGpsControl = true;
+    private IntPtr _gpsFont  = IntPtr.Zero;
+    /// <summary>GPS tracking mode — matches Android TrackingMode enum.</summary>
+    private enum GpsTrackingMode { Off, Show, Follow, FollowBearing }
+    private GpsTrackingMode _gpsMode = GpsTrackingMode.Off;
+    // Last received GPS fix — cached so SHOW mode can display it immediately when enabled
+    private double _lastGpsLat, _lastGpsLon;
+    private float  _lastGpsBearing, _lastGpsAccuracy;
+    private bool   _hasGpsFix;
     // Hit-testing constants (logical pixels, scaled by _pixelRatio internally)
-    private const int NavButtonSize   = 29;   // px
+    private const int NavButtonSize   = 29;   // px (zoom button height)
+    private const int NavDpadSize     = NavButtonSize;   // px — round d-pad; matches button width so nav/zoom/GPS align when stacked
     private const int NavPanelMargin  = 10;   // from map edge
     private const int AttrPadH        = 6;    // horizontal text padding
     private const int AttrPadV        = 3;    // vertical text padding
@@ -462,8 +506,8 @@ public class MapLibreMapController : IMapLibreMapController
     public event Action?                                 OnCameraIdleReceived;
     public event Action<int>?                            OnCameraTrackingChangedReceived;
     public event Action?                                 OnCameraTrackingDismissedReceived;
-    public event Func<LatLng, bool>?                     OnMapClickReceived;
-    public event Func<LatLng, bool>?                     OnMapLongClickReceived;
+    public event Func<LatLng, double, double, bool>?                     OnMapClickReceived;
+    public event Func<LatLng, double, double, bool>?                     OnMapLongClickReceived;
     public event Action<Maps.Style>?                     OnStyleLoadedReceived;
     public event Action<Location>?                       OnUserLocationUpdateReceived;
     public event Action<string>?                         OnDidFailLoadingMapReceived;
@@ -490,6 +534,14 @@ public class MapLibreMapController : IMapLibreMapController
     {
         if (_initialized || _parentHwnd == IntPtr.Zero) return;
         if (View.ActualWidth < 2 || View.ActualHeight < 2) return;
+
+        // The RasterizationScale handed to the constructor can be a stale 1.0 when the
+        // XamlRoot has not yet resolved the monitor DPI. By the time the view is loaded
+        // XamlRoot reports the real scale (e.g. 2.25 at 225%), so refresh _pixelRatio
+        // here — before sizing the GL window and creating the frontend/map — otherwise
+        // the child window is sized in logical pixels and only fills 1/scale of the
+        // physical window, with the overlays pushed off the visible area.
+        RefreshPixelRatio();
 
         // AIRSPACE WORKAROUND: Create the GL window as a borderless top-level popup
         // OWNED BY (not parented to) the main XAML window. This bypasses WinUI's
@@ -711,9 +763,18 @@ public class MapLibreMapController : IMapLibreMapController
             case "onCameraIsChanging":
                 CollapseAttribution();
                 OnCameraMoveReceived?.Invoke();
+                // Repaint the nav d-pad so its north tick tracks the live bearing.
+                if (_navHwnd != IntPtr.Zero && IsWindowVisible(_navHwnd))
+                    InvalidateRect(_navHwnd, IntPtr.Zero, false);
                 break;
             case "onCameraDidChange":
                 OnCameraIdleReceived?.Invoke();
+                // Repaint the GPS bearing button — its colour reflects current map bearing
+                if (_gpsHwnd != IntPtr.Zero && IsWindowVisible(_gpsHwnd))
+                    InvalidateRect(_gpsHwnd, IntPtr.Zero, false);
+                // Repaint the nav d-pad north tick at its final bearing.
+                if (_navHwnd != IntPtr.Zero && IsWindowVisible(_navHwnd))
+                    InvalidateRect(_navHwnd, IntPtr.Zero, false);
                 break;
             case "onDidFailLoadingMap":
                 OnDidFailLoadingMapReceived?.Invoke(detail ?? string.Empty);
@@ -740,10 +801,24 @@ public class MapLibreMapController : IMapLibreMapController
         }
     }
 
+    /// <summary>
+    /// Refreshes <see cref="_pixelRatio"/> from the live XamlRoot rasterization scale.
+    /// The scale passed to the constructor may be a stale 1.0 before the DPI resolves,
+    /// so this is called at init and on every resize (also handles moving the window
+    /// between monitors with different DPI).
+    /// </summary>
+    private void RefreshPixelRatio()
+    {
+        double scale = View.XamlRoot?.RasterizationScale ?? 0;
+        if (scale > 0.1)
+            _pixelRatio = (float)scale;
+    }
+
     private void OnViewSizeChanged(Microsoft.Maui.Graphics.Size newSize)
     {
         CtrlDiag($"OnViewSizeChanged {newSize.Width}x{newSize.Height} init={_initialized}");
         if (!_initialized) return;
+        RefreshPixelRatio();
         int physW = Math.Max(1, (int)(newSize.Width  * _pixelRatio));
         int physH = Math.Max(1, (int)(newSize.Height * _pixelRatio));
 
@@ -758,7 +833,6 @@ public class MapLibreMapController : IMapLibreMapController
     private void UpdateChildWindowPosition()
     {
         if (_childHwnd == IntPtr.Zero || !View.IsLoaded) return;
-
         // Popup is top-level → coordinates are SCREEN coords.
         // Get the View's position in XAML root, then translate via the owner
         // window's client-to-screen mapping.
@@ -1131,6 +1205,10 @@ public class MapLibreMapController : IMapLibreMapController
             int fontH = -(int)(_pixelRatio * 14);
             _navFont = CreateFontW(fontH, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET,
                 OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, "Segoe UI Symbol");
+            // Smaller font for the d-pad direction arrows.
+            int arrowH = -(int)(_pixelRatio * 9);
+            _navArrowFont = CreateFontW(arrowH, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET,
+                OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, "Segoe UI Symbol");
         }
 
         // Attribution band: small always-visible text overlay, bottom-right.
@@ -1155,8 +1233,35 @@ public class MapLibreMapController : IMapLibreMapController
                 OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, "Segoe UI");
         }
 
+        CreateGpsOverlay();
         PositionOverlays();
         ShowOverlays();
+    }
+
+    // ── GPS control overlay ───────────────────────────────────────────────────
+
+    // Cached GPS panel rect to skip redundant SetWindowPos calls
+    private (int x, int y, int w, int h) _lastGpsRect;
+
+    private void CreateGpsOverlay()
+    {
+        EnsureOverlayClassRegistered();
+        _gpsWndProc = GpsOverlayWndProc;
+        _gpsHwnd = CreateWindowExA(
+            WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+            OverlayClass, "",
+            WS_POPUP | WS_VISIBLE | WS_CLIPSIBLINGS,
+            0, 0, 1, 1,
+            _effectiveParentHwnd, IntPtr.Zero, GetModuleHandleW(IntPtr.Zero), IntPtr.Zero);
+        if (_gpsHwnd != IntPtr.Zero)
+        {
+            SetWindowPos(_gpsHwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            SetWindowLongPtr(_gpsHwnd, GWLP_WNDPROC,
+                Marshal.GetFunctionPointerForDelegate(_gpsWndProc));
+            int fontH = -(int)(_pixelRatio * 14);
+            _gpsFont = CreateFontW(fontH, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET,
+                OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, "Segoe UI Symbol");
+        }
     }
 
     private static readonly string _ctrlDiagPath =
@@ -1175,10 +1280,23 @@ public class MapLibreMapController : IMapLibreMapController
     /// <summary>Show/hide overlays based on current enabled flags.</summary>
     private void ShowOverlays()
     {
+        // Panel sizes (physical px) + fit checks. Controls are hidden when the map
+        // area can't contain them (width or height), including any stacking offset
+        // when nav + GPS share a corner.
+        int btnSizePx = (int)(NavButtonSize * _pixelRatio);
+        int dpadPx    = (int)(NavDpadSize * _pixelRatio);
+        int stackGap  = (int)(NavPanelMargin * _pixelRatio);
+        int navPanelW = dpadPx;                        // nav panel is as wide as the d-pad
+        int navPanelH = dpadPx + btnSizePx * 2 + 2;    // d-pad + 2 zoom buttons + 2 divider px
+        int gpsPanelH = btnSizePx * 2 + 1;             // 2 buttons + 1 divider px
+        bool navVisibleFits = _showNavControls && _initialized && ControlFitsMap(navPanelW, navPanelH, 0);
+        int  gpsStackOff    = (navVisibleFits && _navCorner == _gpsCorner) ? navPanelH + stackGap : 0;
+        bool gpsVisibleFits = _showGpsControl && _initialized && ControlFitsMap(btnSizePx, gpsPanelH, gpsStackOff);
+
         if (_navHwnd  != IntPtr.Zero)
         {
-            // Also hide the nav panel when the map is too short to fit it.
-            bool navVisible = _showNavControls && _initialized && NavFitsCurrentHeight();
+            // Also hide the nav panel when the map is too short/narrow to fit it.
+            bool navVisible = navVisibleFits;
             uint style = (uint)GetWindowLongA(_navHwnd, GWL_STYLE);
             if (navVisible != _diagLastNavVisible)
             {
@@ -1218,6 +1336,12 @@ public class MapLibreMapController : IMapLibreMapController
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW_OR_HIDE(
                     _showAttrControl && _initialized && _attrText.Length > 0));
         }
+        if (_gpsHwnd != IntPtr.Zero)
+        {
+            SetWindowPos(_gpsHwnd, IntPtr.Zero, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW_OR_HIDE(
+                    gpsVisibleFits));
+        }
     }
 
     private static uint SWP_SHOWWINDOW_OR_HIDE(bool show)
@@ -1243,6 +1367,39 @@ public class MapLibreMapController : IMapLibreMapController
         return mapH >= (int)(MinMapHeightForNav * _pixelRatio);
     }
 
+    /// <summary>
+    /// Whether the map area (child GL window) is large enough to contain a control
+    /// of the given physical size sitting at the given vertical stacking offset,
+    /// with a margin on each side. Hides nav/GPS panels when the map is too small
+    /// in either dimension so they never spill past the map edge.
+    /// </summary>
+    private bool ControlFitsMap(int panelWpx, int panelHpx, int stackOffsetPx)
+    {
+        if (_childHwnd == IntPtr.Zero) return false;
+        GetWindowRect(_childHwnd, out var wr);
+        int mapW = wr.Right  - wr.Left;
+        int mapH = wr.Bottom - wr.Top;
+        int marginPx = (int)(NavPanelMargin * _pixelRatio);
+        return mapW >= panelWpx + 2 * marginPx
+            && mapH >= panelHpx + stackOffsetPx + 2 * marginPx;
+    }
+
+    /// <summary>
+    /// Returns the monitor work area (screen area excluding the taskbar) for the
+    /// monitor that contains the given screen-pixel point.  Used to clamp each
+    /// overlay to its own monitor's work area independently, so controls that
+    /// land on a secondary monitor are not incorrectly clamped to the primary.
+    /// Falls back to an unconstrained rect on failure.
+    /// </summary>
+    private RECT GetWorkAreaForPoint(int cx, int cy)
+    {
+        var mi   = new MONITORINFO { cbSize = (uint)Marshal.SizeOf<MONITORINFO>() };
+        var hMon = MonitorFromPoint(new POINT { X = cx, Y = cy }, MONITOR_DEFAULTTONEAREST);
+        if (hMon != IntPtr.Zero && GetMonitorInfoW(hMon, ref mi))
+            return mi.rcWork;
+        return new RECT { Left = int.MinValue, Top = int.MinValue, Right = int.MaxValue, Bottom = int.MaxValue };
+    }
+
     /// <summary>Position overlays relative to the GL popup window.</summary>
     private void PositionOverlays()
     {
@@ -1252,19 +1409,54 @@ public class MapLibreMapController : IMapLibreMapController
         int mapH = wr.Bottom - wr.Top;
 
         int marginPx  = (int)(NavPanelMargin * _pixelRatio);
+        int stackGap  = marginPx;                       // gap between controls that share a corner
         int btnSizePx = (int)(NavButtonSize  * _pixelRatio);
-        bool navFits  = mapH >= (int)(MinMapHeightForNav * _pixelRatio);
+        int dpadPx    = (int)(NavDpadSize    * _pixelRatio);
 
-        if (_navHwnd != IntPtr.Zero && _showNavControls && navFits)
+        // Panel heights are known up front; used to stack controls that share a corner.
+        int navPanelW = dpadPx;                        // nav panel is as wide as the d-pad
+        int navPanelH = dpadPx + btnSizePx * 2 + 2;    // d-pad + 2 zoom buttons + 2 separator lines
+        int gpsPanelH = btnSizePx * 2 + 1;  // 2 buttons + 1 separator line
+
+        // Match the fit logic in ShowOverlays so hidden controls don't leave a
+        // phantom stacking gap for the controls behind them.
+        bool navVisible = _navHwnd != IntPtr.Zero && _showNavControls && ControlFitsMap(navPanelW, navPanelH, 0);
+        int  gpsStackOff = (navVisible && _navCorner == _gpsCorner) ? navPanelH + stackGap : 0;
+        bool gpsVisible = _gpsHwnd != IntPtr.Zero && _showGpsControl && ControlFitsMap(btnSizePx, gpsPanelH, gpsStackOff);
+
+        // Vertical offset (away from the anchored horizontal edge) contributed by the
+        // controls that precede the given one in the stack order (nav → gps → attribution)
+        // and share the same corner. First control sits at the corner; the next stacks inward.
+        int StackOffset(MapControlCorner corner, int stackIndex)
         {
-            int panelH = btnSizePx * 3 + 2;  // +2 for separator lines
-            int navX   = wr.Left + mapW - btnSizePx - marginPx;
-            int navY   = wr.Top  + marginPx;
-            var nr = (navX, navY, btnSizePx, panelH);
+            int off = 0;
+            if (stackIndex > 0 && navVisible && _navCorner == corner) off += navPanelH + stackGap;
+            if (stackIndex > 1 && gpsVisible && _gpsCorner == corner) off += gpsPanelH + stackGap;
+            return off;
+        }
+
+        static bool IsLeft(MapControlCorner c) => c is MapControlCorner.TopLeft or MapControlCorner.BottomLeft;
+        static bool IsTop(MapControlCorner c)  => c is MapControlCorner.TopLeft or MapControlCorner.TopRight;
+
+        if (navVisible)
+        {
+            int panelH = navPanelH;
+            int off    = StackOffset(_navCorner, 0);   // nav is first in stack order → always 0
+            int navX   = IsLeft(_navCorner) ? wr.Left + marginPx : wr.Left + mapW - navPanelW - marginPx;
+            int navY   = IsTop(_navCorner)
+                ? wr.Top + marginPx + off
+                : wr.Top + mapH - marginPx - panelH - off;
+            // Clamp to the work area of the monitor this overlay will land on.
+            // Using MonitorFromPoint per-overlay (not MonitorFromWindow) ensures the
+            // correct monitor is queried even when the map window spans two screens.
+            var navWa = GetWorkAreaForPoint(navX + navPanelW / 2, navY + panelH / 2);
+            navX = Math.Max(navWa.Left, Math.Min(navX, navWa.Right  - navPanelW));
+            navY = Math.Max(navWa.Top,  Math.Min(navY, navWa.Bottom - panelH));
+            var nr = (navX, navY, navPanelW, panelH);
             if (nr != _lastNavRect)
             {
                 _lastNavRect = nr;
-                SetWindowPos(_navHwnd, IntPtr.Zero, navX, navY, btnSizePx, panelH, SWP_NOACTIVATE | SWP_NOZORDER);
+                SetWindowPos(_navHwnd, IntPtr.Zero, navX, navY, navPanelW, panelH, SWP_NOACTIVATE | SWP_NOZORDER);
                 InvalidateRect(_navHwnd, IntPtr.Zero, true);
             }
         }
@@ -1300,8 +1492,14 @@ public class MapLibreMapController : IMapLibreMapController
 
             int attrW = _cachedAttrMeasure.cx + padH * 2;
             int attrH = _cachedAttrMeasure.cy + padV * 2;
-            int attrX = wr.Left + marginPx;                       // bottom-left, avoids nav overlap
-            int attrY = wr.Top  + mapH - attrH - marginPx;
+            int off   = StackOffset(_attrCorner, 2);   // attribution is last in stack order
+            int attrX = IsLeft(_attrCorner) ? wr.Left + marginPx : wr.Left + mapW - attrW - marginPx;
+            int attrY = IsTop(_attrCorner)
+                ? wr.Top + marginPx + off
+                : wr.Top + mapH - attrH - marginPx - off;
+            var attrWa = GetWorkAreaForPoint(attrX + attrW / 2, attrY + attrH / 2); // per-overlay monitor
+            attrX = Math.Max(attrWa.Left, Math.Min(attrX, attrWa.Right  - attrW));
+            attrY = Math.Max(attrWa.Top,  Math.Min(attrY, attrWa.Bottom - attrH));
             var ar = (attrX, attrY, attrW, attrH);
             if (ar != _lastAttrRect)
             {
@@ -1314,6 +1512,26 @@ public class MapLibreMapController : IMapLibreMapController
         // Re-evaluate nav visibility — the map may have shrunk below the
         // minimum height (or grown back) since the last call.
         ShowOverlays();
+
+        if (gpsVisible)
+        {
+            int gpsBtnSizePx = btnSizePx;  // same button size as nav
+            int off  = StackOffset(_gpsCorner, 1);   // gps is second in stack order (after nav)
+            int gpsX = IsLeft(_gpsCorner) ? wr.Left + marginPx : wr.Left + mapW - gpsBtnSizePx - marginPx;
+            int gpsY = IsTop(_gpsCorner)
+                ? wr.Top + marginPx + off
+                : wr.Top + mapH - gpsPanelH - marginPx - off;
+            var gpsWa = GetWorkAreaForPoint(gpsX + gpsBtnSizePx / 2, gpsY + gpsPanelH / 2); // per-overlay monitor
+            gpsX = Math.Max(gpsWa.Left, Math.Min(gpsX, gpsWa.Right  - gpsBtnSizePx));
+            gpsY = Math.Max(gpsWa.Top,  Math.Min(gpsY, gpsWa.Bottom - gpsPanelH));
+            var gr = (gpsX, gpsY, gpsBtnSizePx, gpsPanelH);
+            if (gr != _lastGpsRect)
+            {
+                _lastGpsRect = gr;
+                SetWindowPos(_gpsHwnd, IntPtr.Zero, gpsX, gpsY, gpsBtnSizePx, gpsPanelH, SWP_NOACTIVATE | SWP_NOZORDER);
+                InvalidateRect(_gpsHwnd, IntPtr.Zero, true);
+            }
+        }
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -1326,13 +1544,18 @@ public class MapLibreMapController : IMapLibreMapController
     {
         if (_childHwnd != IntPtr.Zero) KillTimer(_childHwnd, (IntPtr)OverlayZTimerId);
         if (_navFont  != IntPtr.Zero) { DeleteObject(_navFont);  _navFont  = IntPtr.Zero; }
+        if (_navArrowFont != IntPtr.Zero) { DeleteObject(_navArrowFont); _navArrowFont = IntPtr.Zero; }
         if (_attrFont != IntPtr.Zero) { DeleteObject(_attrFont); _attrFont = IntPtr.Zero; }
+        if (_gpsFont  != IntPtr.Zero) { DeleteObject(_gpsFont);  _gpsFont  = IntPtr.Zero; }
         if (_navHwnd  != IntPtr.Zero) { DestroyWindow(_navHwnd);  _navHwnd  = IntPtr.Zero; }
         if (_attrHwnd != IntPtr.Zero) { DestroyWindow(_attrHwnd); _attrHwnd = IntPtr.Zero; }
+        if (_gpsHwnd  != IntPtr.Zero) { DestroyWindow(_gpsHwnd);  _gpsHwnd  = IntPtr.Zero; }
         _navWndProc  = null;
         _attrWndProc = null;
+        _gpsWndProc  = null;
         _lastNavRect  = default;
         _lastAttrRect = default;
+        _lastGpsRect  = default;
         _attrCollapseTimer?.Dispose(); _attrCollapseTimer = null;
     }
 
@@ -1356,22 +1579,42 @@ public class MapLibreMapController : IMapLibreMapController
             case WM_PAINT:
                 PaintNavPanel(hWnd);
                 return IntPtr.Zero;
+
             case WM_LBUTTONDOWN:
             {
+                int dpadPx    = (int)(NavDpadSize   * _pixelRatio);
                 int btnSizePx = (int)(NavButtonSize * _pixelRatio);
+                int x = (short)(unchecked((int)lParam.ToInt64()) & 0xFFFF);
                 int y = (short)((unchecked((int)lParam.ToInt64()) >> 16) & 0xFFFF);
-                int btn = y / (btnSizePx + 1);
-                switch (btn)
-                {
-                    case 0: ZoomIn();    break;  // top button = zoom in (+)
-                    case 1: ZoomOut();   break;  // middle     = zoom out (−)
-                    case 2: ResetNorth();break;  // bottom     = compass/reset-north
-                }
+                if (y < dpadPx)                                   HandleDpadClick(x, y, dpadPx);
+                else if (y < dpadPx + btnSizePx + 1)             ZoomIn();   // upper zoom = +
+                else                                             ZoomOut();  // lower zoom = −
                 return IntPtr.Zero;
             }
+
             case WM_NCHITTEST: return HTCLIENT;
         }
         return DefWindowProcA(hWnd, msg, wParam, lParam);
+    }
+
+    /// <summary>
+    /// Handle a click on the round d-pad: center = reset north, arrows rotate the
+    /// map (left/right ±15°) or tilt it (up/down ±10°, clamped 0–60°).
+    /// </summary>
+    private void HandleDpadClick(int x, int y, int dpadPx)
+    {
+        double c    = dpadPx / 2.0;
+        double dx   = x - c;
+        double dy   = y - c;
+        double dist = Math.Sqrt(dx * dx + dy * dy);
+
+        // Small central hit zone → reset bearing/pitch to north.
+        if (dist <= dpadPx * 0.22) { ResetNorth(); return; }
+
+        if (Math.Abs(dx) >= Math.Abs(dy))
+            RotateBy(dx > 0 ? 15 : -15);   // right = clockwise, left = counter-clockwise
+        else
+            PitchBy(dy < 0 ? 10 : -10);    // up = more tilt, down = less tilt
     }
 
     private void PaintNavPanel(IntPtr hWnd)
@@ -1384,7 +1627,9 @@ public class MapLibreMapController : IMapLibreMapController
         try
         {
             GetClientRect(hWnd, out var rc);
-            int btnSizePx = rc.Right;  // window width == button size
+            int dpadPx    = (int)(NavDpadSize   * _pixelRatio);
+            int btnSizePx = (int)(NavButtonSize * _pixelRatio);
+            int w         = rc.Right;   // window width == d-pad diameter
 
             // White rounded background
             var bgBrush  = CreateSolidBrush(0x00FFFFFF);
@@ -1397,30 +1642,74 @@ public class MapLibreMapController : IMapLibreMapController
             DeleteObject(bgBrush);
             DeleteObject(borderPen);
 
-            // Divider lines between buttons
+            // ── Round d-pad (top slot) ───────────────────────────────────────
+            int cx = w / 2;
+            int cy = dpadPx / 2;
+            int ringR = (int)(dpadPx * 0.40);
+
+            // Hollow "compass" ring around the direction buttons.
+            var ringPen = CreatePen(PS_SOLID, 1, 0x00CCCCCC);
+            SelectObject(hdc, ringPen);
+            SelectObject(hdc, GetStockObject(NULL_BRUSH));
+            Ellipse(hdc, cx - ringR, cy - ringR, cx + ringR, cy + ringR);
+            // Small north tick (rotates opposite to the map bearing).
+            double bearingRad = -GetBearing() * Math.PI / 180.0;
+            int tickR1 = ringR;
+            int tickR2 = ringR - Math.Max(3, (int)(dpadPx * 0.10));
+            var northPen = CreatePen(PS_SOLID, 2, 0x000A66CC);
+            SelectObject(hdc, northPen);
+            MoveToEx(hdc, cx + (int)(Math.Sin(bearingRad) * tickR2),
+                          cy - (int)(Math.Cos(bearingRad) * tickR2), IntPtr.Zero);
+            LineTo(hdc,   cx + (int)(Math.Sin(bearingRad) * tickR1),
+                          cy - (int)(Math.Cos(bearingRad) * tickR1));
+            SelectObject(hdc, oldPen);
+            DeleteObject(ringPen);
+            DeleteObject(northPen);
+
+            // Direction glyphs + centre dot.
+            SetBkMode(hdc, TRANSPARENT);
+            SetTextColor(hdc, 0x00333333);
+            var oldFont = SelectObject(hdc, _navArrowFont != IntPtr.Zero ? _navArrowFont : _navFont);
+            int gOff = (int)(ringR * 0.60);
+            PaintGlyphCentered(hdc, "\u25B2", cx,        cy - gOff);  // ▲ up    (pitch +)
+            PaintGlyphCentered(hdc, "\u25BC", cx,        cy + gOff);  // ▼ down  (pitch −)
+            PaintGlyphCentered(hdc, "\u25C0", cx - gOff, cy);         // ◀ left  (rotate ccw)
+            PaintGlyphCentered(hdc, "\u25B6", cx + gOff, cy);         // ▶ right (rotate cw)
+            SelectObject(hdc, oldFont);
+
+            // Centre reset dot.
+            var dotBrush = CreateSolidBrush(0x00999999);
+            var oldDot   = SelectObject(hdc, dotBrush);
+            int dotR = Math.Max(2, (int)(dpadPx * 0.06));
+            Ellipse(hdc, cx - dotR, cy - dotR, cx + dotR, cy + dotR);
+            SelectObject(hdc, oldDot);
+            DeleteObject(dotBrush);
+
+            // ── Divider lines between d-pad and the two zoom buttons ─────────
             var divPen = CreatePen(PS_SOLID, 1, 0x00E0E0E0);
             SelectObject(hdc, divPen);
-            MoveToEx(hdc, 4, btnSizePx, IntPtr.Zero);
-            LineTo(hdc, btnSizePx - 4, btnSizePx);
-            MoveToEx(hdc, 4, btnSizePx * 2 + 1, IntPtr.Zero);
-            LineTo(hdc, btnSizePx - 4, btnSizePx * 2 + 1);
+            MoveToEx(hdc, 4, dpadPx, IntPtr.Zero);
+            LineTo(hdc, w - 4, dpadPx);
+            MoveToEx(hdc, 4, dpadPx + btnSizePx + 1, IntPtr.Zero);
+            LineTo(hdc, w - 4, dpadPx + btnSizePx + 1);
             SelectObject(hdc, oldPen);
             DeleteObject(divPen);
 
-            // Button labels: +, −, ↑ (compass north arrow)
-            SetBkMode(hdc, TRANSPARENT);
+            // ── Zoom buttons: +, − ───────────────────────────────────────────
             SetTextColor(hdc, 0x00333333);
-            var oldFont = SelectObject(hdc, _navFont != IntPtr.Zero ? _navFont : IntPtr.Zero);
-
-            // Measure each symbol to center it.
-            PaintCenteredText(hdc, "+",    0,             btnSizePx, btnSizePx);
-            PaintCenteredText(hdc, "−",    btnSizePx + 1, btnSizePx, btnSizePx);
-            // ↑ compass arrow (Unicode north arrow ↑)
-            PaintCenteredText(hdc, "↑",    btnSizePx * 2 + 2, btnSizePx, btnSizePx);
-
+            oldFont = SelectObject(hdc, _navFont != IntPtr.Zero ? _navFont : IntPtr.Zero);
+            PaintCenteredText(hdc, "+", dpadPx + 1,             btnSizePx, w);
+            PaintCenteredText(hdc, "−", dpadPx + btnSizePx + 2, btnSizePx, w);
             SelectObject(hdc, oldFont);
         }
         finally { EndPaint(hWnd, ref ps); }
+    }
+
+    /// <summary>Draw <paramref name="text"/> centred on the point (centerX, centerY).</summary>
+    private static void PaintGlyphCentered(IntPtr hdc, string text, int centerX, int centerY)
+    {
+        GetTextExtentPoint32W(hdc, text, text.Length, out var sz);
+        TextOutW(hdc, centerX - sz.cx / 2, centerY - sz.cy / 2, text, text.Length);
     }
 
     private static void PaintCenteredText(IntPtr hdc, string text, int rowY, int rowH, int rowW)
@@ -1429,6 +1718,217 @@ public class MapLibreMapController : IMapLibreMapController
         int x = (rowW - sz.cx) / 2;
         int y = rowY + (rowH - sz.cy) / 2;
         TextOutW(hdc, x, y, text, text.Length);
+    }
+
+    // ── GPS overlay WndProc ───────────────────────────────────────────────────
+
+    private IntPtr GpsOverlayWndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
+    {
+        switch (msg)
+        {
+            case WM_ERASEBKGND: return new IntPtr(1);
+            case WM_PAINT:
+                PaintGpsPanel(hWnd);
+                return IntPtr.Zero;
+            case WM_LBUTTONDOWN:
+            {
+                int btnSizePx = (int)(NavButtonSize * _pixelRatio);
+                int y = (short)((unchecked((int)lParam.ToInt64()) >> 16) & 0xFFFF);
+                int btn = y / (btnSizePx + 1);
+                switch (btn)
+                {
+                    case 0: CycleGpsMode();             break;  // top    = GPS tracking state
+                    case 1: GpsBearingButtonPressed(); break;  // bottom = reset north / drop FollowBearing→Follow
+                }
+                return IntPtr.Zero;
+            }
+            case WM_NCHITTEST: return HTCLIENT;
+        }
+        return DefWindowProcA(hWnd, msg, wParam, lParam);
+    }
+
+    /// <summary>Cycle GPS tracking mode: Off → Show → Follow → FollowBearing → Off.</summary>
+    private void CycleGpsMode()
+    {
+        _gpsMode = _gpsMode switch
+        {
+            GpsTrackingMode.Off           => GpsTrackingMode.Show,
+            GpsTrackingMode.Show          => GpsTrackingMode.Follow,
+            GpsTrackingMode.Follow        => GpsTrackingMode.FollowBearing,
+            GpsTrackingMode.FollowBearing => GpsTrackingMode.Off,
+            _                             => GpsTrackingMode.Off,
+        };
+
+        ApplyGpsMode();
+
+        // Repaint the button to reflect the new state
+        if (_gpsHwnd != IntPtr.Zero)
+            InvalidateRect(_gpsHwnd, IntPtr.Zero, true);
+    }
+
+    /// <summary>Apply the current GPS mode to the location indicator and camera.</summary>
+    private void ApplyGpsMode()
+    {
+        if (_gpsMode == GpsTrackingMode.Off)
+        {
+            ClearLocationIndicator();
+        }
+        else if (_hasGpsFix)
+        {
+            // (Re-)apply the last known GPS fix to the location indicator
+            _pendingLocInd = new LocIndParams(_lastGpsLat, _lastGpsLon, _lastGpsBearing, Math.Max(5f, _lastGpsAccuracy));
+            if (_gpsMode is GpsTrackingMode.Follow or GpsTrackingMode.FollowBearing)
+            {
+                double cameraZoom    = GetZoom() < 8 ? 14 : GetZoom();
+                double cameraBearing = _gpsMode == GpsTrackingMode.FollowBearing ? _lastGpsBearing : GetBearing();
+                EaseTo(_lastGpsLat, _lastGpsLon, cameraZoom, cameraBearing, GetPitch(), durationMs: 300);
+            }
+            if (_styleReady && _style != null)
+                ApplyPendingLocationIndicator();
+            _renderNeedsUpdate = true;
+        }
+    }
+
+    /// <summary>
+    /// Feed a GPS location update to the controller.
+    /// The controller stores the fix and applies it according to the current
+    /// <see cref="GpsTrackingMode"/> (Off = ignored; Show = update dot only;
+    /// Follow = update dot + re-centre camera).
+    /// </summary>
+    public void UpdateGpsLocation(double lat, double lon, float bearing = 0, float accuracyMeters = 10)
+    {
+        _lastGpsLat      = lat;
+        _lastGpsLon      = lon;
+        _lastGpsBearing  = bearing;
+        _lastGpsAccuracy = accuracyMeters;
+        bool isFirstFix  = !_hasGpsFix;
+        _hasGpsFix       = true;
+
+        if (_gpsMode == GpsTrackingMode.Off) return;
+
+        bool follow        = _gpsMode is GpsTrackingMode.Follow or GpsTrackingMode.FollowBearing;
+        bool useBearing    = _gpsMode == GpsTrackingMode.FollowBearing;
+        _pendingLocInd     = new LocIndParams(lat, lon, bearing, Math.Max(5f, accuracyMeters));
+
+        if (follow)
+        {
+            double cameraZoom    = GetZoom() < 8 ? 14 : GetZoom();
+            double cameraBearing = useBearing ? bearing : GetBearing();
+            if (isFirstFix) JumpTo(lat, lon, cameraZoom, cameraBearing, GetPitch());
+            else            EaseTo(lat, lon, GetZoom(), cameraBearing, GetPitch(), durationMs: 200);
+        }
+
+        if (_styleReady && _style != null)
+            ApplyPendingLocationIndicator();
+        _renderNeedsUpdate = true;
+        _map?.TriggerRepaint();
+
+        // Refresh the GPS button (state indicator icon may change on first fix)
+        if (isFirstFix && _gpsHwnd != IntPtr.Zero)
+            InvalidateRect(_gpsHwnd, IntPtr.Zero, true);
+    }
+
+    /// <summary>
+    /// Bearing button pressed: if in FollowBearing mode, drop to Follow (stop rotating) and
+    /// reset bearing to north; otherwise just reset bearing to north.
+    /// </summary>
+    private void GpsBearingButtonPressed()
+    {
+        if (_gpsMode == GpsTrackingMode.FollowBearing)
+        {
+            _gpsMode = GpsTrackingMode.Follow;
+            if (_gpsHwnd != IntPtr.Zero)
+                InvalidateRect(_gpsHwnd, IntPtr.Zero, true);
+        }
+        ResetNorth();
+    }
+
+    public void SetShowGpsControl(bool show)
+    {
+        _showGpsControl = show;
+        ShowOverlays();
+    }
+
+    private void PaintGpsPanel(IntPtr hWnd)
+    {
+        var ps = new PAINTSTRUCT { rgbReserved = new byte[32] };
+        var hdc = BeginPaint(hWnd, out ps);
+        try
+        {
+            GetClientRect(hWnd, out var rc);
+            int btnSizePx = rc.Right;
+
+            // ── Background ───────────────────────────────────────────────────
+            var bgBrush   = CreateSolidBrush(0x00FFFFFF);
+            var borderPen = CreatePen(PS_SOLID, 1, 0x00CCCCCC);
+            var oldBrush  = SelectObject(hdc, bgBrush);
+            var oldPen    = SelectObject(hdc, borderPen);
+            RoundRect(hdc, 0, 0, rc.Right, rc.Bottom, 6, 6);
+            SelectObject(hdc, oldBrush);
+            SelectObject(hdc, oldPen);
+            DeleteObject(bgBrush);
+            DeleteObject(borderPen);
+
+            // ── Divider ───────────────────────────────────────────────────────
+            var divPen = CreatePen(PS_SOLID, 1, 0x00E0E0E0);
+            var divOld = SelectObject(hdc, divPen);
+            MoveToEx(hdc, 4, btnSizePx, IntPtr.Zero);
+            LineTo(hdc, btnSizePx - 4, btnSizePx);
+            SelectObject(hdc, divOld);
+            DeleteObject(divPen);
+
+            SetBkMode(hdc, TRANSPARENT);
+            var oldFont = SelectObject(hdc, _gpsFont != IntPtr.Zero ? _gpsFont : IntPtr.Zero);
+
+            // ── GPS button (top) — colour reflects tracking state ─────────────
+            // OFF:    ⊙ gray     SHOW: ⊙ blue    FOLLOW: ◎ teal/blue bg tint
+            uint gpsColor;
+            string gpsSymbol;
+            switch (_gpsMode)
+            {
+                case GpsTrackingMode.Show:
+                    gpsColor  = 0x00E58800;   // BGR blue = #1E88E5
+                    gpsSymbol = "\u2299";      // ⊙ circled dot
+                    break;
+                case GpsTrackingMode.Follow:
+                    // Highlight the button with a tinted background
+                    var tintBrush = CreateSolidBrush(0x00FFF3E0);  // RGB(224,243,255) light blue tint
+                    var tintOld   = SelectObject(hdc, tintBrush);
+                    RoundRect(hdc, 1, 1, btnSizePx - 1, btnSizePx - 1, 4, 4);
+                    SelectObject(hdc, tintOld);
+                    DeleteObject(tintBrush);
+                    gpsColor  = 0x00C57000;   // RGB(0,112,197) deep blue = #0070C5
+                    gpsSymbol = "\u25CE";      // ◎ bullseye / follow
+                    break;
+                case GpsTrackingMode.FollowBearing:
+                    // Orange-tinted background — indicates active bearing-rotation navigation mode
+                    var tintBrush2 = CreateSolidBrush(0x00E0F3FF);  // RGB(255,243,224) warm orange tint
+                    var tintOld2   = SelectObject(hdc, tintBrush2);
+                    RoundRect(hdc, 1, 1, btnSizePx - 1, btnSizePx - 1, 4, 4);
+                    SelectObject(hdc, tintOld2);
+                    DeleteObject(tintBrush2);
+                    gpsColor  = 0x00007CF5;   // RGB(245,124,0) orange-amber = #F57C00
+                    gpsSymbol = "\u25B2";      // ▲ navigation triangle / heading-up
+                    break;
+                default: // Off
+                    gpsColor  = 0x00999999;   // gray
+                    gpsSymbol = "\u25CB";      // ○ empty circle
+                    break;
+            }
+            SetTextColor(hdc, gpsColor);
+            PaintCenteredText(hdc, gpsSymbol, 0, btnSizePx, btnSizePx);
+
+            // ── Bearing reset button (bottom) ─────────────────────────────────
+            // Shows the north-arrow "↑" in neutral gray; changes to blue accent
+            // when the map is rotated away from north (bearing != ~0°).
+            double bearing = GetBearing();
+            uint bearingColor = Math.Abs(bearing) > 0.5 ? 0x00E58800u : 0x00555555u;
+            SetTextColor(hdc, bearingColor);
+            PaintCenteredText(hdc, "\u21BA", btnSizePx + 1, btnSizePx, btnSizePx);  // ↺ reset-to-north
+
+            SelectObject(hdc, oldFont);
+        }
+        finally { EndPaint(hWnd, ref ps); }
     }
 
     // ── Attribution overlay WndProc ────────────────────────────────────────────
@@ -1515,6 +2015,25 @@ public class MapLibreMapController : IMapLibreMapController
         _renderNeedsUpdate = true;
     }
 
+    /// <summary>Rotate the map by <paramref name="deltaDeg"/> (positive = clockwise).</summary>
+    private void RotateBy(double deltaDeg)
+    {
+        if (_map == null) return;
+        var center = GetCenter();
+        EaseTo(center.Latitude, center.Longitude, GetZoom(), GetBearing() + deltaDeg, GetPitch(), durationMs: 200);
+        _renderNeedsUpdate = true;
+    }
+
+    /// <summary>Tilt the map by <paramref name="deltaDeg"/>, clamped to 0–60°.</summary>
+    private void PitchBy(double deltaDeg)
+    {
+        if (_map == null) return;
+        var center = GetCenter();
+        double newPitch = Math.Max(0, Math.Min(60, GetPitch() + deltaDeg));
+        EaseTo(center.Latitude, center.Longitude, GetZoom(), GetBearing(), newPitch, durationMs: 200);
+        _renderNeedsUpdate = true;
+    }
+
     /// <summary>
     /// Rebuilds the attribution text from all loaded TileJSON sources and repositions
     /// the attribution overlay. Called after <c>StyleLoaded</c>.
@@ -1525,10 +2044,11 @@ public class MapLibreMapController : IMapLibreMapController
         var parts = new System.Collections.Generic.List<string>(_style.GetSourceAttributions());
         if (!string.IsNullOrWhiteSpace(_customAttribution))
             parts.Add(_customAttribution!);
+        var attributions = MbglStyle.EnsureMapLibreAttribution(parts);
         // Strip HTML tags to plain text (attribution strings from OSM are like
         // "© <a href='...'>OpenStreetMap</a> contributors" — we strip the links for now).
         var sb = new System.Text.StringBuilder();
-        foreach (var part in parts)
+        foreach (var part in attributions)
         {
             if (sb.Length > 0) sb.Append(" | ");
             sb.Append(StripHtmlTags(part));
@@ -1577,6 +2097,27 @@ public class MapLibreMapController : IMapLibreMapController
     {
         _showNavControls = show;
         ShowOverlays();
+    }
+
+    public void SetNavigationControlPosition(MapControlCorner corner)
+    {
+        if (_navCorner == corner) return;
+        _navCorner = corner;
+        PositionOverlays();
+    }
+
+    public void SetGpsControlPosition(MapControlCorner corner)
+    {
+        if (_gpsCorner == corner) return;
+        _gpsCorner = corner;
+        PositionOverlays();
+    }
+
+    public void SetAttributionControlPosition(MapControlCorner corner)
+    {
+        if (_attrCorner == corner) return;
+        _attrCorner = corner;
+        PositionOverlays();
     }
 
     public void SetShowAttributionControl(bool show, string? customAttribution)
@@ -1632,6 +2173,8 @@ public class MapLibreMapController : IMapLibreMapController
             SetWindowPos(_navHwnd,  HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         if (_attrHwnd != IntPtr.Zero)
             SetWindowPos(_attrHwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        if (_gpsHwnd  != IntPtr.Zero)
+            SetWindowPos(_gpsHwnd,  HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     }
 
     private IntPtr PopupWndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
@@ -1707,7 +2250,7 @@ public class MapLibreMapController : IMapLibreMapController
                         _map != null)
                     {
                         var ll = _map.LatLngForPixel(upX, upY);
-                        OnMapClickReceived?.Invoke(new LatLng(ll.Lat, ll.Lon));
+                        OnMapClickReceived?.Invoke(new LatLng(ll.Lat, ll.Lon), upX, upY);
                     }
                 }
                 return IntPtr.Zero;

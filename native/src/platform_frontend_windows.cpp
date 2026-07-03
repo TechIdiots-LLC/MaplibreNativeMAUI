@@ -44,7 +44,7 @@ class WGLBackend : public mbgl::gl::RendererBackend,
 public:
     WGLBackend(HDC hDC, HGLRC hGLRC, mbgl::Size sz)
         : mbgl::gfx::Renderable(sz, std::make_unique<WGLRenderableResource>(*this))
-        , mbgl::gl::RendererBackend(mbgl::gfx::ContextMode::Unique)
+        , mbgl::gl::RendererBackend(mbgl::gfx::ContextMode::Shared)
         , _hDC(hDC), _hGLRC(hGLRC)
     {}
 
@@ -58,14 +58,21 @@ protected:
         return reinterpret_cast<mbgl::gl::ProcAddress>(wglGetProcAddress(name));
     }
     // Re-sync mbgl's cached GL state to match what is actually current on the
-    // context. This is important because the host (.NET MAUI controller) may
-    // mutate framebuffer binding / viewport / clear state between frames
-    // (e.g. clearing the default framebuffer to a background color before
-    // mbgl's own renderer kicks in). Without this, mbgl's internal state
-    // cache thinks its bindings are already current and skips re-binding,
-    // producing missing fills / labels / draw calls.
+    // context. The host (.NET MAUI/WPF controller) calls glBindFramebuffer(0),
+    // glViewport, glClearColor, and glClear before each Render() call, so we
+    // must tell mbgl to treat those values as unknown.
     //
-    // Mirrors the Qt and MaplibreNative.NET-ac WGL backends.
+    // Using ContextMode::Shared (above) causes Context::createCommandEncoder()
+    // to call setDirtyState() automatically, which marks ALL GL state (blend,
+    // stencil, program, textures, etc.) as dirty so mbgl re-applies each one
+    // unconditionally. This prevents stale cached state from causing incorrect
+    // rendering of multi-pass effects like hillshade (which is the root cause
+    // of grey/white artifacts in hillshade and color-relief layers).
+    //
+    // We still call assumeFramebufferBinding and assumeViewport here because
+    // setDirtyState() explicitly skips those (see the comment in context.cpp:
+    // "does not set viewport/bindFramebuffer to dirty since they are handled
+    // separately in the view object").
     void updateAssumedState() override {
         assumeFramebufferBinding(ImplicitFramebufferBinding);
         assumeViewport(0, 0, size);

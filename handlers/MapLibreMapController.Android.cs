@@ -290,6 +290,40 @@ public class MapLibreMapController : IMapLibreMapController
     private int             _attrCollapseGen;            // generation counter for auto-collapse timer
     private bool            _attrLoaded;                 // true once attribution content has been fetched
 
+    // -- Navigation + GPS overlay controls -------------------------------------
+
+    // dp sizing (converted to px via display density at layout time)
+    private const int OverlayBtnDp   = 40;
+    private const int OverlayMarginDp = 8;
+    private const int OverlayGapDp    = 8;
+
+    private LinearLayout _navPanel        = null!;  // d-pad / zoom-in / zoom-out
+    private LinearLayout _gpsPanel        = null!;  // tracking / bearing-reset
+    private Android.Views.View _navNorthTick = null!;  // rotates with map bearing
+    private TextView     _gpsTrackingIcon = null!;  // reflects tracking mode
+    private TextView     _gpsBearingIcon  = null!;
+
+    private bool _showNavControls = true;
+    private bool _showGpsControl  = true;
+
+    private MapControlCorner _navCorner  = MapControlCorner.TopRight;
+    private MapControlCorner _gpsCorner  = MapControlCorner.TopRight;
+    private MapControlCorner _attrCorner = MapControlCorner.BottomLeft;
+
+    // GPS tracking state (fixes are fed externally via UpdateGpsLocation)
+    private enum GpsTrackingMode { Off, Show, Follow, FollowBearing }
+    private GpsTrackingMode _gpsMode = GpsTrackingMode.Off;
+    private double _lastGpsLat, _lastGpsLon;
+    private float  _lastGpsBearing;
+    private float  _lastGpsAccuracy = 10f;
+    private bool   _hasGpsFix;
+
+    // Location indicator puck (portable style layer, shared with Windows impl)
+    private const string LocIndLayerId = "__mln_location_indicator";
+    private MbglLayer? _locIndLayer;
+    private readonly record struct LocIndParams(double Lat, double Lon, float Bearing, float AccuracyM);
+    private LocIndParams? _pendingLocInd;
+
     // -- Gesture state ---------------------------------------------------------
 
     private GestureDetector      _gestureDetector = null!;
@@ -314,8 +348,8 @@ public class MapLibreMapController : IMapLibreMapController
     public event Action?                     OnCameraIdleReceived;
     public event Action<int>?                OnCameraTrackingChangedReceived;
     public event Action?                     OnCameraTrackingDismissedReceived;
-    public event Func<LatLng, bool>?         OnMapClickReceived;
-    public event Func<LatLng, bool>?         OnMapLongClickReceived;
+    public event Func<LatLng, double, double, bool>?         OnMapClickReceived;
+    public event Func<LatLng, double, double, bool>?         OnMapLongClickReceived;
     public event Action<Style>?              OnStyleLoadedReceived;
     public event Action<Location>?           OnUserLocationUpdateReceived;
     public event Action<string>?             OnDidFailLoadingMapReceived;
@@ -378,7 +412,211 @@ public class MapLibreMapController : IMapLibreMapController
         btnParams.SetMargins(0, 0, 8, 8);
         container.AddView(_attrButton, btnParams);
 
+        // Navigation + GPS overlay panels (custom native views — mln-cabi does
+        // not expose the platform SDK's built-in controls).
+        BuildNavigationPanel(ctx, container);
+        BuildGpsPanel(ctx, container);
+
         View = container;
+        RepositionOverlays();
+    }
+
+    // -- Navigation + GPS panel construction -----------------------------------
+
+    private void BuildNavigationPanel(global::Android.Content.Context ctx, FrameLayout container)
+    {
+        float d = ctx.Resources!.DisplayMetrics!.Density;
+        int btn = (int)Math.Round(OverlayBtnDp * d);
+
+        _navPanel = new LinearLayout(ctx) { Orientation = Orientation.Vertical };
+        _navPanel.SetBackgroundColor(Android.Graphics.Color.Argb(230, 255, 255, 255));
+
+        // Round rotate/pitch d-pad on top.
+        var dpad = BuildDpad(ctx, btn, d);
+
+        var zoomIn   = MakeOverlayButton(ctx, "\uFF0B", btn);   // ＋
+        zoomIn.Click += (_, _) => ZoomBy(1);
+        var divider1 = MakeDivider(ctx, btn, d);
+        var zoomOut  = MakeOverlayButton(ctx, "\uFF0D", btn);   // －
+        zoomOut.Click += (_, _) => ZoomBy(-1);
+        var divider2 = MakeDivider(ctx, btn, d);
+
+        _navPanel.AddView(dpad);
+        _navPanel.AddView(divider2);
+        _navPanel.AddView(zoomIn);
+        _navPanel.AddView(divider1);
+        _navPanel.AddView(zoomOut);
+
+        _navPanel.Visibility = _showNavControls ? ViewStates.Visible : ViewStates.Gone;
+        container.AddView(_navPanel, new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent));
+    }
+
+    /// <summary>
+    /// Builds the round rotate/pitch d-pad: up/down tilt the map (±10°, clamped
+    /// 0–60°), left/right rotate it (±15°), the centre resets north, and a hollow
+    /// ring around the arrows carries a blue north tick that tracks the bearing.
+    /// </summary>
+    private FrameLayout BuildDpad(global::Android.Content.Context ctx, int btn, float density)
+    {
+        var host = new FrameLayout(ctx)
+        {
+            LayoutParameters = new LinearLayout.LayoutParams(btn, btn),
+        };
+
+        int cell = btn / 3;
+
+        TextView Cell(string? text, Action? onClick)
+        {
+            var tv = new TextView(ctx)
+            {
+                Gravity          = GravityFlags.Center,
+                LayoutParameters = new LinearLayout.LayoutParams(cell, cell),
+            };
+            if (text != null)
+            {
+                tv.Text = text;
+                tv.SetTextSize(Android.Util.ComplexUnitType.Sp, 8f);
+                tv.SetTextColor(Android.Graphics.Color.Argb(230, 40, 40, 40));
+            }
+            if (onClick != null) { tv.Clickable = true; tv.Click += (_, _) => onClick(); }
+            return tv;
+        }
+
+        LinearLayout Row(params Android.Views.View[] cells)
+        {
+            var r = new LinearLayout(ctx)
+            {
+                Orientation      = Orientation.Horizontal,
+                LayoutParameters = new LinearLayout.LayoutParams(btn, cell),
+            };
+            foreach (var c in cells) r.AddView(c);
+            return r;
+        }
+
+        var grid = new LinearLayout(ctx)
+        {
+            Orientation      = Orientation.Vertical,
+            LayoutParameters = new FrameLayout.LayoutParams(btn, btn),
+        };
+        grid.AddView(Row(Cell(null, null),               Cell("\u25B2", () => PitchBy(10)),  Cell(null, null)));                // ▲ up
+        grid.AddView(Row(Cell("\u25C0", () => RotateBy(-15)), Cell(null, ResetNorth),         Cell("\u25B6", () => RotateBy(15))));  // ◀ reset ▶
+        grid.AddView(Row(Cell(null, null),               Cell("\u25BC", () => PitchBy(-10)), Cell(null, null)));                // ▼ down
+        host.AddView(grid);
+
+        // Hollow compass ring around the arrows (non-interactive).
+        int ringSize = (int)(btn * 0.80);
+        var ring = new Android.Views.View(ctx) { Clickable = false };
+        var ringDrawable = new Android.Graphics.Drawables.GradientDrawable();
+        ringDrawable.SetShape(Android.Graphics.Drawables.ShapeType.Oval);
+        ringDrawable.SetStroke(Math.Max(1, (int)Math.Round(density)), Android.Graphics.Color.Argb(255, 204, 204, 204));
+        ring.Background = ringDrawable;
+        host.AddView(ring, new FrameLayout.LayoutParams(ringSize, ringSize) { Gravity = GravityFlags.Center });
+
+        // North tick — a short blue mark at the top of the ring that rotates with bearing.
+        _navNorthTick = new FrameLayout(ctx) { Clickable = false };
+        var tick = new Android.Views.View(ctx);
+        tick.SetBackgroundColor(Android.Graphics.Color.Argb(255, 10, 102, 204));
+        var tickLp = new FrameLayout.LayoutParams(Math.Max(2, (int)Math.Round(density * 2)), (int)(btn * 0.14))
+        {
+            Gravity   = GravityFlags.Top | GravityFlags.CenterHorizontal,
+            TopMargin = (btn - ringSize) / 2,
+        };
+        ((FrameLayout)_navNorthTick).AddView(tick, tickLp);
+        host.AddView(_navNorthTick, new FrameLayout.LayoutParams(btn, btn));
+
+        return host;
+    }
+
+    private void BuildGpsPanel(global::Android.Content.Context ctx, FrameLayout container)
+    {
+        float d = ctx.Resources!.DisplayMetrics!.Density;
+        int btn = (int)Math.Round(OverlayBtnDp * d);
+
+        _gpsPanel = new LinearLayout(ctx) { Orientation = Orientation.Vertical };
+        _gpsPanel.SetBackgroundColor(Android.Graphics.Color.Argb(230, 255, 255, 255));
+
+        _gpsTrackingIcon = MakeOverlayButton(ctx, "\u25CB", btn); // ○
+        _gpsTrackingIcon.Click += (_, _) => CycleGpsMode();
+        var divider = MakeDivider(ctx, btn, d);
+        _gpsBearingIcon  = MakeOverlayButton(ctx, "\u21BA", btn); // ↺
+        _gpsBearingIcon.Click += (_, _) => ResetNorth();
+
+        _gpsPanel.AddView(_gpsTrackingIcon);
+        _gpsPanel.AddView(divider);
+        _gpsPanel.AddView(_gpsBearingIcon);
+
+        _gpsPanel.Visibility = _showGpsControl ? ViewStates.Visible : ViewStates.Gone;
+        container.AddView(_gpsPanel, new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent));
+
+        RefreshGpsIcons();
+    }
+
+    private static TextView MakeOverlayButton(global::Android.Content.Context ctx, string text, int sizePx)
+    {
+        var tv = new TextView(ctx)
+        {
+            Text        = text,
+            Gravity     = GravityFlags.Center,
+            LayoutParameters = new LinearLayout.LayoutParams(sizePx, sizePx),
+        };
+        tv.SetTextSize(Android.Util.ComplexUnitType.Sp, 18f);
+        tv.SetTextColor(Android.Graphics.Color.Argb(230, 40, 40, 40));
+        tv.Clickable = true;
+        return tv;
+    }
+
+    private static Android.Views.View MakeDivider(global::Android.Content.Context ctx, int widthPx, float density)
+    {
+        var v = new Android.Views.View(ctx);
+        v.SetBackgroundColor(Android.Graphics.Color.Argb(40, 0, 0, 0));
+        v.LayoutParameters = new LinearLayout.LayoutParams(widthPx, Math.Max(1, (int)Math.Round(density)));
+        return v;
+    }
+
+    /// <summary>Anchors nav / GPS / attribution overlays to their corners and
+    /// applies vertical stacking when several share a corner.</summary>
+    private void RepositionOverlays()
+    {
+        if (View?.Context is not { } ctx) return;
+        float d = ctx.Resources!.DisplayMetrics!.Density;
+        int Px(double dp) => (int)Math.Round(dp * d);
+
+        int margin = Px(OverlayMarginDp);
+        int gap    = Px(OverlayGapDp);
+        int navH   = Px(OverlayBtnDp * 3 + 2);
+        int gpsH   = Px(OverlayBtnDp * 2 + 1);
+
+        bool navVis = _showNavControls;
+        bool gpsVis = _showGpsControl;
+
+        int StackOffset(MapControlCorner c, int idx)
+        {
+            int off = 0;
+            if (idx > 0 && navVis && _navCorner == c) off += navH + gap;
+            if (idx > 1 && gpsVis && _gpsCorner == c) off += gpsH + gap;
+            return off;
+        }
+
+        void Apply(Android.Views.View? v, MapControlCorner c, int off)
+        {
+            if (v?.LayoutParameters is not FrameLayout.LayoutParams lp) return;
+            bool left = c is MapControlCorner.TopLeft or MapControlCorner.BottomLeft;
+            bool top  = c is MapControlCorner.TopLeft or MapControlCorner.TopRight;
+            lp.Gravity = (left ? GravityFlags.Left : GravityFlags.Right)
+                       | (top  ? GravityFlags.Top  : GravityFlags.Bottom);
+            lp.LeftMargin   = left ? margin : 0;
+            lp.RightMargin  = left ? 0 : margin;
+            lp.TopMargin    = top  ? margin + off : 0;
+            lp.BottomMargin = top  ? 0 : margin + off;
+            v.LayoutParameters = lp;
+        }
+
+        Apply(_navPanel,   _navCorner,  StackOffset(_navCorner, 0));
+        Apply(_gpsPanel,   _gpsCorner,  StackOffset(_gpsCorner, 1));
+        Apply(_attrView,   _attrCorner, StackOffset(_attrCorner, 2));
+        Apply(_attrButton, _attrCorner, StackOffset(_attrCorner, 2));
     }
 
     // -- Surface lifecycle -----------------------------------------------------
@@ -436,6 +674,8 @@ public class MapLibreMapController : IMapLibreMapController
                 _style = _map?.GetStyle();
                 _attrLoaded = false;  // new style — sources may have different attribution
                 RefreshAttribution();
+                _locIndLayer = null;               // layer belongs to the old style
+                if (_pendingLocInd.HasValue) ApplyPendingLocationIndicator();
                 OnStyleLoadedReceived?.Invoke(new Style(null));
                 break;
             case "onDidBecomeIdle":
@@ -446,9 +686,11 @@ public class MapLibreMapController : IMapLibreMapController
                 break;
             case "onCameraIsChanging":
                 CollapseAttribution();
+                UpdateCompassRotation();
                 OnCameraMoveReceived?.Invoke();
                 break;
             case "onCameraDidChange":
+                UpdateCompassRotation();
                 OnCameraIdleReceived?.Invoke();
                 break;
             case "onDidFailLoadingMap":
@@ -497,7 +739,174 @@ public class MapLibreMapController : IMapLibreMapController
     public void SetCompassViewMargins(int x, int y)           { }
     public void SetAttributionButtonGravity(int v)            { }
     public void SetAttributionButtonMargins(int x, int y)     { }
-    public void SetShowNavigationControls(bool show)          { }
+    public void SetShowNavigationControls(bool show)
+    {
+        _showNavControls = show;
+        if (_navPanel != null)
+            _navPanel.Visibility = show ? ViewStates.Visible : ViewStates.Gone;
+        RepositionOverlays();
+    }
+
+    public void SetShowGpsControl(bool show)
+    {
+        _showGpsControl = show;
+        if (_gpsPanel != null)
+            _gpsPanel.Visibility = show ? ViewStates.Visible : ViewStates.Gone;
+        RepositionOverlays();
+    }
+
+    public void SetNavigationControlPosition(MapControlCorner corner)
+    {
+        if (_navCorner == corner) return;
+        _navCorner = corner;
+        RepositionOverlays();
+    }
+
+    public void SetGpsControlPosition(MapControlCorner corner)
+    {
+        if (_gpsCorner == corner) return;
+        _gpsCorner = corner;
+        RepositionOverlays();
+    }
+
+    public void SetAttributionControlPosition(MapControlCorner corner)
+    {
+        if (_attrCorner == corner) return;
+        _attrCorner = corner;
+        RepositionOverlays();
+    }
+
+    public void UpdateGpsLocation(double lat, double lon, float bearing = 0, float accuracyMeters = 10)
+    {
+        _lastGpsLat      = lat;
+        _lastGpsLon      = lon;
+        _lastGpsBearing  = bearing;
+        _lastGpsAccuracy = Math.Max(5f, accuracyMeters);
+        bool isFirstFix  = !_hasGpsFix;
+        _hasGpsFix       = true;
+
+        _pendingLocInd = new LocIndParams(lat, lon, bearing, _lastGpsAccuracy);
+
+        if (_gpsMode is GpsTrackingMode.Follow or GpsTrackingMode.FollowBearing && _map != null)
+        {
+            bool useBearing  = _gpsMode == GpsTrackingMode.FollowBearing;
+            double zoom      = _map.Zoom < 8 ? 14 : _map.Zoom;
+            double camBearing = useBearing ? bearing : _map.Bearing;
+            if (isFirstFix) _map.JumpTo(lat, lon, zoom, camBearing, _map.Pitch);
+            else            _map.EaseTo(lat, lon, _map.Zoom, camBearing, _map.Pitch, durationMs: 200);
+        }
+
+        if (_styleReady && _style != null)
+            ApplyPendingLocationIndicator();
+        _map?.TriggerRepaint();
+    }
+
+    // -- Navigation + GPS behaviour --------------------------------------------
+
+    private void ZoomBy(double delta)
+    {
+        if (_map == null) return;
+        var (lat, lon) = _map.Center;
+        _map.EaseTo(lat, lon, _map.Zoom + delta, _map.Bearing, _map.Pitch, durationMs: 200);
+    }
+
+    private void ResetNorth()
+    {
+        if (_map == null) return;
+        var (lat, lon) = _map.Center;
+        _map.EaseTo(lat, lon, _map.Zoom, 0, _map.Pitch, durationMs: 200);
+    }
+
+    /// <summary>Rotate the map by <paramref name="deltaDeg"/> (positive = clockwise).</summary>
+    private void RotateBy(double deltaDeg)
+    {
+        if (_map == null) return;
+        var (lat, lon) = _map.Center;
+        _map.EaseTo(lat, lon, _map.Zoom, _map.Bearing + deltaDeg, _map.Pitch, durationMs: 200);
+    }
+
+    /// <summary>Tilt the map by <paramref name="deltaDeg"/>, clamped to 0–60°.</summary>
+    private void PitchBy(double deltaDeg)
+    {
+        if (_map == null) return;
+        var (lat, lon) = _map.Center;
+        double newPitch = Math.Max(0, Math.Min(60, _map.Pitch + deltaDeg));
+        _map.EaseTo(lat, lon, _map.Zoom, _map.Bearing, newPitch, durationMs: 200);
+    }
+
+    private void CycleGpsMode()
+    {
+        _gpsMode = _gpsMode switch
+        {
+            GpsTrackingMode.Off           => GpsTrackingMode.Show,
+            GpsTrackingMode.Show          => GpsTrackingMode.Follow,
+            GpsTrackingMode.Follow        => GpsTrackingMode.FollowBearing,
+            _                             => GpsTrackingMode.Off,
+        };
+        RefreshGpsIcons();
+
+        if (_gpsMode == GpsTrackingMode.Off)
+        {
+            ClearLocationIndicator();
+            return;
+        }
+
+        // Re-apply the tracking behaviour to the last known fix.
+        if (_hasGpsFix)
+            UpdateGpsLocation(_lastGpsLat, _lastGpsLon, _lastGpsBearing, _lastGpsAccuracy);
+    }
+
+    private void RefreshGpsIcons()
+    {
+        if (_gpsTrackingIcon == null) return;
+        (string icon, int r, int g, int b) = _gpsMode switch
+        {
+            GpsTrackingMode.Show          => ("\u2299", 30, 136, 229),  // ⊙ blue
+            GpsTrackingMode.Follow        => ("\u25CE", 21, 101, 192),  // ◎ deep blue
+            GpsTrackingMode.FollowBearing => ("\u27A4", 245, 124, 0),   // ➤ orange
+            _                             => ("\u25CB", 120, 120, 120), // ○ gray (Off)
+        };
+        _gpsTrackingIcon.Text = icon;
+        _gpsTrackingIcon.SetTextColor(Android.Graphics.Color.Argb(255, r, g, b));
+    }
+
+    /// <summary>Rotates the compass north tick to reflect the current map bearing.</summary>
+    private void UpdateCompassRotation()
+    {
+        if (_navNorthTick == null || _map == null) return;
+        _navNorthTick.Rotation = -(float)_map.Bearing;
+    }
+
+    private void ApplyPendingLocationIndicator()
+    {
+        if (_pendingLocInd == null || _style == null || _gpsMode == GpsTrackingMode.Off) return;
+        var p  = _pendingLocInd.Value;
+        var ic = System.Globalization.CultureInfo.InvariantCulture;
+
+        if (_locIndLayer == null)
+        {
+            if (_style.HasLayer(LocIndLayerId)) _style.RemoveLayer(LocIndLayerId);
+            _locIndLayer = _style.AddLocationIndicatorLayer(LocIndLayerId);
+            _locIndLayer.SetPaintProperty("accuracy-radius-color", "\"rgba(30,136,229,0.3)\"");
+            _locIndLayer.SetPaintProperty("accuracy-radius-border-color", "\"rgba(30,136,229,0.85)\"");
+        }
+
+        bool showBearing = _gpsMode == GpsTrackingMode.FollowBearing;
+        _locIndLayer.SetPaintProperty("location",
+            $"[{p.Lat.ToString(ic)},{p.Lon.ToString(ic)},0]");
+        _locIndLayer.SetPaintProperty("bearing",
+            (showBearing ? p.Bearing : 0f).ToString(ic));
+        _locIndLayer.SetPaintProperty("accuracy-radius", p.AccuracyM.ToString(ic));
+    }
+
+    private void ClearLocationIndicatorInternal()
+    {
+        _pendingLocInd = null;
+        _locIndLayer   = null;
+        if (_styleReady && _style?.HasLayer(LocIndLayerId) == true)
+            _style.RemoveLayer(LocIndLayerId);
+        _map?.TriggerRepaint();
+    }
     public void SetShowAttributionControl(bool show, string? customAttribution)
     {
         _showAttrControl   = show;
@@ -519,8 +928,9 @@ public class MapLibreMapController : IMapLibreMapController
         var parts = new System.Collections.Generic.List<string>(_style.GetSourceAttributions());
         if (!string.IsNullOrWhiteSpace(_customAttribution))
             parts.Add(_customAttribution!);
+        var attributions = MbglStyle.EnsureMapLibreAttribution(parts);
 
-        if (parts.Count == 0 || !_showAttrControl)
+        if (attributions.Count == 0 || !_showAttrControl)
         {
             _attrView.Visibility   = ViewStates.Gone;
             _attrButton.Visibility = ViewStates.Gone;
@@ -528,7 +938,7 @@ public class MapLibreMapController : IMapLibreMapController
         }
 
         _attrLoaded = true;
-        _attrView.TextFormatted = BuildAttributionSpanned(parts);
+        _attrView.TextFormatted = BuildAttributionSpanned(attributions);
         ExpandAttribution();
     }
 
@@ -563,7 +973,7 @@ public class MapLibreMapController : IMapLibreMapController
     }
 
     private static ISpanned BuildAttributionSpanned(
-        System.Collections.Generic.List<string> parts)
+        System.Collections.Generic.IReadOnlyList<string> parts)
     {
         // Parse each part's HTML <a href> tags into URLSpans so links are clickable.
         var sb  = new SpannableStringBuilder();
@@ -906,7 +1316,7 @@ public class MapLibreMapController : IMapLibreMapController
     public bool FollowLocation { get; set; } = true;
     public bool ShowBearing    { get; set; } = true;
     public void UpdateLocationIndicator(double lat, double lon, float bearing = 0, float accuracyMeters = 10) { }
-    public void ClearLocationIndicator() { }
+    public void ClearLocationIndicator() => ClearLocationIndicatorInternal();
 
     // -- Gesture detection -----------------------------------------------------
 
@@ -1049,16 +1459,20 @@ public class MapLibreMapController : IMapLibreMapController
         {
             if (_ctrl._tpActive || _ctrl._map == null) return;
             float pr       = _ctrl._pixelRatio;
-            var (lat, lon) = _ctrl._map.LatLngForPixel(e.GetX() / pr, e.GetY() / pr);
-            _ctrl.OnMapLongClickReceived?.Invoke(new LatLng(lat, lon));
+            double sx      = e.GetX() / pr;
+            double sy      = e.GetY() / pr;
+            var (lat, lon) = _ctrl._map.LatLngForPixel(sx, sy);
+            _ctrl.OnMapLongClickReceived?.Invoke(new LatLng(lat, lon), sx, sy);
         }
 
         public override bool OnSingleTapConfirmed(MotionEvent e)
         {
             if (_ctrl._map == null) return false;
             float pr       = _ctrl._pixelRatio;
-            var (lat, lon) = _ctrl._map.LatLngForPixel(e.GetX() / pr, e.GetY() / pr);
-            _ctrl.OnMapClickReceived?.Invoke(new LatLng(lat, lon));
+            double sx      = e.GetX() / pr;
+            double sy      = e.GetY() / pr;
+            var (lat, lon) = _ctrl._map.LatLngForPixel(sx, sy);
+            _ctrl.OnMapClickReceived?.Invoke(new LatLng(lat, lon), sx, sy);
             return true;
         }
 

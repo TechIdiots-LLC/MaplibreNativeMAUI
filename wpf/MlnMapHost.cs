@@ -71,7 +71,67 @@ public class MlnMapHost : HwndHost
 
     private static void OnShowNavChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
-        if (d is MlnMapHost h) h.UpdateNavPopupOpen();
+        if (d is not MlnMapHost h) return;
+        h.UpdateNavPopupOpen();
+        // Stacked controls below the nav panel shift up/down as it is hidden/shown.
+        h.PositionGpsPopup();
+        h.PositionAttributionPopup();
+    }
+
+    public bool ShowGpsControl
+    {
+        get => (bool)GetValue(ShowGpsControlProperty);
+        set => SetValue(ShowGpsControlProperty, value);
+    }
+    public static readonly DependencyProperty ShowGpsControlProperty =
+        DependencyProperty.Register(nameof(ShowGpsControl), typeof(bool), typeof(MlnMapHost),
+            new PropertyMetadata(true, (d, _) => { if (d is MlnMapHost h) { h.UpdateGpsPopupOpen(); h.PositionAttributionPopup(); } }));
+
+    /// <summary>
+    /// Corner the navigation control is anchored to. When multiple controls share
+    /// a corner they stack (navigation, then GPS, then attribution). Default TopRight.
+    /// </summary>
+    public MapControlCorner NavigationControlPosition
+    {
+        get => (MapControlCorner)GetValue(NavigationControlPositionProperty);
+        set => SetValue(NavigationControlPositionProperty, value);
+    }
+    public static readonly DependencyProperty NavigationControlPositionProperty =
+        DependencyProperty.Register(nameof(NavigationControlPosition), typeof(MapControlCorner), typeof(MlnMapHost),
+            new PropertyMetadata(MapControlCorner.TopRight, OnControlPositionChanged));
+
+    /// <summary>
+    /// Corner the GPS control is anchored to. When multiple controls share a
+    /// corner they stack (navigation, then GPS, then attribution). Default TopRight.
+    /// </summary>
+    public MapControlCorner GpsControlPosition
+    {
+        get => (MapControlCorner)GetValue(GpsControlPositionProperty);
+        set => SetValue(GpsControlPositionProperty, value);
+    }
+    public static readonly DependencyProperty GpsControlPositionProperty =
+        DependencyProperty.Register(nameof(GpsControlPosition), typeof(MapControlCorner), typeof(MlnMapHost),
+            new PropertyMetadata(MapControlCorner.TopRight, OnControlPositionChanged));
+
+    /// <summary>
+    /// Corner the attribution control is anchored to. When multiple controls share
+    /// a corner they stack (navigation, then GPS, then attribution). Default BottomLeft.
+    /// </summary>
+    public MapControlCorner AttributionControlPosition
+    {
+        get => (MapControlCorner)GetValue(AttributionControlPositionProperty);
+        set => SetValue(AttributionControlPositionProperty, value);
+    }
+    public static readonly DependencyProperty AttributionControlPositionProperty =
+        DependencyProperty.Register(nameof(AttributionControlPosition), typeof(MapControlCorner), typeof(MlnMapHost),
+            new PropertyMetadata(MapControlCorner.BottomLeft, OnControlPositionChanged));
+
+    private static void OnControlPositionChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is not MlnMapHost h) return;
+        h.PositionNavPopup();
+        h.PositionGpsPopup();
+        h.PositionAttributionPopup();
     }
 
     // ── Public non-DP properties ──────────────────────────────────────────────
@@ -123,6 +183,25 @@ public class MlnMapHost : HwndHost
         double currentBearing = _map.Bearing;
         double newPitch = Math.Abs(currentBearing) < 0.5 ? 0 : _map.Pitch;
         _map.EaseTo(lat, lon, _map.Zoom, bearing: 0, pitch: newPitch, durationMs: 300);
+        _renderNeedsUpdate = true;
+    }
+
+    /// <summary>Rotate the map by <paramref name="deltaDeg"/> (positive = clockwise).</summary>
+    public void RotateBy(double deltaDeg)
+    {
+        if (_map == null) return;
+        var (lat, lon) = _map.Center;
+        _map.EaseTo(lat, lon, _map.Zoom, _map.Bearing + deltaDeg, _map.Pitch, durationMs: 200);
+        _renderNeedsUpdate = true;
+    }
+
+    /// <summary>Tilt the map by <paramref name="deltaDeg"/>, clamped to 0–60°.</summary>
+    public void PitchBy(double deltaDeg)
+    {
+        if (_map == null) return;
+        var (lat, lon) = _map.Center;
+        double newPitch = Math.Max(0, Math.Min(60, _map.Pitch + deltaDeg));
+        _map.EaseTo(lat, lon, _map.Zoom, _map.Bearing, newPitch, durationMs: 200);
         _renderNeedsUpdate = true;
     }
 
@@ -360,10 +439,51 @@ public class MlnMapHost : HwndHost
     [DllImport("user32.dll")] private static extern int   ReleaseDC(IntPtr hWnd, IntPtr hDC);
     [DllImport("user32.dll")] private static extern IntPtr SetCapture(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern bool  ReleaseCapture();
+    [DllImport("user32.dll")] private static extern bool  GetClientRect(IntPtr hWnd, out WpfRect lpRect);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct POINT { public int X, Y; }
     [DllImport("user32.dll")] private static extern bool ScreenToClient(IntPtr hWnd, ref POINT lpPoint);
+
+    // Monitor work area — keeps popups above the taskbar
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromPoint(POINT pt, uint dwFlags);
+    [DllImport("user32.dll", EntryPoint = "GetMonitorInfoW")]
+    private static extern bool GetMonitorInfoW(IntPtr hMonitor, ref WpfMonitorInfo mi);
+    private const uint MONITOR_DEFAULTTONEAREST = 2;
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WpfMonitorInfo
+    {
+        public uint  cbSize;
+        public WpfRect rcMonitor;
+        public WpfRect rcWork;
+        public uint  dwFlags;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WpfRect { public int Left, Top, Right, Bottom; }
+
+    /// <summary>
+    /// Returns the work area of the monitor containing the given DEVICE-pixel point,
+    /// expressed in WPF logical (device-independent) pixels.
+    /// Each popup passes its own intended center position so the correct monitor is
+    /// queried even when the map window spans two screens (multi-monitor).
+    /// Falls back to <see cref="SystemParameters.WorkArea"/> on failure.
+    /// </summary>
+    private Rect GetWorkAreaLogicalAt(Point devicePt)
+    {
+        var src = PresentationSource.FromVisual(this);
+        if (src?.CompositionTarget == null) return SystemParameters.WorkArea;
+        var mi   = new WpfMonitorInfo { cbSize = (uint)Marshal.SizeOf<WpfMonitorInfo>() };
+        var pt   = new POINT { X = (int)devicePt.X, Y = (int)devicePt.Y };
+        var hMon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+        if (hMon == IntPtr.Zero || !GetMonitorInfoW(hMon, ref mi)) return SystemParameters.WorkArea;
+        var toLogical = src.CompositionTarget.TransformFromDevice;
+        var tl = toLogical.Transform(new Point(mi.rcWork.Left,  mi.rcWork.Top));
+        var br = toLogical.Transform(new Point(mi.rcWork.Right, mi.rcWork.Bottom));
+        return new Rect(tl, br);
+    }
 
     [DllImport("opengl32.dll")] private static extern IntPtr wglCreateContext(IntPtr hDC);
     [DllImport("opengl32.dll")] private static extern bool   wglDeleteContext(IntPtr hGLRC);
@@ -470,6 +590,12 @@ public class MlnMapHost : HwndHost
     private bool  _renderNeedsUpdate = true;
     private float _dpi = 1.0f;
     private int   _renderTickCount;
+    // Last physical pixel size we handed to mbgl (frontend/map). Kept in sync with the
+    // child window's actual client rect so the GL viewport, mbgl size and window size
+    // never disagree by the 1px WPF layout-rounding delta (which caused a flickering
+    // undrawn line along the top edge of the map).
+    private int   _lastPhysW;
+    private int   _lastPhysH;
 
     // ── Input state ───────────────────────────────────────────────────────────
 
@@ -503,6 +629,19 @@ public class MlnMapHost : HwndHost
     private RotateTransform? _compassRotate;
     private Point?           _navDesired;
 
+    // ── GPS control popup ─────────────────────────────────────────────────────
+
+    private Popup?  _gpsPopup;
+    private Border? _gpsBtnTracking;   // top button — GPS tracking state
+    private Border? _gpsBtnBearing;    // bottom button — bearing reset
+    private TextBlock? _gpsTrackingIcon;
+
+    private enum GpsTrackingMode { Off, Show, Follow, FollowBearing }
+    private GpsTrackingMode _gpsTrackingMode = GpsTrackingMode.Off;
+    private double _lastGpsLat, _lastGpsLon;
+    private float  _lastGpsBearing, _lastGpsAccuracy;
+    private bool   _hasGpsFix;
+
     // ── Attribution popup ─────────────────────────────────────────────────────
 
     private Popup?           _attributionPopup;
@@ -532,6 +671,9 @@ public class MlnMapHost : HwndHost
         SizeChanged += (_, _) =>
         {
             PositionNavPopup();
+            PositionGpsPopup();
+            UpdateNavPopupOpen();
+            UpdateGpsPopupOpen();
             Dispatcher.BeginInvoke(DispatcherPriority.Render, (Action)PositionAttributionPopup);
         };
 
@@ -552,6 +694,7 @@ public class MlnMapHost : HwndHost
 
         UpdateNavPopupOpen();
         UpdateAttributionPopupOpen();
+        UpdateGpsPopupOpen();
     }
 
     private void TryInitialize()
@@ -560,11 +703,13 @@ public class MlnMapHost : HwndHost
         if (!IsVisible || ActualWidth < 2 || ActualHeight < 2 || _childHwnd == IntPtr.Zero) return;
 
         _dpi  = GetDpiScale();
-        int physW = Math.Max(1, (int)(ActualWidth  * _dpi));
-        int physH = Math.Max(1, (int)(ActualHeight * _dpi));
+        int physW = Math.Max(1, (int)Math.Round(ActualWidth  * _dpi));
+        int physH = Math.Max(1, (int)Math.Round(ActualHeight * _dpi));
         SetWindowPos(_childHwnd, IntPtr.Zero, 0, 0, physW, physH, 0x0040);
 
         _initialized = true;
+        _lastPhysW = physW;
+        _lastPhysH = physH;
         try { InitOpenGl(physW, physH);    Log("InitOpenGl OK"); }
         catch (Exception ex) { Log($"InitOpenGl EX: {ex}"); throw; }
         try { InitMaplibre(physW, physH);  Log("InitMaplibre OK"); }
@@ -573,6 +718,8 @@ public class MlnMapHost : HwndHost
         catch (Exception ex) { Log($"InitNavPopup EX: {ex}"); }
         try { InitAttributionPopup();      }
         catch (Exception ex) { Log($"InitAttributionPopup EX: {ex}"); }
+        try { InitGpsPopup();              }
+        catch (Exception ex) { Log($"InitGpsPopup EX: {ex}"); }
 
         // Hide popups when the window loses focus so they don't float over other apps.
         var parentWin = Window.GetWindow(this);
@@ -583,49 +730,44 @@ public class MlnMapHost : HwndHost
                 if (_navPopup         != null) _navPopup.IsOpen         = false;
                 if (_attributionPopup != null) _attributionPopup.IsOpen = false;
                 if (_attrButtonPopup  != null) _attrButtonPopup.IsOpen  = false;
+                if (_gpsPopup         != null) _gpsPopup.IsOpen         = false;
                 _attrCollapseTimer?.Stop();
             };
             parentWin.Activated += (_, _) =>
             {
-                // Don't reopen popups while the window is still minimized
-                // (WM_ACTIVATE can fire even on a minimized window).
                 if (parentWin.WindowState == WindowState.Minimized) return;
                 UpdateNavPopupOpen();
                 UpdateAttributionPopupOpen();
-                if (_attrLoaded) CollapseAttribution();  // show ⓘ button after re-focus
+                UpdateGpsPopupOpen();
+                if (_attrLoaded) CollapseAttribution();
             };
             parentWin.StateChanged += (_, _) =>
             {
                 if (parentWin.WindowState == WindowState.Minimized)
                 {
-                    // Close all popups and stop the collapse timer so it can't
-                    // reopen the attribution button while the window is minimized.
                     _attrCollapseTimer?.Stop();
                     if (_navPopup         != null) _navPopup.IsOpen         = false;
                     if (_attributionPopup != null) _attributionPopup.IsOpen = false;
                     if (_attrButtonPopup  != null) _attrButtonPopup.IsOpen  = false;
+                    if (_gpsPopup         != null) _gpsPopup.IsOpen         = false;
                 }
                 else
                 {
-                    // Window restored from minimize: WPF SizeChanged doesn't fire when the
-                    // restored size is unchanged, so the GL surface won't repaint on its own.
                     _renderNeedsUpdate = true;
-                    // Defer popup reopen — IsVisible on the HwndHost is still false at the
-                    // point StateChanged fires for restore; BeginInvoke(Render) lets WPF
-                    // finish making the visual tree visible before we set IsOpen = true.
                     Dispatcher.BeginInvoke(DispatcherPriority.Render, () =>
                     {
                         if (parentWin.WindowState == WindowState.Minimized) return;
                         UpdateNavPopupOpen();
-                        if (_attrLoaded) CollapseAttribution();  // reshow ⓘ button
+                        UpdateGpsPopupOpen();
+                        if (_attrLoaded) CollapseAttribution();
                     });
                 }
             };
             parentWin.LocationChanged += (_, _) => 
             { 
-                // Force immediate reposition when window moves
-                PositionNavPopup(); 
-                PositionAttributionPopup(); 
+                PositionNavPopup();
+                PositionGpsPopup();
+                PositionAttributionPopup();
                 // Re-open popups to force WPF to recalculate their screen positions
                 if (_navPopup != null && ShowNavigationControls && IsVisible)
                 {
@@ -633,9 +775,18 @@ public class MlnMapHost : HwndHost
                     _navPopup.IsOpen = false;
                     Dispatcher.BeginInvoke(DispatcherPriority.Render, () =>
                     {
-                        // Don't reopen if the window was minimized after LocationChanged fired.
                         if (parentWin.WindowState != WindowState.Minimized)
                             _navPopup.IsOpen = wasOpen;
+                    });
+                }
+                if (_gpsPopup != null && ShowGpsControl && IsVisible)
+                {
+                    var gpsWasOpen = _gpsPopup.IsOpen;
+                    _gpsPopup.IsOpen = false;
+                    Dispatcher.BeginInvoke(DispatcherPriority.Render, () =>
+                    {
+                        if (parentWin.WindowState != WindowState.Minimized)
+                            _gpsPopup.IsOpen = gpsWasOpen;
                     });
                 }
                 if (_attrLoaded && _initialized && IsVisible)
@@ -666,10 +817,14 @@ public class MlnMapHost : HwndHost
         if (_navPopup         != null) { _navPopup.IsOpen         = false; _navPopup         = null; }
         if (_attributionPopup != null) { _attributionPopup.IsOpen = false; _attributionPopup = null; }
         if (_attrButtonPopup  != null) { _attrButtonPopup.IsOpen  = false; _attrButtonPopup  = null; }
+        if (_gpsPopup         != null) { _gpsPopup.IsOpen         = false; _gpsPopup         = null; }
         _attrCollapseTimer?.Stop(); _attrCollapseTimer = null;
         _attrLoaded        = false;
         _attributionText   = null;
         _attributionBorder = null;
+        _gpsTrackingIcon   = null;
+        _gpsBtnTracking    = null;
+        _gpsBtnBearing     = null;
 
         _styleReady      = false;
         _locIndLayer     = null;
@@ -688,6 +843,8 @@ public class MlnMapHost : HwndHost
     {
         base.OnWindowPositionChanged(rcBoundingBox);
         PositionNavPopup();
+        PositionGpsPopup();
+        PositionGpsPopup();
         PositionAttributionPopup();
     }
 
@@ -701,8 +858,8 @@ public class MlnMapHost : HwndHost
         // the physical pixel dimensions in sync.
         float dpi = GetDpiScale();
         _dpi = dpi;
-        int wP = Math.Max(1, (int)(info.NewSize.Width  * dpi));
-        int hP = Math.Max(1, (int)(info.NewSize.Height * dpi));
+        int wP = Math.Max(1, (int)Math.Round(info.NewSize.Width  * dpi));
+        int hP = Math.Max(1, (int)Math.Round(info.NewSize.Height * dpi));
 
         if (_childHwnd != IntPtr.Zero)
             SetWindowPos(_childHwnd, IntPtr.Zero, 0, 0, wP, hP, 0x0056);
@@ -711,11 +868,16 @@ public class MlnMapHost : HwndHost
         {
             _frontend.SetSize(wP, hP);
             _map.SetSize(wP, hP);
+            _lastPhysW = wP;
+            _lastPhysH = hP;
             for (int i = 0; i < 4; i++) _runLoop?.RunOnce();
         }
         _renderNeedsUpdate = true;
 
         PositionNavPopup();
+        PositionGpsPopup();
+        UpdateNavPopupOpen();
+        UpdateGpsPopupOpen();
         Dispatcher.BeginInvoke(DispatcherPriority.Background, (Action)PositionAttributionPopup);
 
         if (!_initialized && IsVisible)
@@ -822,9 +984,10 @@ public class MlnMapHost : HwndHost
                 Dispatcher.BeginInvoke(() =>
                 {
                     CameraIdle?.Invoke(this, EventArgs.Empty);
-                    // Keep compass bearing arrow in sync
                     if (_compassRotate != null && _map != null)
                         _compassRotate.Angle = -_map.Bearing;
+                    // Keep GPS bearing button colour in sync with map bearing
+                    RefreshGpsBearingButton();
                 });
                 break;
             case "onDidFailLoadingMap":
@@ -852,8 +1015,31 @@ public class MlnMapHost : HwndHost
             _renderNeedsUpdate = false;
             wglMakeCurrent(_hDC, _hGLRC);
 
-            int physW = Math.Max(1, (int)(ActualWidth  * _dpi));
-            int physH = Math.Max(1, (int)(ActualHeight * _dpi));
+            // Use the child window's ACTUAL client size rather than a freshly-truncated
+            // (int)(ActualHeight * dpi). WPF's HwndHost sizes the hosted window with its
+            // own device-pixel rounding; recomputing here with truncation can be 1px
+            // smaller, leaving the top row of the window undrawn -> a flickering line.
+            int physW, physH;
+            if (GetClientRect(_childHwnd, out var cr) && cr.Right > 0 && cr.Bottom > 0)
+            {
+                physW = cr.Right;
+                physH = cr.Bottom;
+            }
+            else
+            {
+                physW = Math.Max(1, (int)(ActualWidth  * _dpi));
+                physH = Math.Max(1, (int)(ActualHeight * _dpi));
+            }
+
+            // Keep mbgl's framebuffer exactly matching the window so it paints every row.
+            if ((physW != _lastPhysW || physH != _lastPhysH) && _map != null)
+            {
+                _frontend.SetSize(physW, physH);
+                _map.SetSize(physW, physH);
+                _lastPhysW = physW;
+                _lastPhysH = physH;
+            }
+
             _glBindFramebuffer?.Invoke(GL_FRAMEBUFFER, 0);
             glViewport(0, 0, physW, physH);
             glClearColor(0.85f, 0.90f, 0.97f, 1f);
@@ -972,37 +1158,24 @@ public class MlnMapHost : HwndHost
             },
         };
 
-        var panel = new StackPanel { Width = 29 };
+        var panel = new StackPanel { Width = NavPanelW };
         outerBorder.Child = panel;
 
+        // ── Round rotate/pitch d-pad (top) ───────────────────────────────────
+        var dpad = BuildDpad();
+        panel.Children.Add(dpad);
+
+        panel.Children.Add(new Border { Height = 1, Background = new SolidColorBrush(Color.FromRgb(218, 218, 218)) });
+
         var zoomInBtn = MakeNavButton("+", ZoomIn);
-        SetButtonCorners(zoomInBtn, 4, 4, 0, 0);
+        SetButtonCorners(zoomInBtn, 0, 0, 0, 0);
         panel.Children.Add(zoomInBtn);
 
         panel.Children.Add(new Border { Height = 1, Background = new SolidColorBrush(Color.FromRgb(218, 218, 218)) });
 
         var zoomOutBtn = MakeNavButton("\u2212", ZoomOut);
-        SetButtonCorners(zoomOutBtn, 0, 0, 0, 0);
+        SetButtonCorners(zoomOutBtn, 0, 0, 4, 4);
         panel.Children.Add(zoomOutBtn);
-
-        panel.Children.Add(new Border { Height = 1, Background = new SolidColorBrush(Color.FromRgb(218, 218, 218)) });
-
-        _compassRotate = new RotateTransform { CenterX = 0.5, CenterY = 0.5 };
-        var compassIcon = new TextBlock
-        {
-            Text                = "\u2191",
-            FontSize            = 16,
-            FontWeight          = FontWeights.Bold,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment   = VerticalAlignment.Center,
-            IsHitTestVisible    = false,
-            RenderTransformOrigin = new Point(0.5, 0.5),
-            RenderTransform     = _compassRotate,
-        };
-        var compassBtn = MakeNavButton(null, ResetNorth);
-        SetButtonCorners(compassBtn, 0, 0, 4, 4);
-        compassBtn.Child = compassIcon;
-        panel.Children.Add(compassBtn);
 
         _navPopup = new Popup
         {
@@ -1024,7 +1197,7 @@ public class MlnMapHost : HwndHost
     {
         var btn = new Border
         {
-            Width      = 29,
+            Width      = NavPanelW,
             Height     = 29,
             Background = Brushes.White,
             Cursor     = System.Windows.Input.Cursors.Hand,
@@ -1050,27 +1223,415 @@ public class MlnMapHost : HwndHost
     private static void SetButtonCorners(Border b, double topLeft, double topRight, double bottomRight, double bottomLeft)
         => b.CornerRadius = new CornerRadius(topLeft, topRight, bottomRight, bottomLeft);
 
+    /// <summary>
+    /// Build the round rotate/pitch d-pad: up/down tilt the map (±10°, clamped 0–60°),
+    /// left/right rotate it (±15°), the centre resets north, and a hollow ring around
+    /// the arrows acts as a compass whose blue tick tracks the current bearing.
+    /// </summary>
+    private Border BuildDpad()
+    {
+        var root = new Grid { Width = NavPanelW, Height = NavDpadH, Background = Brushes.White };
+
+        // 3×3 hit grid: edges = direction buttons, centre = reset, corners empty.
+        var grid = new Grid();
+        for (int i = 0; i < 3; i++)
+        {
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        }
+
+        void Add(UIElement el, int row, int col) { Grid.SetRow(el, row); Grid.SetColumn(el, col); grid.Children.Add(el); }
+
+        Add(MakeDpadArrow("\u25B2", () => PitchBy(10)),  0, 1);  // ▲ up    → more tilt
+        Add(MakeDpadArrow("\u25C0", () => RotateBy(-15)), 1, 0);  // ◀ left  → rotate ccw
+        Add(MakeDpadArrow(null,      ResetNorth),         1, 1);  // centre  → reset north
+        Add(MakeDpadArrow("\u25B6", () => RotateBy(15)),  1, 2);  // ▶ right → rotate cw
+        Add(MakeDpadArrow("\u25BC", () => PitchBy(-10)), 2, 1);  // ▼ down  → less tilt
+        root.Children.Add(grid);
+
+        // Hollow compass ring around the arrows (non-interactive).
+        double ringSize = NavDpadH * 0.80;
+        var ring = new System.Windows.Shapes.Ellipse
+        {
+            Width               = ringSize,
+            Height              = ringSize,
+            Stroke              = new SolidColorBrush(Color.FromRgb(204, 204, 204)),
+            StrokeThickness     = 1,
+            Fill                = Brushes.Transparent,
+            IsHitTestVisible    = false,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment   = VerticalAlignment.Center,
+        };
+        root.Children.Add(ring);
+
+        // North tick — a short blue mark at the top of the ring that rotates with bearing.
+        _compassRotate = new RotateTransform { Angle = 0 };
+        var northTick = new System.Windows.Shapes.Rectangle
+        {
+            Width               = 2,
+            Height              = NavDpadH * 0.14,
+            Fill                = new SolidColorBrush(Color.FromRgb(10, 102, 204)),
+            IsHitTestVisible    = false,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment   = VerticalAlignment.Top,
+            Margin              = new Thickness(0, (NavDpadH - ringSize) / 2, 0, 0),
+        };
+        var tickHost = new Grid
+        {
+            Width                 = NavDpadH,
+            Height                = NavDpadH,
+            IsHitTestVisible      = false,
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform       = _compassRotate,
+        };
+        tickHost.Children.Add(northTick);
+        root.Children.Add(tickHost);
+
+        return new Border
+        {
+            CornerRadius = new CornerRadius(4, 4, 0, 0),
+            ClipToBounds = true,
+            Child        = root,
+        };
+    }
+
+    private static Border MakeDpadArrow(string? text, Action onClick)
+    {
+        var btn = new Border
+        {
+            Background = Brushes.Transparent,   // transparent but hit-testable
+            Cursor     = System.Windows.Input.Cursors.Hand,
+        };
+        if (text != null)
+        {
+            btn.Child = new TextBlock
+            {
+                Text                = text,
+                FontSize            = 8,
+                Foreground          = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33)),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment   = VerticalAlignment.Center,
+                IsHitTestVisible    = false,
+            };
+        }
+        btn.MouseEnter += (_, _) => btn.Background = new SolidColorBrush(Color.FromArgb(30, 0, 0, 0));
+        btn.MouseLeave += (_, _) => btn.Background = Brushes.Transparent;
+        btn.MouseLeftButtonUp += (_, e) => { onClick(); e.Handled = true; };
+        return btn;
+    }
+
+    // ── Control corner + stacking helpers ─────────────────────────────────────
+
+    private const double CtrlMargin   = 10;
+    private const double CtrlStackGap = 10;
+    private const double NavPanelW    = 29;          // matches zoom/GPS button width so controls align when stacked
+    private const double NavDpadH     = 29;          // round d-pad height (square with the panel width)
+    private const double NavPanelH    = NavDpadH + 29 * 2 + 2;  // d-pad + 2 zoom buttons + 2 separators
+    private const double GpsPanelH    = 29 * 2 + 1;  // 2 buttons + 1 separator
+
+    private static bool CornerIsLeft(MapControlCorner c) => c is MapControlCorner.TopLeft or MapControlCorner.BottomLeft;
+    private static bool CornerIsTop(MapControlCorner c)  => c is MapControlCorner.TopLeft or MapControlCorner.TopRight;
+
+    /// <summary>
+    /// Vertical offset contributed by controls that precede the given one in the
+    /// stack order (navigation → GPS → attribution) and share the same corner.
+    /// The first control sits at the corner; later ones stack inward.
+    /// </summary>
+    private double ControlStackOffset(MapControlCorner corner, int stackIndex)
+    {
+        double off = 0;
+        if (stackIndex > 0 && ShowNavigationControls && NavigationControlPosition == corner)
+            off += NavPanelH + CtrlStackGap;
+        if (stackIndex > 1 && ShowGpsControl && GpsControlPosition == corner)
+            off += GpsPanelH + CtrlStackGap;
+        return off;
+    }
+
+    /// <summary>
+    /// Whether the current map area is large enough to fully contain a control of
+    /// the given size sitting at the given vertical stacking offset, with a margin
+    /// on each side. Controls that do not fit are hidden so they never overflow the
+    /// map edge or float over adjacent UI when the host is very small.
+    /// </summary>
+    private bool ControlFitsMap(double panelW, double panelH, double stackOffset)
+        => ActualWidth  >= panelW + 2 * CtrlMargin
+        && ActualHeight >= panelH + stackOffset + 2 * CtrlMargin;
+
     private void PositionNavPopup()
     {
         if (_navPopup == null || !_initialized) return;
-        const int margin = 10;
-        // With PlacementMode.Relative, offsets are in logical pixels relative to the
-        // PlacementTarget (this HwndHost). No PointToScreen conversion needed.
-        _navPopup.HorizontalOffset = ActualWidth - 29 - margin;
-        _navPopup.VerticalOffset   = margin;
+        const int margin = (int)CtrlMargin;
+        const int panelW = (int)NavPanelW;
+        const int panelH = (int)NavPanelH;  // d-pad + 2 zoom buttons + 2 separator px
+        var corner = NavigationControlPosition;
+        double off  = ControlStackOffset(corner, 0);  // nav is first → 0
+        double hOff = CornerIsLeft(corner) ? margin : ActualWidth  - panelW - margin;
+        double vOff = CornerIsTop(corner)  ? margin + off : ActualHeight - panelH - margin - off;
+        // Clamp to the work area of the monitor this popup will land on.
+        // Computing centerDevice BEFORE calling GetWorkAreaLogicalAt ensures the
+        // correct monitor is selected even when the map spans two screens.
+        try
+        {
+            var centerDevice = PointToScreen(new Point(hOff + panelW / 2.0, vOff + panelH / 2.0));
+            var wa     = GetWorkAreaLogicalAt(centerDevice);
+            var origin = PointToScreen(new Point(0, 0)); // device px (element origin)
+            var src    = PresentationSource.FromVisual(this);
+            if (src?.CompositionTarget != null)
+            {
+                var toLogical     = src.CompositionTarget.TransformFromDevice;
+                var originLogical = toLogical.Transform(origin);
+                double maxH = wa.Right  - originLogical.X - panelW;
+                double maxV = wa.Bottom - originLogical.Y - panelH;
+                double minH = wa.Left   - originLogical.X;
+                double minV = wa.Top    - originLogical.Y;
+                hOff = Math.Max(minH, Math.Min(hOff, maxH));
+                vOff = Math.Max(minV, Math.Min(vOff, maxV));
+            }
+        }
+        catch { /* non-critical; fall back to unclamped position */ }
+        _navPopup.HorizontalOffset = hOff;
+        _navPopup.VerticalOffset   = vOff;
     }
 
     private void UpdateNavPopupOpen()
     {
         if (_navPopup == null) return;
-        _navPopup.IsOpen = _initialized && IsVisible && ShowNavigationControls;
+        bool fits = ControlFitsMap(NavPanelW, NavPanelH, ControlStackOffset(NavigationControlPosition, 0));
+        _navPopup.IsOpen = _initialized && IsVisible && ShowNavigationControls && fits;
     }
 
     private void HookPopupOpen(Popup popup)
     {
         popup.Opened += (_, _) => { };
-        // Open it now if we're already ready
         UpdateNavPopupOpen();
+    }
+
+    // ── GPS control popup ─────────────────────────────────────────────────────
+
+    private void InitGpsPopup()
+    {
+        // Top button: GPS tracking state (Off / Show / Follow)
+        _gpsTrackingIcon = new TextBlock
+        {
+            Text                = "\u25CB",   // ○ = Off state
+            FontSize            = 16,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment   = VerticalAlignment.Center,
+            IsHitTestVisible    = false,
+            Foreground          = new SolidColorBrush(Color.FromRgb(0x99, 0x99, 0x99)),
+        };
+        _gpsBtnTracking = MakeNavButton(null, CycleGpsMode);
+        SetButtonCorners(_gpsBtnTracking, 4, 4, 0, 0);
+        _gpsBtnTracking.Child = _gpsTrackingIcon;
+
+        // Bottom button: reset bearing to north
+        var bearingIcon = new TextBlock
+        {
+            Text                = "\u21BA",  // ↺ reset bearing (distinct from the compass drag button)
+            FontSize            = 16,
+            FontWeight          = FontWeights.Bold,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment   = VerticalAlignment.Center,
+            IsHitTestVisible    = false,
+            Foreground          = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
+            Tag                 = "bearing",
+        };
+        _gpsBtnBearing = MakeNavButton(null, GpsBearingButtonPressed);
+        SetButtonCorners(_gpsBtnBearing, 0, 0, 4, 4);
+        _gpsBtnBearing.Child = bearingIcon;
+
+        var panel = new StackPanel { Width = 29 };
+        panel.Children.Add(_gpsBtnTracking);
+        panel.Children.Add(new Border { Height = 1, Background = new SolidColorBrush(Color.FromRgb(218, 218, 218)) });
+        panel.Children.Add(_gpsBtnBearing);
+
+        var outerBorder = new Border
+        {
+            CornerRadius = new CornerRadius(4),
+            Effect = new DropShadowEffect
+            {
+                BlurRadius = 6, ShadowDepth = 2, Opacity = 0.25, Color = Colors.Black, Direction = 270,
+            },
+            Child = panel,
+        };
+
+        _gpsPopup = new Popup
+        {
+            AllowsTransparency = true,
+            StaysOpen          = true,
+            IsHitTestVisible   = true,
+            PlacementTarget    = this,
+            Placement          = PlacementMode.Relative,
+            Child              = outerBorder,
+        };
+
+        PositionGpsPopup();
+        _gpsPopup.IsOpen = _initialized && IsVisible && ShowGpsControl;
+    }
+
+    private void CycleGpsMode()
+    {
+        _gpsTrackingMode = _gpsTrackingMode switch
+        {
+            GpsTrackingMode.Off           => GpsTrackingMode.Show,
+            GpsTrackingMode.Show          => GpsTrackingMode.Follow,
+            GpsTrackingMode.Follow        => GpsTrackingMode.FollowBearing,
+            GpsTrackingMode.FollowBearing => GpsTrackingMode.Off,
+            _                             => GpsTrackingMode.Off,
+        };
+
+        ApplyGpsMode();
+        RefreshGpsTrackingButton();
+    }
+
+    private void ApplyGpsMode()
+    {
+        if (_gpsTrackingMode == GpsTrackingMode.Off)
+        {
+            ClearLocationIndicator();
+        }
+        else if (_hasGpsFix)
+        {
+            _pendingLocInd = new LocIndParams(_lastGpsLat, _lastGpsLon, _lastGpsBearing, Math.Max(5f, _lastGpsAccuracy));
+            if (_gpsTrackingMode is GpsTrackingMode.Follow or GpsTrackingMode.FollowBearing)
+            {
+                double zoom          = _map?.Zoom ?? 14;
+                double cameraZoom    = zoom < 8 ? 14 : zoom;
+                double cameraBearing = _gpsTrackingMode == GpsTrackingMode.FollowBearing ? _lastGpsBearing : (_map?.Bearing ?? 0);
+                _map?.EaseTo(_lastGpsLat, _lastGpsLon, cameraZoom, cameraBearing, _map.Pitch, durationMs: 300);
+            }
+            if (_styleReady && _style != null)
+                ApplyPendingLocationIndicator();
+            _renderNeedsUpdate = true;
+        }
+    }
+
+    /// <summary>
+    /// Feed a GPS location fix to the host.  The host respects the current
+    /// GPS tracking mode — Off: ignored; Show: blue dot only; Follow: dot + camera.
+    /// </summary>
+    public void UpdateGpsLocation(double lat, double lon, float bearing = 0, float accuracyMeters = 10)
+    {
+        _lastGpsLat      = lat;
+        _lastGpsLon      = lon;
+        _lastGpsBearing  = bearing;
+        _lastGpsAccuracy = accuracyMeters;
+        bool isFirstFix  = !_hasGpsFix;
+        _hasGpsFix       = true;
+
+        if (_gpsTrackingMode == GpsTrackingMode.Off) return;
+
+        _pendingLocInd = new LocIndParams(lat, lon, bearing, Math.Max(5f, accuracyMeters));
+
+        bool follow     = _gpsTrackingMode is GpsTrackingMode.Follow or GpsTrackingMode.FollowBearing;
+        bool useBearing = _gpsTrackingMode == GpsTrackingMode.FollowBearing;
+
+        if (follow && _map != null)
+        {
+            double cameraZoom    = _map.Zoom < 8 ? 14 : _map.Zoom;
+            double cameraBearing = useBearing ? bearing : _map.Bearing;
+            if (isFirstFix) _map.JumpTo(lat, lon, cameraZoom, cameraBearing, _map.Pitch);
+            else            _map.EaseTo(lat, lon, _map.Zoom, cameraBearing, _map.Pitch, durationMs: 200);
+        }
+
+        if (_styleReady && _style != null)
+            ApplyPendingLocationIndicator();
+        _renderNeedsUpdate = true;
+
+        if (isFirstFix) RefreshGpsTrackingButton();
+    }
+
+    private void RefreshGpsTrackingButton()
+    {
+        if (_gpsTrackingIcon == null) return;
+        switch (_gpsTrackingMode)
+        {
+            case GpsTrackingMode.Show:
+                _gpsTrackingIcon.Text       = "\u2299";   // ⊙ circled dot
+                _gpsTrackingIcon.Foreground = new SolidColorBrush(Color.FromRgb(0x1E, 0x88, 0xE5));
+                _gpsBtnTracking!.Background = Brushes.White;
+                break;
+            case GpsTrackingMode.Follow:
+                _gpsTrackingIcon.Text       = "\u25CE";   // ◎ bullseye
+                _gpsTrackingIcon.Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0x70, 0xC5));
+                _gpsBtnTracking!.Background = new SolidColorBrush(Color.FromRgb(0xE3, 0xF2, 0xFF));
+                break;
+            case GpsTrackingMode.FollowBearing:
+                _gpsTrackingIcon.Text       = "\u25B2";   // ▲ navigation triangle / heading-up
+                _gpsTrackingIcon.Foreground = new SolidColorBrush(Color.FromRgb(0xF5, 0x7C, 0x00));
+                _gpsBtnTracking!.Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xF3, 0xE0));
+                break;
+            default:  // Off
+                _gpsTrackingIcon.Text       = "\u25CB";   // ○ empty circle
+                _gpsTrackingIcon.Foreground = new SolidColorBrush(Color.FromRgb(0x99, 0x99, 0x99));
+                _gpsBtnTracking!.Background = Brushes.White;
+                break;
+        }
+    }
+
+    /// <summary>
+    /// GPS bearing button: in FollowBearing, drops to Follow (stops heading-up rotation) then
+    /// resets bearing to north; in all other states just resets bearing to north.
+    /// </summary>
+    private void GpsBearingButtonPressed()
+    {
+        if (_gpsTrackingMode == GpsTrackingMode.FollowBearing)
+        {
+            _gpsTrackingMode = GpsTrackingMode.Follow;
+            RefreshGpsTrackingButton();
+        }
+        ResetNorth();
+    }
+
+    private void RefreshGpsBearingButton()
+    {
+        if (_gpsBtnBearing?.Child is not TextBlock tb) return;
+        double bearing = _map?.Bearing ?? 0;
+        tb.Foreground = Math.Abs(bearing) > 0.5
+            ? new SolidColorBrush(Color.FromRgb(0x1E, 0x88, 0xE5))
+            : new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55));
+    }
+
+    private void PositionGpsPopup()
+    {
+        if (_gpsPopup == null || !_initialized) return;
+        const int margin = 10;
+        const int panelW = 29;
+        const int panelH = (int)GpsPanelH;  // 2 buttons + 1 px separator
+        // Anchor to the configured corner, stacking inward when sharing with others.
+        var corner  = GpsControlPosition;
+        double off  = ControlStackOffset(corner, 1);  // gps is second (after nav)
+        double hOff = CornerIsLeft(corner) ? margin : ActualWidth  - panelW - margin;
+        double vOff = CornerIsTop(corner)  ? margin + off : ActualHeight - panelH - margin - off;
+        // Clamp to the work area of the monitor this popup will land on.
+        try
+        {
+            var centerDevice = PointToScreen(new Point(hOff + panelW / 2.0, vOff + panelH / 2.0));
+            var wa     = GetWorkAreaLogicalAt(centerDevice);
+            var origin = PointToScreen(new Point(0, 0));
+            var src    = PresentationSource.FromVisual(this);
+            if (src?.CompositionTarget != null)
+            {
+                var toLogical     = src.CompositionTarget.TransformFromDevice;
+                var originLogical = toLogical.Transform(origin);
+                double maxH = wa.Right  - originLogical.X - panelW;
+                double maxV = wa.Bottom - originLogical.Y - panelH;
+                double minH = wa.Left   - originLogical.X;
+                double minV = wa.Top    - originLogical.Y;
+                hOff = Math.Max(minH, Math.Min(hOff, maxH));
+                vOff = Math.Max(minV, Math.Min(vOff, maxV));
+            }
+        }
+        catch { /* non-critical; fall back to unclamped position */ }
+        _gpsPopup.HorizontalOffset = hOff;
+        _gpsPopup.VerticalOffset   = vOff;
+    }
+
+    private void UpdateGpsPopupOpen()
+    {
+        if (_gpsPopup == null) return;
+        bool fits = ControlFitsMap(29, GpsPanelH, ControlStackOffset(GpsControlPosition, 1));
+        _gpsPopup.IsOpen = _initialized && IsVisible && ShowGpsControl && fits;
     }
 
     // ── Attribution popup ─────────────────────────────────────────────────────
@@ -1139,7 +1700,7 @@ public class MlnMapHost : HwndHost
     private void RefreshAttribution()
     {
         if (_style == null) return;
-        var parts = _style.GetSourceAttributions();
+        var parts = MbglStyle.EnsureMapLibreAttribution(_style.GetSourceAttributions());
 
         var allInlines = new List<Inline>();
         var first = true;
@@ -1287,38 +1848,76 @@ public class MlnMapHost : HwndHost
         if (_attributionPopup == null || !_initialized) return;
 
         const double margin = 4;
+        var    corner = AttributionControlPosition;
+        bool   isLeft = CornerIsLeft(corner);
+        bool   isTop  = CornerIsTop(corner);
+        double off    = ControlStackOffset(corner, 2);  // attribution is last in stack order
 
         // Constrain attribution width to map width minus margins
         if (_attributionText != null)
             _attributionText.MaxWidth = Math.Max(100, ActualWidth - 8);
 
-        // Determine left offset, shifting left if the popup would overflow the right edge.
-        double leftMargin = margin;
-        if (_attributionBorder != null)
-        {
-            double popupWidth = _attributionBorder.ActualWidth > 0
-                ? _attributionBorder.ActualWidth
-                : _attributionBorder.DesiredSize.Width;
-            if (leftMargin + popupWidth > ActualWidth)
-                leftMargin = Math.Max(margin, ActualWidth - popupWidth - margin);
-        }
-
-        // Position each popup so its BOTTOM is margin px above the map's bottom edge.
-        // VerticalOffset (PlacementMode.Relative) sets the popup's TOP — so we subtract
-        // the popup's own height to make the bottom land at ActualHeight - margin.
+        double attrW = _attributionBorder?.ActualWidth > 0
+            ? _attributionBorder.ActualWidth
+            : (_attributionBorder?.DesiredSize.Width ?? 0);
         double attrH = _attributionBorder?.ActualHeight > 0
             ? _attributionBorder.ActualHeight
             : (_attributionBorder?.DesiredSize.Height > 0 ? _attributionBorder.DesiredSize.Height : 22);
-        _attributionPopup.HorizontalOffset = leftMargin;
-        _attributionPopup.VerticalOffset   = ActualHeight - attrH - margin;
+        double btnW = _attrButtonBorder?.ActualWidth > 0
+            ? _attrButtonBorder.ActualWidth
+            : (_attrButtonBorder?.DesiredSize.Width ?? 0);
+        double btnH = _attrButtonBorder?.ActualHeight > 0
+            ? _attrButtonBorder.ActualHeight
+            : (_attrButtonBorder?.DesiredSize.Height > 0 ? _attrButtonBorder.DesiredSize.Height : 22);
+
+        // Horizontal offset: anchor to the left or right edge. For left anchoring keep
+        // the existing overflow-shift so wide attribution never runs off the right edge.
+        double AttrHOff(double w)
+        {
+            if (isLeft)
+            {
+                double x = margin;
+                if (x + w > ActualWidth) x = Math.Max(margin, ActualWidth - w - margin);
+                return x;
+            }
+            return Math.Max(margin, ActualWidth - w - margin);
+        }
+        double attrHOff = AttrHOff(attrW);
+        double btnHOff  = AttrHOff(btnW);
+
+        // Vertical offset: PlacementMode.Relative sets the popup's TOP. For bottom
+        // anchoring we subtract the popup height so its bottom lands margin px above
+        // the map edge (minus any stacking offset). For top anchoring we add the offset.
+        double attrVOff = isTop ? margin + off : ActualHeight - attrH - margin - off;
+        double btnVOff  = isTop ? margin + off : ActualHeight - btnH  - margin - off;
+
+        // Clamp to the work area of the monitor the attribution popup will land on.
+        try
+        {
+            // Use the attribution popup's center to look up the right monitor.
+            var centerDevice = PointToScreen(new Point(attrHOff + attrW / 2.0, attrVOff + attrH / 2.0));
+            var wa     = GetWorkAreaLogicalAt(centerDevice);
+            var origin = PointToScreen(new Point(0, 0));
+            var src    = PresentationSource.FromVisual(this);
+            if (src?.CompositionTarget != null)
+            {
+                var toLogical     = src.CompositionTarget.TransformFromDevice;
+                var originLogical = toLogical.Transform(origin);
+                double attrMaxV = wa.Bottom - originLogical.Y - attrH;
+                double btnMaxV  = wa.Bottom - originLogical.Y - btnH;
+                double minV     = wa.Top    - originLogical.Y;
+                attrVOff = Math.Max(minV, Math.Min(attrVOff, attrMaxV));
+                btnVOff  = Math.Max(minV, Math.Min(btnVOff,  btnMaxV));
+            }
+        }
+        catch { /* non-critical */ }
+        _attributionPopup.HorizontalOffset = attrHOff;
+        _attributionPopup.VerticalOffset   = attrVOff;
 
         if (_attrButtonPopup != null)
         {
-            double btnH = _attrButtonBorder?.ActualHeight > 0
-                ? _attrButtonBorder.ActualHeight
-                : (_attrButtonBorder?.DesiredSize.Height > 0 ? _attrButtonBorder.DesiredSize.Height : 22);
-            _attrButtonPopup.HorizontalOffset = leftMargin;
-            _attrButtonPopup.VerticalOffset   = ActualHeight - btnH - margin;
+            _attrButtonPopup.HorizontalOffset = btnHOff;
+            _attrButtonPopup.VerticalOffset   = btnVOff;
         }
     }
 
