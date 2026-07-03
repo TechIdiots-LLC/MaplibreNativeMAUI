@@ -2,7 +2,7 @@
 
 ## master
 ### ✨ Features and improvements
-- _...Add new stuff here..._
+- **Navigation d-pad rotate/pitch control (all platforms)** — The navigation panel's compass button is replaced by a round 4-way d-pad drawn above the zoom buttons.  The **▲/▼** arrows tilt the map (pitch ±10°, clamped 0–60°), the **◀/▶** arrows rotate it (bearing ±15°, right = clockwise), and the centre resets the camera to north.  A hollow compass ring around the arrows carries a blue north tick that rotates to track the current map bearing.  Implemented on Windows MAUI (GDI-drawn `WS_POPUP` overlay), WPF (`Popup` with a 3×3 hit grid + `Ellipse` ring), Android (`FrameLayout` with a 3×3 `LinearLayout` grid + `GradientDrawable` ring), and iOS/macOS (`UIView` with framed arrow buttons + a bordered ring).  Replaces the previous Windows drag-to-rotate compass with discrete, tappable buttons that work uniformly across desktop and mobile.
 
 ### 🐞 Bug fixes
 - _...Add new stuff here..._

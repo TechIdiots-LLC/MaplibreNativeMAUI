@@ -297,9 +297,9 @@ public class MapLibreMapController : IMapLibreMapController
     private const int OverlayMarginDp = 8;
     private const int OverlayGapDp    = 8;
 
-    private LinearLayout _navPanel        = null!;  // zoom-in / zoom-out / compass
+    private LinearLayout _navPanel        = null!;  // d-pad / zoom-in / zoom-out
     private LinearLayout _gpsPanel        = null!;  // tracking / bearing-reset
-    private TextView     _navCompassIcon  = null!;  // rotates with map bearing
+    private Android.Views.View _navNorthTick = null!;  // rotates with map bearing
     private TextView     _gpsTrackingIcon = null!;  // reflects tracking mode
     private TextView     _gpsBearingIcon  = null!;
 
@@ -431,24 +431,101 @@ public class MapLibreMapController : IMapLibreMapController
         _navPanel = new LinearLayout(ctx) { Orientation = Orientation.Vertical };
         _navPanel.SetBackgroundColor(Android.Graphics.Color.Argb(230, 255, 255, 255));
 
+        // Round rotate/pitch d-pad on top.
+        var dpad = BuildDpad(ctx, btn, d);
+
         var zoomIn   = MakeOverlayButton(ctx, "\uFF0B", btn);   // ＋
         zoomIn.Click += (_, _) => ZoomBy(1);
         var divider1 = MakeDivider(ctx, btn, d);
         var zoomOut  = MakeOverlayButton(ctx, "\uFF0D", btn);   // －
         zoomOut.Click += (_, _) => ZoomBy(-1);
         var divider2 = MakeDivider(ctx, btn, d);
-        _navCompassIcon = MakeOverlayButton(ctx, "\u2191", btn); // ↑ north needle
-        _navCompassIcon.Click += (_, _) => ResetNorth();
 
+        _navPanel.AddView(dpad);
+        _navPanel.AddView(divider2);
         _navPanel.AddView(zoomIn);
         _navPanel.AddView(divider1);
         _navPanel.AddView(zoomOut);
-        _navPanel.AddView(divider2);
-        _navPanel.AddView(_navCompassIcon);
 
         _navPanel.Visibility = _showNavControls ? ViewStates.Visible : ViewStates.Gone;
         container.AddView(_navPanel, new FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent));
+    }
+
+    /// <summary>
+    /// Builds the round rotate/pitch d-pad: up/down tilt the map (±10°, clamped
+    /// 0–60°), left/right rotate it (±15°), the centre resets north, and a hollow
+    /// ring around the arrows carries a blue north tick that tracks the bearing.
+    /// </summary>
+    private FrameLayout BuildDpad(global::Android.Content.Context ctx, int btn, float density)
+    {
+        var host = new FrameLayout(ctx)
+        {
+            LayoutParameters = new LinearLayout.LayoutParams(btn, btn),
+        };
+
+        int cell = btn / 3;
+
+        TextView Cell(string? text, Action? onClick)
+        {
+            var tv = new TextView(ctx)
+            {
+                Gravity          = GravityFlags.Center,
+                LayoutParameters = new LinearLayout.LayoutParams(cell, cell),
+            };
+            if (text != null)
+            {
+                tv.Text = text;
+                tv.SetTextSize(Android.Util.ComplexUnitType.Sp, 8f);
+                tv.SetTextColor(Android.Graphics.Color.Argb(230, 40, 40, 40));
+            }
+            if (onClick != null) { tv.Clickable = true; tv.Click += (_, _) => onClick(); }
+            return tv;
+        }
+
+        LinearLayout Row(params Android.Views.View[] cells)
+        {
+            var r = new LinearLayout(ctx)
+            {
+                Orientation      = Orientation.Horizontal,
+                LayoutParameters = new LinearLayout.LayoutParams(btn, cell),
+            };
+            foreach (var c in cells) r.AddView(c);
+            return r;
+        }
+
+        var grid = new LinearLayout(ctx)
+        {
+            Orientation      = Orientation.Vertical,
+            LayoutParameters = new FrameLayout.LayoutParams(btn, btn),
+        };
+        grid.AddView(Row(Cell(null, null),               Cell("\u25B2", () => PitchBy(10)),  Cell(null, null)));                // ▲ up
+        grid.AddView(Row(Cell("\u25C0", () => RotateBy(-15)), Cell(null, ResetNorth),         Cell("\u25B6", () => RotateBy(15))));  // ◀ reset ▶
+        grid.AddView(Row(Cell(null, null),               Cell("\u25BC", () => PitchBy(-10)), Cell(null, null)));                // ▼ down
+        host.AddView(grid);
+
+        // Hollow compass ring around the arrows (non-interactive).
+        int ringSize = (int)(btn * 0.80);
+        var ring = new Android.Views.View(ctx) { Clickable = false };
+        var ringDrawable = new Android.Graphics.Drawables.GradientDrawable();
+        ringDrawable.SetShape(Android.Graphics.Drawables.ShapeType.Oval);
+        ringDrawable.SetStroke(Math.Max(1, (int)Math.Round(density)), Android.Graphics.Color.Argb(255, 204, 204, 204));
+        ring.Background = ringDrawable;
+        host.AddView(ring, new FrameLayout.LayoutParams(ringSize, ringSize) { Gravity = GravityFlags.Center });
+
+        // North tick — a short blue mark at the top of the ring that rotates with bearing.
+        _navNorthTick = new FrameLayout(ctx) { Clickable = false };
+        var tick = new Android.Views.View(ctx);
+        tick.SetBackgroundColor(Android.Graphics.Color.Argb(255, 10, 102, 204));
+        var tickLp = new FrameLayout.LayoutParams(Math.Max(2, (int)Math.Round(density * 2)), (int)(btn * 0.14))
+        {
+            Gravity   = GravityFlags.Top | GravityFlags.CenterHorizontal,
+            TopMargin = (btn - ringSize) / 2,
+        };
+        ((FrameLayout)_navNorthTick).AddView(tick, tickLp);
+        host.AddView(_navNorthTick, new FrameLayout.LayoutParams(btn, btn));
+
+        return host;
     }
 
     private void BuildGpsPanel(global::Android.Content.Context ctx, FrameLayout container)
@@ -740,6 +817,23 @@ public class MapLibreMapController : IMapLibreMapController
         _map.EaseTo(lat, lon, _map.Zoom, 0, _map.Pitch, durationMs: 200);
     }
 
+    /// <summary>Rotate the map by <paramref name="deltaDeg"/> (positive = clockwise).</summary>
+    private void RotateBy(double deltaDeg)
+    {
+        if (_map == null) return;
+        var (lat, lon) = _map.Center;
+        _map.EaseTo(lat, lon, _map.Zoom, _map.Bearing + deltaDeg, _map.Pitch, durationMs: 200);
+    }
+
+    /// <summary>Tilt the map by <paramref name="deltaDeg"/>, clamped to 0–60°.</summary>
+    private void PitchBy(double deltaDeg)
+    {
+        if (_map == null) return;
+        var (lat, lon) = _map.Center;
+        double newPitch = Math.Max(0, Math.Min(60, _map.Pitch + deltaDeg));
+        _map.EaseTo(lat, lon, _map.Zoom, _map.Bearing, newPitch, durationMs: 200);
+    }
+
     private void CycleGpsMode()
     {
         _gpsMode = _gpsMode switch
@@ -776,11 +870,11 @@ public class MapLibreMapController : IMapLibreMapController
         _gpsTrackingIcon.SetTextColor(Android.Graphics.Color.Argb(255, r, g, b));
     }
 
-    /// <summary>Rotates the compass needle to reflect the current map bearing.</summary>
+    /// <summary>Rotates the compass north tick to reflect the current map bearing.</summary>
     private void UpdateCompassRotation()
     {
-        if (_navCompassIcon == null || _map == null) return;
-        _navCompassIcon.Rotation = -(float)_map.Bearing;
+        if (_navNorthTick == null || _map == null) return;
+        _navNorthTick.Rotation = -(float)_map.Bearing;
     }
 
     private void ApplyPendingLocationIndicator()

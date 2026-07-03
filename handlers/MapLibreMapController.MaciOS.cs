@@ -89,9 +89,9 @@ public class MapLibreMapController : IMapLibreMapController
     private const float OverlayGap    = 8f;
     private const float OverlayBtn    = 44f;
 
-    private UIStackView _navPanel     = null!;   // zoom-in / zoom-out / compass
+    private UIStackView _navPanel     = null!;   // d-pad / zoom-in / zoom-out
     private UIStackView _gpsPanel     = null!;   // tracking / bearing-reset
-    private UIButton    _navCompass   = null!;   // rotates with map bearing
+    private UIView      _navNorthTick = null!;   // rotates with map bearing
     private UIButton    _gpsTracking  = null!;   // reflects tracking mode
     private UIButton    _gpsBearing   = null!;
 
@@ -189,18 +189,77 @@ public class MapLibreMapController : IMapLibreMapController
     {
         _navPanel = MakeOverlayPanel();
 
+        var dpad = BuildDpad();
+
         var zoomIn = MakeOverlayButton("\uFF0B");   // ＋
         zoomIn.TouchUpInside += (_, _) => ZoomBy(1);
         var zoomOut = MakeOverlayButton("\uFF0D");  // －
         zoomOut.TouchUpInside += (_, _) => ZoomBy(-1);
-        _navCompass = MakeOverlayButton("\u2191");  // ↑ north needle
-        _navCompass.TouchUpInside += (_, _) => ResetNorth();
 
+        _navPanel.AddArrangedSubview(dpad);
         _navPanel.AddArrangedSubview(zoomIn);
         _navPanel.AddArrangedSubview(zoomOut);
-        _navPanel.AddArrangedSubview(_navCompass);
         _navPanel.Hidden = !_showNavControls;
         View.AddSubview(_navPanel);
+    }
+
+    /// <summary>
+    /// Builds the round rotate/pitch d-pad: up/down tilt the map (±10°, clamped
+    /// 0–60°), left/right rotate it (±15°), the centre resets north, and a hollow
+    /// ring around the arrows carries a blue north tick that tracks the bearing.
+    /// </summary>
+    private UIView BuildDpad()
+    {
+        float s    = OverlayBtn;
+        float cell = s / 3f;
+
+        var host = new UIView { TranslatesAutoresizingMaskIntoConstraints = false };
+        host.WidthAnchor.ConstraintEqualTo(s).Active  = true;
+        host.HeightAnchor.ConstraintEqualTo(s).Active = true;
+
+        UIButton Arrow(string? title, Action onTap, float cx, float cy)
+        {
+            var b = new UIButton(UIButtonType.System)
+            {
+                Frame = new CoreGraphics.CGRect(cx - cell / 2, cy - cell / 2, cell, cell),
+            };
+            if (title != null)
+            {
+                b.SetTitle(title, UIControlState.Normal);
+                b.SetTitleColor(UIColor.FromRGBA((byte)40, (byte)40, (byte)40, (byte)230), UIControlState.Normal);
+                b.TitleLabel!.Font = UIFont.SystemFontOfSize(9f);
+            }
+            b.TouchUpInside += (_, _) => onTap();
+            return b;
+        }
+
+        host.AddSubview(Arrow("\u25B2", () => PitchBy(10),  s / 2,        cell / 2));    // ▲ up
+        host.AddSubview(Arrow("\u25BC", () => PitchBy(-10), s / 2,        s - cell / 2)); // ▼ down
+        host.AddSubview(Arrow("\u25C0", () => RotateBy(-15), cell / 2,    s / 2));       // ◀ left
+        host.AddSubview(Arrow("\u25B6", () => RotateBy(15), s - cell / 2, s / 2));       // ▶ right
+        host.AddSubview(Arrow(null,      ResetNorth,        s / 2,        s / 2));       // centre reset
+
+        // Hollow compass ring (non-interactive).
+        float ring = s * 0.80f;
+        var ringView = new UIView(new CoreGraphics.CGRect((s - ring) / 2, (s - ring) / 2, ring, ring))
+        {
+            UserInteractionEnabled = false,
+        };
+        ringView.Layer.BorderWidth  = 1f;
+        ringView.Layer.BorderColor  = UIColor.FromRGBA((byte)204, (byte)204, (byte)204, (byte)255).CGColor;
+        ringView.Layer.CornerRadius = ring / 2f;
+        host.AddSubview(ringView);
+
+        // North tick — a short blue mark at the top of the ring that rotates with bearing.
+        _navNorthTick = new UIView(new CoreGraphics.CGRect(0, 0, s, s)) { UserInteractionEnabled = false };
+        var tick = new UIView(new CoreGraphics.CGRect(s / 2f - 1, (s - ring) / 2, 2, s * 0.14f))
+        {
+            BackgroundColor = UIColor.FromRGBA((byte)10, (byte)102, (byte)204, (byte)255),
+        };
+        _navNorthTick.AddSubview(tick);
+        host.AddSubview(_navNorthTick);
+
+        return host;
     }
 
     private void BuildGpsPanel()
@@ -513,6 +572,23 @@ public class MapLibreMapController : IMapLibreMapController
         _map.EaseTo(lat, lon, _map.Zoom, 0, _map.Pitch, durationMs: 200);
     }
 
+    /// <summary>Rotate the map by <paramref name="deltaDeg"/> (positive = clockwise).</summary>
+    private void RotateBy(double deltaDeg)
+    {
+        if (_map == null) return;
+        var (lat, lon) = _map.Center;
+        _map.EaseTo(lat, lon, _map.Zoom, _map.Bearing + deltaDeg, _map.Pitch, durationMs: 200);
+    }
+
+    /// <summary>Tilt the map by <paramref name="deltaDeg"/>, clamped to 0–60°.</summary>
+    private void PitchBy(double deltaDeg)
+    {
+        if (_map == null) return;
+        var (lat, lon) = _map.Center;
+        double newPitch = Math.Max(0, Math.Min(60, _map.Pitch + deltaDeg));
+        _map.EaseTo(lat, lon, _map.Zoom, _map.Bearing, newPitch, durationMs: 200);
+    }
+
     private void CycleGpsMode()
     {
         _gpsMode = _gpsMode switch
@@ -547,11 +623,11 @@ public class MapLibreMapController : IMapLibreMapController
         _gpsTracking.SetTitleColor(UIColor.FromRGBA(r, g, b, (byte)255), UIControlState.Normal);
     }
 
-    /// <summary>Rotates the compass needle to reflect the current map bearing.</summary>
+    /// <summary>Rotates the compass north tick to reflect the current map bearing.</summary>
     private void UpdateCompassRotation()
     {
-        if (_navCompass == null || _map == null) return;
-        _navCompass.Transform = CGAffineTransform.MakeRotation(-(float)(_map.Bearing * Math.PI / 180.0));
+        if (_navNorthTick == null || _map == null) return;
+        _navNorthTick.Transform = CGAffineTransform.MakeRotation(-(float)(_map.Bearing * Math.PI / 180.0));
     }
 
     private void ApplyPendingLocationIndicator()
