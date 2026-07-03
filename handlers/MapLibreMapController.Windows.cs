@@ -495,6 +495,19 @@ public class MapLibreMapController : IMapLibreMapController
     private bool _initialized;
     private bool _styleReady;
 
+    /// <summary>
+    /// Selects the airspace-free in-tree SwapChainPanel renderer instead of the default
+    /// WS_POPUP GL window. Set before the map's handler connects (or via the
+    /// <c>MAPLIBRE_WIN_RENDERER=swapchain</c> environment variable). Experimental — see
+    /// docs/design/in-tree-map-surface.md.
+    /// </summary>
+    public static bool UseSwapChainPanel { get; set; } =
+        string.Equals(Environment.GetEnvironmentVariable("MAPLIBRE_WIN_RENDERER"), "swapchain",
+            StringComparison.OrdinalIgnoreCase);
+
+    // Non-null when the SwapChainPanel renderer is active; owns the surface + mbgl objects.
+    private WinUI.SwapChainMapView? _swapView;
+
     /// <summary>The WinUI placeholder element the handler uses as the platform view.</summary>
     public Microsoft.UI.Xaml.Controls.Grid View { get; } = new();
 
@@ -525,9 +538,43 @@ public class MapLibreMapController : IMapLibreMapController
 
     public void Init()
     {
+        if (UseSwapChainPanel) { InitSwapChain(); return; }
+
         View.Loaded       += (_, _) => TryInitialize();
         View.SizeChanged  += (_, e) => OnViewSizeChanged(new Microsoft.Maui.Graphics.Size(e.NewSize.Width, e.NewSize.Height));
         View.Unloaded     += (_, _) => DisposeNative();
+    }
+
+    // ── SwapChainPanel renderer (airspace-free, in-tree) ───────────────────────
+
+    private void InitSwapChain()
+    {
+        _swapView = new WinUI.SwapChainMapView
+        {
+            StyleUrl = string.IsNullOrEmpty(_styleString)
+                ? "https://demotiles.maplibre.org/style.json" : _styleString!,
+        };
+
+        // The self-contained view owns the mbgl objects; mirror them onto the controller's
+        // fields so all existing camera/source/layer operations work unchanged.
+        _swapView.MapReady += (_, _) =>
+        {
+            _map = _swapView.Map;
+            _initialized = true;
+            OnMapReadyReceived?.Invoke(new Map(null));
+        };
+        _swapView.StyleLoaded += (_, _) =>
+        {
+            _style = _swapView.Style;
+            _styleReady = true;
+            OnStyleLoadedReceived?.Invoke(new Style(null));
+        };
+        _swapView.DidBecomeIdle += (_, _) => OnDidBecomeIdleReceived?.Invoke();
+        _swapView.CameraIdle    += (_, _) => OnCameraIdleReceived?.Invoke();
+        _swapView.MapClicked    += (_, e) => OnMapClickReceived?.Invoke(new LatLng(e.Lat, e.Lon), e.X, e.Y);
+
+        View.Children.Add(_swapView.View);
+        View.Unloaded += (_, _) => DisposeNative();
     }
 
     private void TryInitialize()
@@ -816,6 +863,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     private void OnViewSizeChanged(Microsoft.Maui.Graphics.Size newSize)
     {
+        if (_swapView != null) return; // the SwapChainPanel view handles its own resize
         CtrlDiag($"OnViewSizeChanged {newSize.Width}x{newSize.Height} init={_initialized}");
         if (!_initialized) return;
         RefreshPixelRatio();
@@ -878,6 +926,7 @@ public class MapLibreMapController : IMapLibreMapController
     /// </summary>
     internal void RefreshPosition()
     {
+        if (_swapView != null) return; // no child window to reposition in SwapChainPanel mode
         if (_initialized)
         {
             UpdateChildWindowPosition();
@@ -2332,6 +2381,16 @@ public class MapLibreMapController : IMapLibreMapController
 
     private void DisposeNative()
     {
+        if (_swapView != null)
+        {
+            _swapView.Dispose();
+            _swapView = null;
+            _map = null;
+            _style = null;
+            _initialized = false;
+            return;
+        }
+
         // Stop the pump FIRST so no tick can run after native objects are freed
         // (avoids 0xc0000374 heap corruption on page tear-down).
         if (_runLoopTimer != null)
