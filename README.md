@@ -391,3 +391,4 @@ This project is **BSD 2-Clause** licensed — see [LICENSE](/LICENSE).
 | [MapLibre Native](https://github.com/maplibre/maplibre-native) | BSD 2-Clause | Linked natively via `mln-cabi` |
 | [maplibre-native-ffi](https://github.com/maplibre/maplibre-native-ffi) | BSD 2-Clause | Reference only — no code included; project structure and C ABI conventions (typed handles, status codes, log callback) informed the design of `mln-cabi` |
 | Original [maplibre-maui](https://github.com/btrounson/maplibre-maui) by Benjamin Trounson | MIT | Portions adapted |
+| [.NET MAUI](https://github.com/dotnet/maui) (`src/Core/maps`) | MIT | Map primitives in `bindings/Geometry` (`MapSpan`, `Distance`, `GeographyUtils`, `MapType`) adapted from the official MAUI maps source; its handler + property/command mapper pattern also informed the design of `MapLibreNative.Maui.Handlers` |

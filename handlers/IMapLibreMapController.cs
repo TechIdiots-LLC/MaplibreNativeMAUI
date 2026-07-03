@@ -137,6 +137,19 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
     public void FlyTo(double latitude, double longitude, double zoom,
         double bearing = 0, double pitch = 0, long durationMs = 500);
 
+    // Camera – MapSpan convenience overloads.
+    // Default interface methods so every platform controller gets them for free by
+    // delegating to the primitive lat/lon/zoom overloads above. The span's extent is
+    // converted to a MapLibre zoom level via MapSpan.ToZoomLevel().
+    public void JumpTo(MapLibreNative.Maui.Geometry.MapSpan span, double bearing = 0, double pitch = 0)
+        => JumpTo(span.Center.Latitude, span.Center.Longitude, span.ToZoomLevel(), bearing, pitch);
+
+    public void EaseTo(MapLibreNative.Maui.Geometry.MapSpan span, double bearing = 0, double pitch = 0, long durationMs = 300)
+        => EaseTo(span.Center.Latitude, span.Center.Longitude, span.ToZoomLevel(), bearing, pitch, durationMs);
+
+    public void FlyTo(MapLibreNative.Maui.Geometry.MapSpan span, double bearing = 0, double pitch = 0, long durationMs = 500)
+        => FlyTo(span.Center.Latitude, span.Center.Longitude, span.ToZoomLevel(), bearing, pitch, durationMs);
+
     // Camera – constraints
     public void SetCameraTargetBounds(LatLngBounds bounds,
         double minZoom = double.NaN, double maxZoom = double.NaN,

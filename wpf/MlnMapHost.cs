@@ -20,6 +20,7 @@ using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Threading;
 using MapLibreNative.Maui;
+using MapLibreNative.Maui.Geometry;
 
 namespace MapLibreNative.Maui.WPF;
 
@@ -157,6 +158,29 @@ public class MlnMapHost : HwndHost
     {
         if (_map == null) return;
         _map.JumpTo(latitude, longitude, zoom);
+        _renderNeedsUpdate = true;
+    }
+
+    /// <summary>
+    /// Jump the camera to the given <see cref="MapSpan"/>, converting the span's extent to a
+    /// zoom level via <see cref="MapSpan.ToZoomLevel"/>.
+    /// </summary>
+    public void CenterOn(MapSpan span)
+    {
+        if (_map == null) return;
+        _map.JumpTo(span.Center.Latitude, span.Center.Longitude, span.ToZoomLevel());
+        _renderNeedsUpdate = true;
+    }
+
+    /// <summary>
+    /// Animate the camera to the given <see cref="MapSpan"/> over <paramref name="durationMs"/>
+    /// milliseconds, preserving the current bearing and pitch.
+    /// </summary>
+    public void EaseTo(MapSpan span, long durationMs = 300)
+    {
+        if (_map == null) return;
+        _map.EaseTo(span.Center.Latitude, span.Center.Longitude, span.ToZoomLevel(),
+            _map.Bearing, _map.Pitch, durationMs);
         _renderNeedsUpdate = true;
     }
 
