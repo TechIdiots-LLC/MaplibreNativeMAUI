@@ -4,7 +4,7 @@
 
 **Implementation status**
 - ✅ **WPF — `D3DImage`:** implemented as `MlnMapImage` + `GlDxInteropContext` (Vortice.Direct3D9). Renders MapLibre into a shared D3D9Ex surface via `WGL_NV_DX_interop2`, presents through `D3DImage`, hosts the nav control as a real WPF child. Kept alongside `MlnMapHost` (the default). Needs on-GPU validation of the interop path.
-- 🚧 **MAUI Windows — `SwapChainPanel`:** started as `SwapChainMapView` (Vortice.Direct3D11/DXGI + `ISwapChainPanelNative`). In-tree surface is created/sized/bound/cleared; remaining work is the mbgl GL→DXGI bridge and swapping it into `MapLibreMapController.Windows` behind a flag. Not yet wired in; `WS_POPUP` path stays default.
+- 🚧 **MAUI Windows — `SwapChainPanel`:** `SwapChainMapView` + `GlDxgiInteropContext` (Vortice.Direct3D11/DXGI + `ISwapChainPanelNative`). mbgl now renders through the GL→DXGI bridge: into an FBO backed by a shared D3D11 offscreen texture (`WGL_NV_DX_interop2`), `CopyResource`'d into the composition swap chain's back buffer, then Present. Vertical flip handled at the element level. Remaining: on-GPU validation, then swap into `MapLibreMapController.Windows` behind a flag and port nav/GPS/attribution to XAML children. Not yet wired in; `WS_POPUP` path stays default.
 - ⬜ **Android (`TextureView`)** and **iOS/mac (already in-tree):** not started.
 
 ## Problem
