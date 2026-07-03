@@ -452,7 +452,22 @@ public class MapLibreMap : StackLayout
         var propertyValues = properties.ToDictionary();
         controller.AddHeatmapLayer(layerName, sourceName, propertyValues, minZoom, maxZoom, belowLayerId);
     }
+    // ── Sprite images ───────────────────────────────────────────────────────────
 
+    /// <summary>Register a named sprite image for use with <c>icon-image</c> in SymbolLayers.
+    /// <paramref name="rgba"/> must be <c>width × height × 4</c> bytes of premultiplied RGBA.</summary>
+    public void AddSpriteImage(string imageId, int width, int height, byte[] rgba, float pixelRatio = 1f, bool sdf = false)
+    {
+        if (Handler is not MapLibreMapHandler handler) return;
+        handler.Controller.AddSpriteImage(imageId, width, height, rgba, pixelRatio, sdf);
+    }
+
+    /// <summary>Remove a sprite image previously registered with <see cref="AddSpriteImage"/>.</summary>
+    public void RemoveSpriteImage(string imageId)
+    {
+        if (Handler is not MapLibreMapHandler handler) return;
+        handler.Controller.RemoveSpriteImage(imageId);
+    }
     // ── Feature queries ───────────────────────────────────────────────────────
 
     /// <summary>

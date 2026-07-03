@@ -949,6 +949,18 @@ public class MapLibreMapController : IMapLibreMapController
         _style.RemoveLayer(layerId);
     }
 
+    public void AddSpriteImage(string imageId, int width, int height, byte[] rgba, float pixelRatio = 1f, bool sdf = false)
+    {
+        if (!_styleReady || _style == null) return;
+        _style.AddImage(imageId, width, height, pixelRatio, sdf, rgba);
+    }
+
+    public void RemoveSpriteImage(string imageId)
+    {
+        if (!_styleReady || _style == null) return;
+        _style.RemoveImage(imageId);
+    }
+
     // -- Helpers ---------------------------------------------------------------
 
     private static void ApplyLayerMeta(MbglLayer layer, string? sourceLayer,

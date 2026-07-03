@@ -248,4 +248,11 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
     void UpdateLocationIndicator(double lat, double lon, float bearing = 0, float accuracyMeters = 10);
     /// <summary>Remove the location indicator layer and reset state.</summary>
     void ClearLocationIndicator();
+
+    // ── Sprite images (for SymbolLayer icon-image) ────────────────────────────
+    /// <summary>Register a named sprite image for use with <c>icon-image</c> in SymbolLayers.
+    /// <paramref name="rgba"/> must be <c>width × height × 4</c> bytes of premultiplied RGBA.</summary>
+    void AddSpriteImage(string imageId, int width, int height, byte[] rgba, float pixelRatio = 1f, bool sdf = false);
+    /// <summary>Remove a sprite image previously registered with <see cref="AddSpriteImage"/>.</summary>
+    void RemoveSpriteImage(string imageId);
 }
