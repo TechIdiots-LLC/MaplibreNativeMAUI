@@ -86,6 +86,54 @@ public class MlnMapImage : Grid
                     m._attrBorder.Visibility = (bool)e.NewValue ? Visibility.Visible : Visibility.Collapsed;
             }));
 
+    public bool ShowNavigationControls
+    {
+        get => (bool)GetValue(ShowNavigationControlsProperty);
+        set => SetValue(ShowNavigationControlsProperty, value);
+    }
+    public static readonly DependencyProperty ShowNavigationControlsProperty =
+        DependencyProperty.Register(nameof(ShowNavigationControls), typeof(bool), typeof(MlnMapImage),
+            new PropertyMetadata(true, (d, e) =>
+            {
+                if (d is MlnMapImage m && m._navPanel != null)
+                {
+                    m._navPanel.Visibility = (bool)e.NewValue ? Visibility.Visible : Visibility.Collapsed;
+                    m.RepositionControls();
+                }
+            }));
+
+    public MapControlCorner NavigationControlPosition
+    {
+        get => (MapControlCorner)GetValue(NavigationControlPositionProperty);
+        set => SetValue(NavigationControlPositionProperty, value);
+    }
+    public static readonly DependencyProperty NavigationControlPositionProperty =
+        DependencyProperty.Register(nameof(NavigationControlPosition), typeof(MapControlCorner), typeof(MlnMapImage),
+            new PropertyMetadata(MapControlCorner.TopRight, OnControlPositionChanged));
+
+    public MapControlCorner GpsControlPosition
+    {
+        get => (MapControlCorner)GetValue(GpsControlPositionProperty);
+        set => SetValue(GpsControlPositionProperty, value);
+    }
+    public static readonly DependencyProperty GpsControlPositionProperty =
+        DependencyProperty.Register(nameof(GpsControlPosition), typeof(MapControlCorner), typeof(MlnMapImage),
+            new PropertyMetadata(MapControlCorner.TopRight, OnControlPositionChanged));
+
+    public MapControlCorner AttributionControlPosition
+    {
+        get => (MapControlCorner)GetValue(AttributionControlPositionProperty);
+        set => SetValue(AttributionControlPositionProperty, value);
+    }
+    public static readonly DependencyProperty AttributionControlPositionProperty =
+        DependencyProperty.Register(nameof(AttributionControlPosition), typeof(MapControlCorner), typeof(MlnMapImage),
+            new PropertyMetadata(MapControlCorner.BottomLeft, OnControlPositionChanged));
+
+    private static void OnControlPositionChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is MlnMapImage m) m.RepositionControls();
+    }
+
     /// <summary>When true, each GPS fix re-centres the map. Controlled by the GPS tracking mode.</summary>
     public bool FollowLocation { get; set; } = true;
 
@@ -96,6 +144,7 @@ public class MlnMapImage : Grid
 
     public event EventHandler? MapReady;
     public event EventHandler? StyleLoaded;
+    public event EventHandler? CameraIdle;
     public event EventHandler<MlnMapClickEventArgs>? MapClicked;
 
     // ── State ─────────────────────────────────────────────────────────────────
@@ -242,6 +291,150 @@ public class MlnMapImage : Grid
         _renderNeedsUpdate = true;
     }
 
+    // ── Sources / layers / queries (parity with MlnMapHost) ────────────────────
+
+    public void AddGeoJsonSource(string sourceId, string geojson)
+    {
+        if (_style == null) return;
+        MbglSource src = _style.HasSource(sourceId) ? _style.GetSource(sourceId)! : _style.AddGeoJsonSource(sourceId);
+        src.SetGeoJson(geojson);
+        _renderNeedsUpdate = true;
+    }
+
+    public void SetGeoJsonSource(string sourceId, string geojson)
+    {
+        if (_style == null) return;
+        _style.GetSource(sourceId)?.SetGeoJson(geojson);
+        _renderNeedsUpdate = true;
+    }
+
+    public void AddGeoJsonSourceUrl(string sourceId, string url)
+    {
+        if (_style == null) return;
+        if (!_style.HasSource(sourceId)) _style.AddGeoJsonSourceUrl(sourceId, url);
+        _renderNeedsUpdate = true;
+    }
+
+    public void AddVectorSourceUrl(string sourceId, string tileJsonUrl)
+    {
+        if (_style == null) return;
+        if (!_style.HasSource(sourceId)) _style.AddVectorSource(sourceId, tileJsonUrl);
+        _renderNeedsUpdate = true;
+    }
+
+    public void AddRasterSource(string sourceId, string url, int tileSize = 512)
+    {
+        if (_style == null) return;
+        if (!_style.HasSource(sourceId)) _style.AddRasterSource(sourceId, url, tileSize);
+        _renderNeedsUpdate = true;
+    }
+
+    public void AddRasterDemSource(string sourceId, string url, int tileSize = 512)
+    {
+        if (_style == null) return;
+        if (!_style.HasSource(sourceId)) _style.AddRasterDemSource(sourceId, url, tileSize);
+        _renderNeedsUpdate = true;
+    }
+
+    public void AddImageSource(string sourceId, string url,
+        double lat0 = 0, double lon0 = 0, double lat1 = 0, double lon1 = 0,
+        double lat2 = 0, double lon2 = 0, double lat3 = 0, double lon3 = 0,
+        bool hasCoordinates = false)
+    {
+        if (_style == null) return;
+        if (!_style.HasSource(sourceId))
+        {
+            if (hasCoordinates)
+                _style.AddImageSource(sourceId, url, lat0, lon0, lat1, lon1, lat2, lon2, lat3, lon3);
+            else
+                _style.AddRasterSource(sourceId, url);
+        }
+        _renderNeedsUpdate = true;
+    }
+
+    public void AddSourceJson(string sourceId, string sourceJson)
+    {
+        if (_style == null) return;
+        if (!_style.HasSource(sourceId)) _style.AddSourceJson(sourceId, sourceJson);
+        _renderNeedsUpdate = true;
+    }
+
+    public void AddCircleLayer(
+        string layerName, string sourceName, string? belowLayerId,
+        string? sourceLayer, IDictionary<string, object?> properties,
+        float minZoom = 0, float maxZoom = 0)
+    {
+        if (_style == null) return;
+        if (_style.HasLayer(layerName)) return;
+        var layer = _style.AddCircleLayer(layerName, sourceName, belowLayerId);
+        ApplyLayerProperties(layer, properties);
+        if (minZoom > 0) layer.SetMinZoom(minZoom);
+        if (maxZoom > 0) layer.SetMaxZoom(maxZoom);
+        if (sourceLayer != null) layer.SetSourceLayer(sourceLayer);
+        _renderNeedsUpdate = true;
+    }
+
+    public void RemoveLayer(string layerId)
+    {
+        if (_style == null) return;
+        if (_style.HasLayer(layerId)) _style.RemoveLayer(layerId);
+        _renderNeedsUpdate = true;
+    }
+
+    public void RemoveSource(string sourceId)
+    {
+        if (_style == null) return;
+        if (_style.HasSource(sourceId)) _style.RemoveSource(sourceId);
+        _renderNeedsUpdate = true;
+    }
+
+    /// <summary>
+    /// Returns GeoJSON of rendered features in a box around (<paramref name="cx"/>, <paramref name="cy"/>)
+    /// within <paramref name="thresholdPx"/> physical pixels, optionally filtered to <paramref name="layerIds"/>.
+    /// </summary>
+    public string? QueryRenderedFeaturesInBox(double cx, double cy, double thresholdPx = 5,
+        string[]? layerIds = null)
+    {
+        if (_map == null) return null;
+        string? filter = layerIds is { Length: > 0 } ? string.Join(",", layerIds) : null;
+        return _map.QueryRenderedFeaturesInBox(
+            cx - thresholdPx, cy - thresholdPx, cx + thresholdPx, cy + thresholdPx, filter);
+    }
+
+    /// <summary>Wraps a pre-serialised JSON string so layer properties forward it verbatim (e.g. expressions).</summary>
+    public record RawJson(string Json);
+
+    private static readonly HashSet<string> LayoutPropertyNames = new(StringComparer.Ordinal)
+    {
+        "visibility", "symbol-placement", "symbol-spacing", "icon-image", "icon-size",
+        "text-field", "text-font", "text-size", "line-cap", "line-join", "fill-sort-key",
+        "circle-sort-key",
+    };
+
+    private static void ApplyLayerProperties(MbglLayer layer, IDictionary<string, object?> props)
+    {
+        var ic = System.Globalization.CultureInfo.InvariantCulture;
+        foreach (var (name, val) in props)
+        {
+            if (val == null) continue;
+            string json = val switch
+            {
+                RawJson r => r.Json,
+                string s => $"\"{s}\"",
+                bool b => b ? "true" : "false",
+                double d => d.ToString(ic),
+                float f => f.ToString(ic),
+                int i => i.ToString(),
+                long l => l.ToString(),
+                _ => System.Text.Json.JsonSerializer.Serialize(val),
+            };
+            if (LayoutPropertyNames.Contains(name))
+                layer.SetLayoutProperty(name, json);
+            else
+                layer.SetPaintProperty(name, json);
+        }
+    }
+
     // ── Input (real WPF routed events — no WndProc) ────────────────────────────
 
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
@@ -309,18 +502,52 @@ public class MlnMapImage : Grid
 
     // ── Nav overlay (real WPF children — the whole point) ──────────────────────
 
+    private StackPanel? _navPanel;
+
     private void BuildNavOverlay()
     {
-        var panel = new StackPanel
+        _navPanel = new StackPanel { Width = 30 };
+        _navPanel.Children.Add(MakeButton("+", ZoomIn, true));
+        _navPanel.Children.Add(MakeButton("−", ZoomOut, false));
+        Children.Add(_navPanel);
+    }
+
+    // ── Control positioning (corner anchoring + stacking) ──────────────────────
+
+    private const double ControlEdgeMargin = 10;
+    private const double ControlPanelHeight = 60; // 2 buttons × 30px
+    private const double ControlStackGap = 10;
+
+    private void RepositionControls()
+    {
+        if (_navPanel != null)
+            ApplyCorner(_navPanel, NavigationControlPosition, 0);
+
+        if (_gpsPanel != null)
         {
-            HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(0, 10, 10, 0),
-            Width = 30,
-        };
-        panel.Children.Add(MakeButton("+", ZoomIn, true));
-        panel.Children.Add(MakeButton("−", ZoomOut, false));
-        Children.Add(panel);
+            // Stack the GPS panel below/above the nav panel when they share a corner.
+            bool sharesNav = ShowNavigationControls && _navPanel?.Visibility == Visibility.Visible
+                             && GpsControlPosition == NavigationControlPosition;
+            double off = sharesNav ? ControlPanelHeight + ControlStackGap : 0;
+            ApplyCorner(_gpsPanel, GpsControlPosition, off);
+        }
+
+        if (_attrBorder != null)
+            ApplyCorner(_attrBorder, AttributionControlPosition, 0);
+    }
+
+    private static void ApplyCorner(FrameworkElement el, MapControlCorner corner, double stackOffset)
+    {
+        bool left = corner is MapControlCorner.TopLeft or MapControlCorner.BottomLeft;
+        bool top = corner is MapControlCorner.TopLeft or MapControlCorner.TopRight;
+        el.HorizontalAlignment = left ? HorizontalAlignment.Left : HorizontalAlignment.Right;
+        el.VerticalAlignment = top ? VerticalAlignment.Top : VerticalAlignment.Bottom;
+        double edge = ControlEdgeMargin + stackOffset;
+        el.Margin = new Thickness(
+            left ? ControlEdgeMargin : 0,
+            top ? edge : 0,
+            left ? 0 : ControlEdgeMargin,
+            top ? 0 : edge);
     }
 
     private static Border MakeButton(string glyph, Action onClick, bool top)
