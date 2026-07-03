@@ -28,8 +28,6 @@
     <!-- D3D11/DXGI interop for the in-tree SwapChainPanel renderer (Windows only,
          airspace-free alternative to the WS_POPUP GL window). -->
     <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
-        <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
-        <PackageReference Include="Vortice.DXGI" Version="3.8.3" />
     </ItemGroup>
 
     <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'

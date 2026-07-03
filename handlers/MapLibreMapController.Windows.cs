@@ -607,8 +607,8 @@ public class MapLibreMapController : IMapLibreMapController
             Margin = new WUX.Thickness(0, 10, 10, 0),
             Width = 30,
         };
-        _swapNavPanel.Children.Add(MakeSwapButton("＋", () => _swapView?.ZoomIn(), true));
-        _swapNavPanel.Children.Add(MakeSwapButton("－", () => _swapView?.ZoomOut(), false));
+        _swapNavPanel.Children.Add(MakeSwapButton("+", () => _swapView?.ZoomIn(), true));
+        _swapNavPanel.Children.Add(MakeSwapButton("−", () => _swapView?.ZoomOut(), false));
         View.Children.Add(_swapNavPanel);
 
         // GPS control — top-right, stacked below the nav panel.
@@ -672,7 +672,8 @@ public class MapLibreMapController : IMapLibreMapController
             Child = new WUXC.TextBlock
             {
                 Text = glyph,
-                FontSize = 15,
+                FontSize = 18,
+                FontWeight = Microsoft.UI.Text.FontWeights.Bold,
                 HorizontalAlignment = WUX.HorizontalAlignment.Center,
                 VerticalAlignment = WUX.VerticalAlignment.Center,
             },

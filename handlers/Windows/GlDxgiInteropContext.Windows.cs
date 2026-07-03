@@ -1,30 +1,27 @@
 #if WINDOWS
 /**
- * GlDxgiInteropContext.Windows.cs — OpenGL ⇄ Direct3D11 bridge for the MAUI Windows
- * SwapChainPanel renderer.
+ * GlDxgiInteropContext.Windows.cs — off-screen WGL context for the MAUI Windows map renderer.
  *
- * MapLibre (mln-cabi's GL frontend) renders into an FBO whose colour attachment is a
- * D3D11 render-target texture shared with the GL context via WGL_NV_DX_interop2. That
- * offscreen texture is then copied into the composition swap chain's back buffer by
- * SwapChainMapView (see that file). A stable offscreen texture is used rather than the
- * back buffer directly because composition swap chains require the flip model, whose
- * back buffer rotates on every Present.
+ * Creates a hidden, full-size Win32 window with an OpenGL context.  MapLibre's WGL backend
+ * renders into FBO 0 (the window's framebuffer) as it always does; after each frame the caller
+ * reads the pixels with glReadPixels and hands them to a WinUI WriteableBitmap.
  *
- * This is the D3D11 sibling of the WPF GlDxInteropContext (which targets D3D9/D3DImage).
- * Requires WGL_NV_DX_interop2 (all modern desktop GPUs/drivers).
+ * Replaces the earlier WGL_NV_DX_interop2 + D3D11 design which failed because
+ * WGLRenderableResource::bind() in platform_frontend_windows.cpp unconditionally calls
+ * glBindFramebuffer(0), so MapLibre's output always lands in FBO 0 — not in any custom FBO.
  */
 using System.Runtime.InteropServices;
 
 namespace MapLibreNative.Maui.Handlers.WinUI;
 
 /// <summary>
-/// Owns the hidden WGL context and the GL FBO whose colour attachment is a D3D11 texture
-/// shared through WGL_NV_DX_interop2. The D3D11 device and the shared offscreen texture are
-/// owned by <see cref="SwapChainMapView"/> and passed in.
+/// Owns a hidden Win32 window and its WGL rendering context.  MapLibre renders into FBO 0 of
+/// that window; call <see cref="ReadPixels"/> after each <c>MbglFrontend.Render</c> to copy the
+/// result into the caller-supplied pixel buffer (e.g. a WinUI <c>WriteableBitmap</c>'s backing store).
 /// </summary>
 internal sealed class GlDxgiInteropContext : IDisposable
 {
-    // ── WGL / GL P/Invoke ─────────────────────────────────────────────────────
+    // ── P/Invoke ──────────────────────────────────────────────────────────────
 
     [DllImport("user32.dll")]
     private static extern IntPtr CreateWindowEx(uint dwExStyle, string lpClassName, string lpWindowName,
@@ -35,14 +32,14 @@ internal sealed class GlDxgiInteropContext : IDisposable
     [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
     [DllImport("user32.dll")] private static extern IntPtr DefWindowProcW(IntPtr hWnd, uint msg, IntPtr w, IntPtr l);
     [DllImport("kernel32.dll")] private static extern IntPtr GetModuleHandleW(IntPtr lpModuleName);
+    [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndAfter, int x, int y, int cx, int cy, uint flags);
+
     [DllImport("gdi32.dll")] private static extern int ChoosePixelFormat(IntPtr hdc, ref PIXELFORMATDESCRIPTOR ppfd);
     [DllImport("gdi32.dll")] private static extern bool SetPixelFormat(IntPtr hdc, int fmt, ref PIXELFORMATDESCRIPTOR ppfd);
     [DllImport("opengl32.dll")] private static extern IntPtr wglCreateContext(IntPtr hDC);
     [DllImport("opengl32.dll")] private static extern bool wglDeleteContext(IntPtr hGLRC);
     [DllImport("opengl32.dll")] private static extern bool wglMakeCurrent(IntPtr hDC, IntPtr hGLRC);
-    [DllImport("opengl32.dll")] private static extern IntPtr wglGetProcAddress(string name);
-    [DllImport("opengl32.dll")] private static extern void glGenTextures(int n, uint[] textures);
-    [DllImport("opengl32.dll")] private static extern void glDeleteTextures(int n, uint[] textures);
+    [DllImport("opengl32.dll")] private static extern void glReadPixels(int x, int y, int w, int h, uint fmt, uint type, IntPtr data);
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
     private struct WNDCLASSEXA
@@ -71,52 +68,14 @@ internal sealed class GlDxgiInteropContext : IDisposable
 
     private const uint PFD_DRAW_TO_WINDOW = 0x00000004;
     private const uint PFD_SUPPORT_OPENGL = 0x00000020;
-    private const uint PFD_DOUBLEBUFFER = 0x00000001;
-
-    private const uint GL_FRAMEBUFFER = 0x8D40;
-    private const uint GL_COLOR_ATTACHMENT0 = 0x8CE0;
-    private const uint GL_DEPTH_STENCIL_ATTACHMENT = 0x821A;
-    private const uint GL_RENDERBUFFER = 0x8D41;
-    private const uint GL_DEPTH24_STENCIL8 = 0x88F0;
-    private const uint GL_TEXTURE_2D = 0x0DE1;
-    private const uint GL_FRAMEBUFFER_COMPLETE = 0x8CD5;
-
-    private delegate void GenT(int n, uint[] o);
-    private delegate void BindFbo(uint target, uint fb);
-    private delegate void FboTex2D(uint target, uint attach, uint textarget, uint tex, int level);
-    private delegate void BindRbo(uint target, uint rb);
-    private delegate void RboStorage(uint target, uint fmt, int w, int h);
-    private delegate void FboRbo(uint target, uint attach, uint rbtarget, uint rb);
-    private delegate uint CheckFbo(uint target);
-    private delegate void DelObjs(int n, uint[] o);
-
-    private GenT _glGenFramebuffers = null!, _glGenRenderbuffers = null!;
-    private BindFbo _glBindFramebuffer = null!;
-    private FboTex2D _glFramebufferTexture2D = null!;
-    private BindRbo _glBindRenderbuffer = null!;
-    private RboStorage _glRenderbufferStorage = null!;
-    private FboRbo _glFramebufferRenderbuffer = null!;
-    private CheckFbo _glCheckFramebufferStatus = null!;
-    private DelObjs _glDeleteFramebuffers = null!, _glDeleteRenderbuffers = null!;
-
-    // ── WGL_NV_DX_interop ─────────────────────────────────────────────────────
-
-    private delegate IntPtr DxOpenDevice(IntPtr dxDevice);
-    private delegate bool DxCloseDevice(IntPtr hDevice);
-    private delegate IntPtr DxRegisterObject(IntPtr hDevice, IntPtr dxObject, uint name, uint type, uint access);
-    private delegate bool DxUnregisterObject(IntPtr hDevice, IntPtr hObject);
-    private delegate bool DxLock(IntPtr hDevice, int count, IntPtr[] hObjects);
-    private delegate bool DxUnlock(IntPtr hDevice, int count, IntPtr[] hObjects);
-
-    private DxOpenDevice _dxOpenDevice = null!;
-    private DxCloseDevice _dxCloseDevice = null!;
-    private DxRegisterObject _dxRegisterObject = null!;
-    private DxUnregisterObject _dxUnregisterObject = null!;
-    private DxLock _dxLock = null!;
-    private DxUnlock _dxUnlock = null!;
-
-    // Access flag: we fully overwrite the texture each frame (render target).
-    private const uint WGL_ACCESS_WRITE_DISCARD_NV = 0x0002;
+    // Single-buffered (no PFD_DOUBLEBUFFER) — glReadPixels captures from the only buffer.
+    private const uint CS_OWNDC       = 0x0020;
+    private const uint WS_POPUP       = 0x80000000;
+    private const uint SWP_NOMOVE     = 0x0002;
+    private const uint SWP_NOZORDER   = 0x0004;
+    private const uint SWP_NOACTIVATE = 0x0010;
+    private const uint GL_BGRA        = 0x80E1;   // GL 1.2 — supported by all modern drivers
+    private const uint GL_UNSIGNED_BYTE = 0x1401;
 
     // ── State ─────────────────────────────────────────────────────────────────
 
@@ -124,38 +83,53 @@ internal sealed class GlDxgiInteropContext : IDisposable
     private static WndProcDelegate? _wndProcKeepAlive;
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     private delegate IntPtr WndProcDelegate(IntPtr hWnd, uint msg, IntPtr w, IntPtr l);
-    private const string WndClass = "MlnGlDxgiHidden";
+    private const string WndClass = "MlnGlHiddenDxgi";
 
     private IntPtr _hwnd, _hdc, _glrc;
-    private IntPtr _glDxDevice;    // wglDXOpenDeviceNV handle
-    private IntPtr _dxRegistered;  // registered offscreen texture
-    private uint _glColorTex, _fbo, _depthRbo;
 
+    /// <summary>Physical pixel width of the current surface.</summary>
     public int Width { get; private set; }
+    /// <summary>Physical pixel height of the current surface.</summary>
     public int Height { get; private set; }
-    public uint Framebuffer => _fbo;
+
+    /// <summary>The hidden window's device context — pass as <c>surfaceHandle</c> to <see cref="MbglFrontend"/>.</summary>
     public IntPtr Hdc => _hdc;
+    /// <summary>The WGL render context — pass as <c>glContext</c> to <see cref="MbglFrontend"/>.</summary>
     public IntPtr GlContext => _glrc;
 
     // ── Init ──────────────────────────────────────────────────────────────────
 
-    /// <summary>Creates the hidden GL context and opens the interop device for <paramref name="d3d11Device"/>.</summary>
-    public void Initialize(IntPtr d3d11Device)
-    {
-        CreateHiddenGlContext();
-        LoadGlFunctions();
-        LoadNvDxInterop();
-        _glDxDevice = _dxOpenDevice(d3d11Device);
-        if (_glDxDevice == IntPtr.Zero)
-            throw new InvalidOperationException("wglDXOpenDeviceNV failed — WGL_NV_DX_interop2 unavailable on this GPU/driver.");
-    }
+    /// <summary>Creates the hidden Win32 window and its WGL context.</summary>
+    public void Initialize() => CreateHiddenGlContext();
 
     public void MakeCurrent() => wglMakeCurrent(_hdc, _glrc);
+
+    /// <summary>
+    /// Resizes the hidden window so its framebuffer matches the map.
+    /// Call before the first render and whenever the map view resizes.
+    /// </summary>
+    public void Resize(int width, int height)
+    {
+        width  = Math.Max(1, width);
+        height = Math.Max(1, height);
+        if (width == Width && height == Height) return;
+        Width  = width;
+        Height = height;
+        SetWindowPos(_hwnd, IntPtr.Zero, 0, 0, width, height, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+        MakeCurrent(); // re-bind after surface reallocation
+    }
+
+    /// <summary>
+    /// Reads the rendered pixels (bottom-left origin, BGRA) from FBO 0 into
+    /// <paramref name="buffer"/>. Call after <see cref="MbglFrontend.Render"/>.
+    /// </summary>
+    public void ReadPixels(IntPtr buffer) =>
+        glReadPixels(0, 0, Width, Height, GL_BGRA, GL_UNSIGNED_BYTE, buffer);
 
     private void CreateHiddenGlContext()
     {
         EnsureClass();
-        _hwnd = CreateWindowEx(0, WndClass, "", 0, 0, 0, 1, 1,
+        _hwnd = CreateWindowEx(0, WndClass, "", WS_POPUP, 0, 0, 1, 1,
             IntPtr.Zero, IntPtr.Zero, GetModuleHandleW(IntPtr.Zero), IntPtr.Zero);
         if (_hwnd == IntPtr.Zero)
             throw new InvalidOperationException("Failed to create hidden GL window.");
@@ -163,9 +137,9 @@ internal sealed class GlDxgiInteropContext : IDisposable
 
         var pfd = new PIXELFORMATDESCRIPTOR
         {
-            nSize = (ushort)Marshal.SizeOf<PIXELFORMATDESCRIPTOR>(),
-            nVersion = 1,
-            dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,
+            nSize     = (ushort)Marshal.SizeOf<PIXELFORMATDESCRIPTOR>(),
+            nVersion  = 1,
+            dwFlags   = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL,
             cColorBits = 32,
             cDepthBits = 24,
             cStencilBits = 8,
@@ -182,7 +156,8 @@ internal sealed class GlDxgiInteropContext : IDisposable
         _wndProcKeepAlive = (h, m, w, l) => DefWindowProcW(h, m, w, l);
         var wc = new WNDCLASSEXA
         {
-            cbSize = (uint)Marshal.SizeOf<WNDCLASSEXA>(),
+            cbSize    = (uint)Marshal.SizeOf<WNDCLASSEXA>(),
+            style     = CS_OWNDC,
             lpfnWndProc = Marshal.GetFunctionPointerForDelegate(_wndProcKeepAlive),
             hInstance = GetModuleHandleW(IntPtr.Zero),
             lpszClassName = WndClass,
@@ -191,109 +166,12 @@ internal sealed class GlDxgiInteropContext : IDisposable
         _classRegistered = true;
     }
 
-    private T Load<T>(string name) where T : Delegate
-    {
-        var p = wglGetProcAddress(name);
-        if (p == IntPtr.Zero)
-            throw new InvalidOperationException($"Required GL/WGL entry point '{name}' not found.");
-        return Marshal.GetDelegateForFunctionPointer<T>(p);
-    }
-
-    private void LoadGlFunctions()
-    {
-        _glGenFramebuffers = Load<GenT>("glGenFramebuffers");
-        _glGenRenderbuffers = Load<GenT>("glGenRenderbuffers");
-        _glBindFramebuffer = Load<BindFbo>("glBindFramebuffer");
-        _glFramebufferTexture2D = Load<FboTex2D>("glFramebufferTexture2D");
-        _glBindRenderbuffer = Load<BindRbo>("glBindRenderbuffer");
-        _glRenderbufferStorage = Load<RboStorage>("glRenderbufferStorage");
-        _glFramebufferRenderbuffer = Load<FboRbo>("glFramebufferRenderbuffer");
-        _glCheckFramebufferStatus = Load<CheckFbo>("glCheckFramebufferStatus");
-        _glDeleteFramebuffers = Load<DelObjs>("glDeleteFramebuffers");
-        _glDeleteRenderbuffers = Load<DelObjs>("glDeleteRenderbuffers");
-    }
-
-    private void LoadNvDxInterop()
-    {
-        _dxOpenDevice = Load<DxOpenDevice>("wglDXOpenDeviceNV");
-        _dxCloseDevice = Load<DxCloseDevice>("wglDXCloseDeviceNV");
-        _dxRegisterObject = Load<DxRegisterObject>("wglDXRegisterObjectNV");
-        _dxUnregisterObject = Load<DxUnregisterObject>("wglDXUnregisterObjectNV");
-        _dxLock = Load<DxLock>("wglDXLockObjectsNV");
-        _dxUnlock = Load<DxUnlock>("wglDXUnlockObjectsNV");
-    }
-
-    // ── Shared texture / FBO ──────────────────────────────────────────────────
-
-    /// <summary>
-    /// Registers <paramref name="d3d11Texture"/> (a render-target texture owned by the caller) as the
-    /// FBO colour attachment at the given size. Call whenever the offscreen texture is (re)created.
-    /// </summary>
-    public void SetSharedTexture(IntPtr d3d11Texture, int width, int height)
-    {
-        MakeCurrent();
-        ReleaseShared();
-
-        Width = Math.Max(1, width);
-        Height = Math.Max(1, height);
-
-        var tex = new uint[1];
-        glGenTextures(1, tex);
-        _glColorTex = tex[0];
-        _dxRegistered = _dxRegisterObject(_glDxDevice, d3d11Texture, _glColorTex,
-            GL_TEXTURE_2D, WGL_ACCESS_WRITE_DISCARD_NV);
-        if (_dxRegistered == IntPtr.Zero)
-            throw new InvalidOperationException("wglDXRegisterObjectNV failed for the offscreen texture.");
-
-        var fb = new uint[1]; _glGenFramebuffers(1, fb); _fbo = fb[0];
-        var rb = new uint[1]; _glGenRenderbuffers(1, rb); _depthRbo = rb[0];
-
-        Lock();
-        _glBindFramebuffer(GL_FRAMEBUFFER, _fbo);
-        _glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, _glColorTex, 0);
-        _glBindRenderbuffer(GL_RENDERBUFFER, _depthRbo);
-        _glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, Width, Height);
-        _glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, _depthRbo);
-        uint status = _glCheckFramebufferStatus(GL_FRAMEBUFFER);
-        Unlock();
-        if (status != GL_FRAMEBUFFER_COMPLETE)
-            throw new InvalidOperationException($"Interop framebuffer incomplete (status 0x{status:X}).");
-    }
-
-    /// <summary>Binds the interop FBO. Call between <see cref="Lock"/> and mbgl's render.</summary>
-    public void BindFramebuffer() => _glBindFramebuffer(GL_FRAMEBUFFER, _fbo);
-
-    /// <summary>Hands the shared texture to GL for rendering.</summary>
-    public void Lock()
-    {
-        if (_dxRegistered != IntPtr.Zero)
-            _dxLock(_glDxDevice, 1, new[] { _dxRegistered });
-    }
-
-    /// <summary>Returns the shared texture to D3D so it can be copied to the back buffer.</summary>
-    public void Unlock()
-    {
-        if (_dxRegistered != IntPtr.Zero)
-            _dxUnlock(_glDxDevice, 1, new[] { _dxRegistered });
-    }
-
-    private void ReleaseShared()
-    {
-        if (_dxRegistered != IntPtr.Zero) { _dxUnregisterObject(_glDxDevice, _dxRegistered); _dxRegistered = IntPtr.Zero; }
-        if (_fbo != 0) { _glDeleteFramebuffers(1, new[] { _fbo }); _fbo = 0; }
-        if (_depthRbo != 0) { _glDeleteRenderbuffers(1, new[] { _depthRbo }); _depthRbo = 0; }
-        if (_glColorTex != 0) { glDeleteTextures(1, new[] { _glColorTex }); _glColorTex = 0; }
-    }
-
     public void Dispose()
     {
-        MakeCurrent();
-        ReleaseShared();
-        if (_glDxDevice != IntPtr.Zero) { _dxCloseDevice(_glDxDevice); _glDxDevice = IntPtr.Zero; }
         wglMakeCurrent(IntPtr.Zero, IntPtr.Zero);
         if (_glrc != IntPtr.Zero) { wglDeleteContext(_glrc); _glrc = IntPtr.Zero; }
-        if (_hdc != IntPtr.Zero) { ReleaseDC(_hwnd, _hdc); _hdc = IntPtr.Zero; }
-        if (_hwnd != IntPtr.Zero) { DestroyWindow(_hwnd); _hwnd = IntPtr.Zero; }
+        if (_hdc  != IntPtr.Zero) { ReleaseDC(_hwnd, _hdc); _hdc  = IntPtr.Zero; }
+        if (_hwnd != IntPtr.Zero) { DestroyWindow(_hwnd);   _hwnd = IntPtr.Zero; }
     }
 }
 #endif

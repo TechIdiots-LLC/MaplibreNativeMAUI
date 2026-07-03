@@ -1,34 +1,22 @@
-#if WINDOWS
+﻿#if WINDOWS
 /**
- * SwapChainMapView.Windows.cs — in-tree DXGI surface for the MAUI Windows map.
+ * SwapChainMapView.Windows.cs — in-tree map view for the MAUI Windows renderer.
  *
- * The airspace-free replacement for the WS_POPUP GL window in
- * MapLibreMapController.Windows. A SwapChainPanel is a first-class XAML element that
- * owns a DXGI composition swap chain, so the map is real in-tree content and on-map
- * controls are ordinary XAML children (no owned windows, no per-tick realignment,
- * pointer input flows through XAML natively).
+ * MapLibre (mln-cabi GL) renders into FBO 0 of a hidden off-screen window; after each
+ * frame glReadPixels captures the result and writes it directly into a WinUI
+ * WriteableBitmap.  The bitmap is displayed in an ordinary XAML Image element so the
+ * map is real in-tree content: correct z-order, clipping, pointer input — no floating
+ * WS_POPUP window, no airspace.
  *
- * Rendering path:
- *   MapLibre (mln-cabi GL) → FBO backed by a shared D3D11 offscreen texture
- *     (GlDxgiInteropContext / WGL_NV_DX_interop2)
- *   → CopyResource into the composition swap chain's back buffer → Present.
- * A stable offscreen texture is used because composition swap chains require the flip
- * model (rotating back buffer). GL is bottom-up, so the SwapChainPanel is flipped at
- * the element level; the nav overlay and pointer input live on the un-flipped parent
- * View, so map coordinates are unaffected.
- *
- * A complete, self-contained map view: owns the mbgl objects and raises MapReady /
- * StyleLoaded / DidBecomeIdle / CameraIdle / MapClicked. MapLibreMapController.Windows
- * drives it (assigning its _map/_style from Map/Style) when the SwapChainPanel renderer
- * is selected. Needs on-GPU validation of the interop path and element flip.
+ * (Earlier design used a SwapChainPanel + WGL_NV_DX_interop2 + D3D11, which failed
+ * because WGLRenderableResource::bind() in platform_frontend_windows.cpp always calls
+ * glBindFramebuffer(0), so MapLibre's output lands in FBO 0 — not in any custom FBO.)
  */
 using System.Runtime.InteropServices;
 using MapLibreNative.Maui;
-using Vortice.Direct3D;
-using Vortice.Direct3D11;
-using Vortice.DXGI;
+using Microsoft.UI.Xaml.Media.Imaging;
 using WinRT;
-using WUX = Microsoft.UI.Xaml;
+using WUX  = Microsoft.UI.Xaml;
 using WUXC = Microsoft.UI.Xaml.Controls;
 using WUXI = Microsoft.UI.Xaml.Input;
 using WUXM = Microsoft.UI.Xaml.Media;
@@ -36,25 +24,17 @@ using WUXM = Microsoft.UI.Xaml.Media;
 namespace MapLibreNative.Maui.Handlers.WinUI;
 
 /// <summary>
-/// Hosts a <see cref="WUXC.SwapChainPanel"/> backed by a D3D11 composition swap chain into which
-/// MapLibre is rendered through GL↔D3D11 interop — the in-tree surface the MAUI Windows map uses
-/// instead of a floating WS_POPUP window.
+/// Hosts a <see cref="WUXC.Image"/> backed by a <see cref="WriteableBitmap"/> that is updated
+/// each frame via <c>glReadPixels</c> — the in-tree map surface used by the MAUI Windows handler.
 /// </summary>
 public sealed class SwapChainMapView : IDisposable
 {
-    [ComImport, Guid("63aad0b8-7c24-40ff-85a8-640d944cc325"),
+    // Access WinRT IBufferByteAccess to write directly into the WriteableBitmap pixel buffer.
+    [ComImport, Guid("905a0fef-bc53-11df-8c49-001e4fc686da"),
      InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface ISwapChainPanelNative
-    {
-        [PreserveSig] int SetSwapChain(IntPtr swapChain);
-    }
+    private interface IBufferByteAccess { [PreserveSig] int Buffer(out IntPtr value); }
 
     [DllImport("opengl32.dll")] private static extern void glViewport(int x, int y, int w, int h);
-    [DllImport("opengl32.dll")] private static extern void glClearColor(float r, float g, float b, float a);
-    [DllImport("opengl32.dll")] private static extern void glClear(uint mask);
-    private const uint GL_COLOR_BUFFER_BIT = 0x00004000;
-    private const uint GL_DEPTH_BUFFER_BIT = 0x00000100;
-    private const uint GL_STENCIL_BUFFER_BIT = 0x00000400;
 
     /// <summary>The XAML element to add to the map's visual tree (map surface + on-map controls).</summary>
     public WUXC.Grid View { get; } = new();
@@ -75,88 +55,62 @@ public sealed class SwapChainMapView : IDisposable
     /// <summary>Raised on a tap without pan: (latitude, longitude, physicalX, physicalY).</summary>
     public event EventHandler<(double Lat, double Lon, double X, double Y)>? MapClicked;
 
-    private readonly WUXC.SwapChainPanel _panel = new();
-
-    private ID3D11Device? _device;
-    private ID3D11DeviceContext? _context;
-    private IDXGISwapChain1? _swapChain;
-    private ID3D11Texture2D? _offscreen;
+    // The map surface — a plain XAML Image displaying the WriteableBitmap.
+    private readonly WUXC.Image _mapImage = new()
+    {
+        HorizontalAlignment = WUX.HorizontalAlignment.Stretch,
+        VerticalAlignment   = WUX.VerticalAlignment.Stretch,
+        Stretch             = WUXM.Stretch.Fill,
+        // GL renders bottom-left origin; WinUI is top-left — flip vertically.
+        RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5),
+        RenderTransform = new WUXM.ScaleTransform { ScaleX = 1, ScaleY = -1 },
+    };
+    private WriteableBitmap? _bitmap;
 
     private GlDxgiInteropContext? _interop;
-    private MbglRunLoop? _runLoop;
-    private MbglFrontend? _frontend;
-    private MbglMap? _map;
-    private MbglStyle? _style;
+    private MbglRunLoop?   _runLoop;
+    private MbglFrontend?  _frontend;
+    private MbglMap?       _map;
+    private MbglStyle?     _style;
 
-    private int _width = 1, _height = 1;
+    private int   _width = 1, _height = 1;
     private float _dpi = 1f;
-    private bool _renderNeedsUpdate = true, _rendering, _isDragging;
+    private bool  _renderNeedsUpdate = true, _rendering, _isDragging;
     private Windows.Foundation.Point _lastPos;
 
     public SwapChainMapView()
     {
-        // GL renders bottom-left origin; flip the panel so the map is upright. The nav overlay
-        // and input live on the un-flipped View, so map coordinates stay correct.
-        _panel.RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5);
-        _panel.RenderTransform = new WUXM.ScaleTransform { ScaleX = 1, ScaleY = -1 };
-        View.Children.Add(_panel);
-        // Nav / GPS / attribution controls are added by MapLibreMapController.Windows as XAML
-        // children of its View (so all overlays are positioned/wired from one place).
+        View.Children.Add(_mapImage);
+        // Nav / GPS / attribution controls are added by MapLibreMapController.Windows.
 
-        _panel.Loaded += (_, _) => Start();
-        _panel.Unloaded += (_, _) => Stop();
-        _panel.SizeChanged += (_, e) => Resize((int)e.NewSize.Width, (int)e.NewSize.Height);
+        View.Loaded        += (_, _) => Start();
+        View.Unloaded      += (_, _) => Stop();
+        View.SizeChanged   += (_, e) => Resize((int)e.NewSize.Width, (int)e.NewSize.Height);
 
-        View.PointerPressed += OnPointerPressed;
-        View.PointerMoved += OnPointerMoved;
-        View.PointerReleased += OnPointerReleased;
-        View.PointerWheelChanged += OnPointerWheel;
-        View.Tapped += OnTapped;
-        View.DoubleTapped += OnDoubleTapped;
+        View.PointerPressed       += OnPointerPressed;
+        View.PointerMoved         += OnPointerMoved;
+        View.PointerReleased      += OnPointerReleased;
+        View.PointerWheelChanged  += OnPointerWheel;
+        View.Tapped               += OnTapped;
+        View.DoubleTapped         += OnDoubleTapped;
     }
 
-    // ── Init / device + swap chain ─────────────────────────────────────────────
+    // ── Init ──────────────────────────────────────────────────────────────────
 
     private void Start()
     {
-        if (_device != null) return;
+        if (_interop != null) return;
 
-        _dpi = (float)_panel.CompositionScaleX;
-        _width = Math.Max(1, (int)(_panel.ActualWidth * _panel.CompositionScaleX));
-        _height = Math.Max(1, (int)(_panel.ActualHeight * _panel.CompositionScaleY));
-
-        D3D11.D3D11CreateDevice(
-            null, DriverType.Hardware, DeviceCreationFlags.BgraSupport,
-            null, out _device, out _context).CheckError();
-
-        using (var dxgiDevice = _device!.QueryInterface<IDXGIDevice>())
-        using (var adapter = dxgiDevice.GetAdapter())
-        using (var factory = adapter.GetParent<IDXGIFactory2>())
-        {
-            var desc = new SwapChainDescription1
-            {
-                Width = (uint)_width,
-                Height = (uint)_height,
-                Format = Format.B8G8R8A8_UNorm,
-                Stereo = false,
-                SampleDescription = new SampleDescription(1, 0),
-                BufferUsage = Usage.RenderTargetOutput,
-                BufferCount = 2,
-                Scaling = Scaling.Stretch,
-                SwapEffect = SwapEffect.FlipSequential,
-                AlphaMode = AlphaMode.Premultiplied,
-            };
-            _swapChain = factory.CreateSwapChainForComposition(_device, desc);
-        }
-
-        var native = _panel.As<ISwapChainPanelNative>();
-        Marshal.ThrowExceptionForHR(native.SetSwapChain(_swapChain!.NativePointer));
+        _dpi    = (float)View.XamlRoot.RasterizationScale;
+        _width  = Math.Max(1, (int)(View.ActualWidth  * _dpi));
+        _height = Math.Max(1, (int)(View.ActualHeight * _dpi));
 
         _interop = new GlDxgiInteropContext();
-        _interop.Initialize(_device.NativePointer);
-        CreateOffscreen(_width, _height);
+        _interop.Initialize();
+        _interop.Resize(_width, _height);
+        CreateBitmap(_width, _height);
 
-        _runLoop = new MbglRunLoop();
+        _runLoop  = new MbglRunLoop();
         _frontend = new MbglFrontend(_interop.Hdc, _interop.GlContext, _width, _height, _dpi,
             () => _renderNeedsUpdate = true);
         _map = new MbglMap(_frontend, _runLoop, pixelRatio: _dpi, observer: OnMapObserverEvent);
@@ -174,61 +128,44 @@ public sealed class SwapChainMapView : IDisposable
         MapReady?.Invoke(this, System.EventArgs.Empty);
     }
 
-    private void CreateOffscreen(int width, int height)
+    private void CreateBitmap(int w, int h)
     {
-        _offscreen?.Dispose();
-        var desc = new Texture2DDescription
-        {
-            Width = (uint)width,
-            Height = (uint)height,
-            MipLevels = 1,
-            ArraySize = 1,
-            Format = Format.B8G8R8A8_UNorm,
-            SampleDescription = new SampleDescription(1, 0),
-            Usage = ResourceUsage.Default,
-            BindFlags = BindFlags.RenderTarget,
-            CPUAccessFlags = CpuAccessFlags.None,
-            MiscFlags = ResourceOptionFlags.None,
-        };
-        _offscreen = _device!.CreateTexture2D(desc);
-        _interop!.SetSharedTexture(_offscreen.NativePointer, width, height);
+        _bitmap = new WriteableBitmap(w, h);
+        _mapImage.Source = _bitmap;
     }
 
     private void Resize(int dipWidth, int dipHeight)
     {
-        if (_swapChain == null || _device == null || _interop == null) return;
-        int w = Math.Max(1, (int)(dipWidth * _panel.CompositionScaleX));
-        int h = Math.Max(1, (int)(dipHeight * _panel.CompositionScaleY));
+        if (_interop == null || _frontend == null || _map == null) return;
+        float scale = (float)(View.XamlRoot?.RasterizationScale ?? _dpi);
+        int w = Math.Max(1, (int)(dipWidth  * scale));
+        int h = Math.Max(1, (int)(dipHeight * scale));
         if (w == _width && h == _height) return;
-        _width = w; _height = h;
-        _dpi = (float)_panel.CompositionScaleX;
+        _width = w; _height = h; _dpi = scale;
 
-        _swapChain.ResizeBuffers(2, (uint)w, (uint)h, Format.B8G8R8A8_UNorm, SwapChainFlags.None);
-        CreateOffscreen(w, h);
-        _frontend?.SetSize(w, h);
-        _map?.SetSize(w, h);
+        _interop.Resize(w, h);
+        CreateBitmap(w, h);
+        _frontend.SetSize(w, h);
+        _map.SetSize(w, h);
         _renderNeedsUpdate = true;
     }
 
     private void OnRendering(object? sender, object e)
     {
         _runLoop?.RunOnce();
-        if (!_renderNeedsUpdate || _interop == null || _frontend == null || _swapChain == null || _context == null || _offscreen == null)
+        if (!_renderNeedsUpdate || _interop == null || _frontend == null || _bitmap == null)
             return;
         _renderNeedsUpdate = false;
 
         _interop.MakeCurrent();
-        _interop.Lock();
-        _interop.BindFramebuffer();
         glViewport(0, 0, _width, _height);
-        glClearColor(0.85f, 0.90f, 0.97f, 1f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-        try { _frontend.Render(); } catch { /* swallow per-frame render faults */ }
-        _interop.Unlock();
+        try { _frontend.Render(); } catch { return; }
 
-        using var backBuffer = _swapChain.GetBuffer<ID3D11Texture2D>(0);
-        _context.CopyResource(backBuffer, _offscreen);
-        _swapChain.Present(1, PresentFlags.None);
+        // Write pixels directly into the WriteableBitmap's backing store via IBufferByteAccess.
+        var ibb = (IBufferByteAccess)(object)_bitmap.PixelBuffer;
+        ibb.Buffer(out IntPtr ptr);
+        _interop.ReadPixels(ptr);
+        _bitmap.Invalidate();
     }
 
     // ── Camera helpers ─────────────────────────────────────────────────────────
@@ -249,10 +186,10 @@ public sealed class SwapChainMapView : IDisposable
         _renderNeedsUpdate = true;
     }
 
-    // ── Input (XAML routed events; DIP → physical px) ──────────────────────────
+    // ── Input (XAML routed events; DIP -> physical px) ──────────────────────────
 
     private (double X, double Y) Phys(Windows.Foundation.Point dip)
-        => (dip.X * _panel.CompositionScaleX, dip.Y * _panel.CompositionScaleY);
+        => (dip.X * _dpi, dip.Y * _dpi);
 
     private void OnPointerPressed(object sender, WUXI.PointerRoutedEventArgs e)
     {
@@ -347,14 +284,10 @@ public sealed class SwapChainMapView : IDisposable
     public void Dispose()
     {
         Stop();
-        _map?.Dispose(); _map = null;
+        _map?.Dispose();      _map      = null;
         _frontend?.Dispose(); _frontend = null;
-        _runLoop?.Dispose(); _runLoop = null;
-        _interop?.Dispose(); _interop = null;
-        _offscreen?.Dispose(); _offscreen = null;
-        _swapChain?.Dispose(); _swapChain = null;
-        _context?.Dispose(); _context = null;
-        _device?.Dispose(); _device = null;
+        _runLoop?.Dispose();  _runLoop  = null;
+        _interop?.Dispose();  _interop  = null;
         _style = null;
     }
 }
