@@ -1,7 +1,11 @@
 # Design: making the map surface (and its controls) first-class on every platform
 
-**Status:** proposal / not yet implemented
-**Scope:** the host/controller layer per platform. No change to the `mln-cabi` C ABI.
+**Status:** in progress. **Scope:** the host/controller layer per platform. No change to the `mln-cabi` C ABI.
+
+**Implementation status**
+- ✅ **WPF — `D3DImage`:** implemented as `MlnMapImage` + `GlDxInteropContext` (Vortice.Direct3D9). Renders MapLibre into a shared D3D9Ex surface via `WGL_NV_DX_interop2`, presents through `D3DImage`, hosts the nav control as a real WPF child. Kept alongside `MlnMapHost` (the default). Needs on-GPU validation of the interop path.
+- 🚧 **MAUI Windows — `SwapChainPanel`:** started as `SwapChainMapView` (Vortice.Direct3D11/DXGI + `ISwapChainPanelNative`). In-tree surface is created/sized/bound/cleared; remaining work is the mbgl GL→DXGI bridge and swapping it into `MapLibreMapController.Windows` behind a flag. Not yet wired in; `WS_POPUP` path stays default.
+- ⬜ **Android (`TextureView`)** and **iOS/mac (already in-tree):** not started.
 
 ## Problem
 
@@ -129,6 +133,18 @@ Add pages to `sample/` (and matching XAML in `sample/WpfExample`) that exercise 
 4. Sample pages for each, on both MAUI and WPF.
 
 This is a feature, not a refactor, and is independent of the compositing work above — it can land first.
+
+**Implemented so far:** `Pin`, `Polyline`, `Polygon`, `Circle` under `handlers/Overlays` (declarative `StyleView` children; `Circle` uses the ported `GeographyUtils`/`Distance`).
+
+### Follow-up: proper marker via SymbolLayer + sprite (not the legacy annotation API)
+
+`Pin` currently renders as a **circle marker**. MapLibre's legacy `mbgl` annotation API (`SymbolAnnotation` etc.) is *not* exposed through `mln-cabi` and is deprecated upstream anyway — so it is not the path. The correct native marker is a **SymbolLayer with a registered sprite image**, and the cabi already exposes the key primitive: [`mbgl_style_add_image`](../../native/include/mln_cabi.h) → `MbglStyle.AddImage`. Upgrading `Pin` to a real icon + text-label marker requires:
+
+1. Implement `SymbolLayerProperties.ToDictionary()` (currently a stub that throws): `icon-image`, `icon-size`, `icon-anchor`, `icon-allow-overlap`, `text-field`, `text-font`, `text-size`, `text-color`, `text-halo-*`, `text-anchor`, `text-offset`.
+2. Surface `AddImage` (sprite registration) through `IMapLibreMapController` / `MapLibreMap` on Android, iOS/mac and Windows.
+3. Register a default marker sprite (or let `Pin` supply an image) and switch `Pin` to a SymbolLayer, keeping `Label`/`Address` as `text-field`.
+
+This is a cross-platform task (touches the per-platform controllers), which is why the circle marker shipped as the working interim.
 
 ## References
 
