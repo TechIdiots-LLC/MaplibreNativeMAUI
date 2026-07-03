@@ -544,7 +544,7 @@ public class MapLibreMapController : IMapLibreMapController
             _                             => ("\u25CB", (byte)120, (byte)120, (byte)120), // ○ gray
         };
         _gpsTracking.SetTitle(icon, UIControlState.Normal);
-        _gpsTracking.SetTitleColor(UIColor.FromRGBA(r, g, b, 255), UIControlState.Normal);
+        _gpsTracking.SetTitleColor(UIColor.FromRGBA(r, g, b, (byte)255), UIControlState.Normal);
     }
 
     /// <summary>Rotates the compass needle to reflect the current map bearing.</summary>
