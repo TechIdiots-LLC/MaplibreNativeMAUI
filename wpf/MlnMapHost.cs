@@ -646,6 +646,8 @@ public class MlnMapHost : HwndHost
         {
             PositionNavPopup();
             PositionGpsPopup();
+            UpdateNavPopupOpen();
+            UpdateGpsPopupOpen();
             Dispatcher.BeginInvoke(DispatcherPriority.Render, (Action)PositionAttributionPopup);
         };
 
@@ -844,6 +846,8 @@ public class MlnMapHost : HwndHost
 
         PositionNavPopup();
         PositionGpsPopup();
+        UpdateNavPopupOpen();
+        UpdateGpsPopupOpen();
         Dispatcher.BeginInvoke(DispatcherPriority.Background, (Action)PositionAttributionPopup);
 
         if (!_initialized && IsVisible)
@@ -1204,6 +1208,16 @@ public class MlnMapHost : HwndHost
         return off;
     }
 
+    /// <summary>
+    /// Whether the current map area is large enough to fully contain a control of
+    /// the given size sitting at the given vertical stacking offset, with a margin
+    /// on each side. Controls that do not fit are hidden so they never overflow the
+    /// map edge or float over adjacent UI when the host is very small.
+    /// </summary>
+    private bool ControlFitsMap(double panelW, double panelH, double stackOffset)
+        => ActualWidth  >= panelW + 2 * CtrlMargin
+        && ActualHeight >= panelH + stackOffset + 2 * CtrlMargin;
+
     private void PositionNavPopup()
     {
         if (_navPopup == null || !_initialized) return;
@@ -1243,7 +1257,8 @@ public class MlnMapHost : HwndHost
     private void UpdateNavPopupOpen()
     {
         if (_navPopup == null) return;
-        _navPopup.IsOpen = _initialized && IsVisible && ShowNavigationControls;
+        bool fits = ControlFitsMap(29, NavPanelH, ControlStackOffset(NavigationControlPosition, 0));
+        _navPopup.IsOpen = _initialized && IsVisible && ShowNavigationControls && fits;
     }
 
     private void HookPopupOpen(Popup popup)
@@ -1476,7 +1491,8 @@ public class MlnMapHost : HwndHost
     private void UpdateGpsPopupOpen()
     {
         if (_gpsPopup == null) return;
-        _gpsPopup.IsOpen = _initialized && IsVisible && ShowGpsControl;
+        bool fits = ControlFitsMap(29, GpsPanelH, ControlStackOffset(GpsControlPosition, 1));
+        _gpsPopup.IsOpen = _initialized && IsVisible && ShowGpsControl && fits;
     }
 
     // ── Attribution popup ─────────────────────────────────────────────────────

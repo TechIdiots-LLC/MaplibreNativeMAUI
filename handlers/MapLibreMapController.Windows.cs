@@ -1244,10 +1244,21 @@ public class MapLibreMapController : IMapLibreMapController
     /// <summary>Show/hide overlays based on current enabled flags.</summary>
     private void ShowOverlays()
     {
+        // Panel sizes (physical px) + fit checks. Controls are hidden when the map
+        // area can't contain them (width or height), including any stacking offset
+        // when nav + GPS share a corner.
+        int btnSizePx = (int)(NavButtonSize * _pixelRatio);
+        int stackGap  = (int)(NavPanelMargin * _pixelRatio);
+        int navPanelH = btnSizePx * 3 + 2;   // 3 buttons + 2 divider px
+        int gpsPanelH = btnSizePx * 2 + 1;   // 2 buttons + 1 divider px
+        bool navVisibleFits = _showNavControls && _initialized && ControlFitsMap(btnSizePx, navPanelH, 0);
+        int  gpsStackOff    = (navVisibleFits && _navCorner == _gpsCorner) ? navPanelH + stackGap : 0;
+        bool gpsVisibleFits = _showGpsControl && _initialized && ControlFitsMap(btnSizePx, gpsPanelH, gpsStackOff);
+
         if (_navHwnd  != IntPtr.Zero)
         {
-            // Also hide the nav panel when the map is too short to fit it.
-            bool navVisible = _showNavControls && _initialized && NavFitsCurrentHeight();
+            // Also hide the nav panel when the map is too short/narrow to fit it.
+            bool navVisible = navVisibleFits;
             uint style = (uint)GetWindowLongA(_navHwnd, GWL_STYLE);
             if (navVisible != _diagLastNavVisible)
             {
@@ -1291,7 +1302,7 @@ public class MapLibreMapController : IMapLibreMapController
         {
             SetWindowPos(_gpsHwnd, IntPtr.Zero, 0, 0, 0, 0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW_OR_HIDE(
-                    _showGpsControl && _initialized));
+                    gpsVisibleFits));
         }
     }
 
@@ -1316,6 +1327,23 @@ public class MapLibreMapController : IMapLibreMapController
         GetWindowRect(_childHwnd, out var wr);
         int mapH = wr.Bottom - wr.Top;
         return mapH >= (int)(MinMapHeightForNav * _pixelRatio);
+    }
+
+    /// <summary>
+    /// Whether the map area (child GL window) is large enough to contain a control
+    /// of the given physical size sitting at the given vertical stacking offset,
+    /// with a margin on each side. Hides nav/GPS panels when the map is too small
+    /// in either dimension so they never spill past the map edge.
+    /// </summary>
+    private bool ControlFitsMap(int panelWpx, int panelHpx, int stackOffsetPx)
+    {
+        if (_childHwnd == IntPtr.Zero) return false;
+        GetWindowRect(_childHwnd, out var wr);
+        int mapW = wr.Right  - wr.Left;
+        int mapH = wr.Bottom - wr.Top;
+        int marginPx = (int)(NavPanelMargin * _pixelRatio);
+        return mapW >= panelWpx + 2 * marginPx
+            && mapH >= panelHpx + stackOffsetPx + 2 * marginPx;
     }
 
     /// <summary>
@@ -1345,14 +1373,16 @@ public class MapLibreMapController : IMapLibreMapController
         int marginPx  = (int)(NavPanelMargin * _pixelRatio);
         int stackGap  = marginPx;                       // gap between controls that share a corner
         int btnSizePx = (int)(NavButtonSize  * _pixelRatio);
-        bool navFits  = mapH >= (int)(MinMapHeightForNav * _pixelRatio);
 
         // Panel heights are known up front; used to stack controls that share a corner.
         int navPanelH = btnSizePx * 3 + 2;  // 3 buttons + 2 separator lines
         int gpsPanelH = btnSizePx * 2 + 1;  // 2 buttons + 1 separator line
 
-        bool navVisible = _navHwnd != IntPtr.Zero && _showNavControls && navFits;
-        bool gpsVisible = _gpsHwnd != IntPtr.Zero && _showGpsControl;
+        // Match the fit logic in ShowOverlays so hidden controls don't leave a
+        // phantom stacking gap for the controls behind them.
+        bool navVisible = _navHwnd != IntPtr.Zero && _showNavControls && ControlFitsMap(btnSizePx, navPanelH, 0);
+        int  gpsStackOff = (navVisible && _navCorner == _gpsCorner) ? navPanelH + stackGap : 0;
+        bool gpsVisible = _gpsHwnd != IntPtr.Zero && _showGpsControl && ControlFitsMap(btnSizePx, gpsPanelH, gpsStackOff);
 
         // Vertical offset (away from the anchored horizontal edge) contributed by the
         // controls that precede the given one in the stack order (nav → gps → attribution)
