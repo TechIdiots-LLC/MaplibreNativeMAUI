@@ -45,8 +45,8 @@ controls are real framework children. See [docs/design/in-tree-map-surface.md](d
 
 | Platform | Default surface | In-tree alternative |
 |---|---|---|
-| WPF | `MlnMapHost` — `HwndHost` child HWND; controls are WPF `Popup`s | `MlnMapImage` — `D3DImage` (shared D3D9Ex surface via `WGL_NV_DX_interop2`); controls are WPF children |
-| MAUI Windows | `WS_POPUP` GL window tracked to the main window | `SwapChainPanel` (`MAPLIBRE_WIN_RENDERER=swapchain` / `MapLibreMapController.UseSwapChainPanel`); controls are XAML children |
+| WPF | `MlnMapHost` — `HwndHost` child HWND; controls are WPF `Popup`s | `MlnMapImage` — WPF `Image` backed by `WriteableBitmap` (pixels transferred each frame via `glReadPixels`); controls are real WPF children |
+| MAUI Windows | `WS_POPUP` GL window tracked to the main window | `Image`+`WriteableBitmap` via `glReadPixels` (`MapLibreMapController.UseSwapChainPanel`); controls are real XAML children |
 | Android | `SurfaceView` + native subview controls | — (subview controls already in-tree; `TextureView` planned) |
 | iOS / macCatalyst | `MTKView` + subview controls | — (already in-tree; no airspace) |
 

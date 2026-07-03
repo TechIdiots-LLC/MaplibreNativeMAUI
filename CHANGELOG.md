@@ -2,7 +2,10 @@
 
 ## master
 ### ✨ Features and improvements
-- _...Add new stuff here..._
+- **In-tree map renderers: `glReadPixels`+`WriteableBitmap` on WPF and MAUI Windows** — Both desktop in-tree map surfaces have been redesigned to use `glReadPixels` into a `WriteableBitmap`, replacing the earlier `WGL_NV_DX_interop2` + D3D GPU-share approach that produced a blank map. Root cause: `WGLRenderableResource::bind()` in `platform_frontend_windows.cpp` unconditionally calls `glBindFramebuffer(0)`, so MapLibre always renders into FBO 0 of the GL context's hidden window — never into a custom interop FBO. The fix drops D3D entirely: a hidden Win32 window is sized to the map via `SetWindowPos`; after each frame `glReadPixels(GL_BGRA)` transfers pixels to a `WriteableBitmap` displayed in an ordinary `Image` element. All original first-class goals are preserved — both renderers are real in-tree framework visuals and nav/GPS/attribution controls are ordinary framework children with correct z-order, clipping, and hit-testing. Details in [`docs/design/in-tree-map-surface.md`](docs/design/in-tree-map-surface.md).
+  - **WPF** (`MlnMapImage` + `GlDxInteropContext`): `D3DImage` → WPF `WriteableBitmap`; pixels written via `Lock`/`BackBuffer`/`AddDirtyRect`/`Unlock`. `Vortice.Direct3D9` NuGet removed.
+  - **MAUI Windows** (`SwapChainMapView` + `GlDxgiInteropContext`): `SwapChainPanel` + D3D11 → WinUI `Image` + `WriteableBitmap`; pixels written via `IBufferByteAccess::Buffer` + `bitmap.Invalidate()`. `Vortice.Direct3D11`/`Vortice.DXGI` NuGet removed.
+  - **Nav buttons** (MAUI Windows): full-width Unicode `＋`/`－` glyphs replaced with ASCII `+`/`−` at FontSize 18 Bold — the Unicode characters rendered as white squares on some WinUI font configurations.
 
 ### 🐞 Bug fixes
 - _...Add new stuff here..._

@@ -3,8 +3,8 @@
 **Status:** in progress. **Scope:** the host/controller layer per platform. No change to the `mln-cabi` C ABI.
 
 **Implementation status**
-- ✅ **WPF — `D3DImage`:** implemented as `MlnMapImage` + `GlDxInteropContext` (Vortice.Direct3D9). Renders MapLibre into a shared D3D9Ex surface via `WGL_NV_DX_interop2`, presents through `D3DImage`, and hosts all three on-map controls (nav / GPS / attribution) as real WPF children — full 4-way d-pad (rotate/pitch/reset-north) + live compass tick, GPS tracking modes + location indicator ("blue dot"), and attribution fetch/expand match `MlnMapHost`. Corner-positioning DPs, source/layer API, `RotateBy`/`PitchBy`, and `CameraIdle` event all at parity with `MlnMapHost`. `LayoutPropertyNames` expanded to the full symbol/line/fill/circle set. Kept alongside `MlnMapHost` (the default). Needs on-GPU validation of the interop path.
-- ✅ **MAUI Windows — `SwapChainPanel`:** `SwapChainMapView` + `GlDxgiInteropContext` (Vortice.Direct3D11/DXGI + `ISwapChainPanelNative`), integrated into `MapLibreMapController.Windows` behind `UseSwapChainPanel` / `MAPLIBRE_WIN_RENDERER=swapchain`. mbgl renders through the GL→DXGI bridge (FBO backed by a shared D3D11 offscreen texture via `WGL_NV_DX_interop2`, `CopyResource`'d into the composition swap chain's back buffer, then Present; element-level vertical flip). All three on-map controls (nav / GPS / attribution) are real XAML children wired to the existing renderer-agnostic logic. Needs on-GPU validation; `WS_POPUP` remains the default.
+- ✅ **WPF — `WriteableBitmap`:** implemented as `MlnMapImage` + `GlDxInteropContext`. MapLibre renders into FBO 0 of a hidden, properly-sized Win32 window (`SetWindowPos`); after each frame `glReadPixels(GL_BGRA)` transfers pixels directly into a WPF `WriteableBitmap.BackBuffer` (Lock / AddDirtyRect / Unlock) displayed in a WPF `Image`. All three on-map controls (nav / GPS / attribution) are real WPF children. Earlier design targeted `D3DImage` via `WGL_NV_DX_interop2` + D3D9 — see [Why `glReadPixels`?](#why-glreadpixels-instead-of-wgl_nv_dx_interop2) below.
+- ✅ **MAUI Windows — `WriteableBitmap`:** implemented as `SwapChainMapView` + `GlDxgiInteropContext`. Same hidden-window + `glReadPixels` approach; pixels written into a WinUI `WriteableBitmap` via `IBufferByteAccess`, displayed in a WinUI `Image` element. All three on-map controls are real XAML children wired to the renderer-agnostic logic. Earlier design targeted `SwapChainPanel` + D3D11 + `WGL_NV_DX_interop2` — same root cause; see below.
 - ✅ **Android (`TextureView`)**: swapped `SurfaceView` for `TextureView` in `MapLibreMapController.Android`. `TextureView` is an ordinary in-tree `View` backed by a `SurfaceTexture`; `SurfaceCallback`/`ISurfaceHolderCallback` replaced by `TextureSurfaceListener`/`ISurfaceTextureListener`. Surface lifecycle: `OnSurfaceTextureAvailable` wraps the `SurfaceTexture` in an `Android.Views.Surface`, acquires the `ANativeWindow`, and calls `InitMaplibre`; `OnSurfaceTextureDestroyed` disposes the `Surface` + releases the native window. No more compositing hole for sibling MAUI content.
 - ✅ **iOS/mac (already in-tree):** no change needed.
 
@@ -36,28 +36,40 @@ The public API of `MlnMapHost` (WPF) and the MAUI `MapLibreMap`/controller stays
 
 The common idea everywhere: **render MapLibre into an offscreen framebuffer and hand that texture to the platform's in-tree compositor**, instead of exposing a native child/owned window.
 
-### WPF — `D3DImage` via WGL↔DX interop
+### WPF — `WriteableBitmap` via `glReadPixels`
 
-`D3DImage` is a WPF `ImageSource` backed by a D3D9 surface the WPF compositor samples. Bridge OpenGL→D3D on the GPU with `WGL_NV_DX_interop2` (no CPU round-trip):
+The original plan called for `D3DImage` backed by a `WGL_NV_DX_interop2` shared D3D9 surface (GPU→GPU, no CPU round-trip). That design worked at the C# layer but produced a blank map at runtime because of a root-cause constraint in the native code — see [Why `glReadPixels`?](#why-glreadpixels-instead-of-wgl_nv_dx_interop2) below.
+
+The implemented path:
 
 ```
-MapLibre (mln-cabi) -> GL FBO -> [wglDXLock] shared D3D9Ex surface -> D3DImage -> WPF visual tree
+MapLibre (mln-cabi) → GL FBO 0 (hidden Win32 window) → glReadPixels(GL_BGRA) → WriteableBitmap.BackBuffer → WPF Image
 ```
 
-1. Create a **D3D9Ex** device; make a `D3DUSAGE_RENDERTARGET` texture in `D3DFMT_A8R8G8B8`; take its `IDirect3DSurface9`.
-2. `wglDXOpenDeviceNV` + `wglDXRegisterObjectNV` to expose that surface as a GL renderbuffer/texture.
-3. Per render tick: `wglDXLockObjectsNV` → bind the FBO → `mln_frontend_render` → `wglDXUnlockObjectsNV`; then `D3DImage.Lock` / `SetBackBuffer` / `AddDirtyRect` / `Unlock`.
-4. Change `MlnMapHost` from `HwndHost` to a templated `Control`/`Border` whose content is an `Image` (the `D3DImage`) with the control overlays as **sibling WPF children**.
-Input moves from the `WndProc` switch to WPF routed events (`OnMouseDown/Move/Up/Wheel`, `CaptureMouse`); cursor via `this.Cursor`.
+1. Create a **hidden Win32 window** (`WS_POPUP`, `CS_OWNDC`, single-buffered PFD) and a WGL context on it. MapLibre uses this window's DC as its surface handle.
+2. `SetWindowPos` resizes the hidden window to match the map control dimensions on every resize — because the window is single-buffered, FBO 0 immediately reflects the new size.
+3. Per render tick: `SetWindowPos` (if resized) → `wglMakeCurrent` → `glViewport` → `mln_frontend_render` → `WriteableBitmap.Lock()` → `glReadPixels(0,0,w,h, GL_BGRA, GL_UNSIGNED_BYTE, bitmap.BackBuffer)` → `bitmap.AddDirtyRect` → `bitmap.Unlock()`.
+4. The `WriteableBitmap` is the source of a WPF `Image` element. A `ScaleTransform(1, -1)` on the `Image` corrects the GL bottom-left origin to WPF's top-left. Nav/GPS/attribution controls are ordinary sibling WPF children of the same container.
 
-### MAUI Windows — `SwapChainPanel` (the WinUI analogue)
+**Trade-off vs. the D3DImage plan:** `glReadPixels` is a GPU→CPU transfer (pipeline stall + DMA to system RAM) on every frame. For typical map interactions this is invisible; for high-FPS animation it may add a few milliseconds of latency. The benefit is **zero hardware dependencies**: no `WGL_NV_DX_interop2`, no D3D9, no Vortice packages — works on any GPU driver including software renderers and RDP.
 
-`SwapChainPanel` is a first-class XAML element that owns a DXGI swap chain — the correct in-tree GPU surface for WinUI, and the proper replacement for the `WS_POPUP` hack. Two rendering options:
+### MAUI Windows — `WriteableBitmap` via `glReadPixels`
 
-- **ANGLE** (`libEGL`/`libGLESv2` over D3D11): MapLibre's GL renders through ANGLE into a swap chain bound to the `SwapChainPanel` via `ISwapChainPanelNative::SetSwapChain`. Reuses the existing GL frontend.
-- **Same WGL→DXGI shared-texture bridge** as the WPF path, presented into the panel's swap chain.
+The original plan called for `SwapChainPanel` + D3D11 (either ANGLE or a WGL→DXGI shared-texture bridge). That design also produced a blank map at runtime for the same root-cause reason — see [Why `glReadPixels`?](#why-glreadpixels-instead-of-wgl_nv_dx_interop2) below.
 
-Result: the map is a normal XAML element; nav/GPS/attribution become XAML children (or MAUI views), and the owned-window tracking, `PopupWndProc`, and per-tick realignment all go away. Pointer/keyboard arrive as normal XAML events.
+The implemented path is identical in concept to the WPF path:
+
+```
+MapLibre (mln-cabi) → GL FBO 0 (hidden Win32 window) → glReadPixels(GL_BGRA) → WriteableBitmap (IBufferByteAccess) → WinUI Image
+```
+
+1. `GlDxgiInteropContext` owns the same hidden-window + WGL context as the WPF `GlDxInteropContext`.
+2. `SwapChainMapView` (the name is kept for backward compatibility; it no longer uses a swap chain) hosts a WinUI `Image` element backed by a `Microsoft.UI.Xaml.Media.Imaging.WriteableBitmap`.
+3. Per render tick: `wglMakeCurrent` → `glViewport` → `mln_frontend_render` → obtain the pixel buffer pointer via `IBufferByteAccess::Buffer` → `glReadPixels(... ptr)` → `bitmap.Invalidate()`.
+4. `IBufferByteAccess` (GUID `905a0fef-bc53-11df-8c49-001e4fc686da`) is the WinRT COM interface for direct byte access to a `Windows.Storage.Streams.IBuffer` — the only way to write pixels into a WinUI `WriteableBitmap` without a second copy.
+5. The same `ScaleTransform(1, -1)` flip is applied to the `Image` element. Nav/GPS/attribution overlays are ordinary XAML children.
+
+Result: the map is a normal XAML element; nav/GPS/attribution become XAML children, and the owned-window tracking, `PopupWndProc`, and per-tick realignment all go away. Pointer/keyboard arrive as normal XAML events.
 
 ### Android — prefer `TextureView` (or fix `SurfaceView` z-order)
 
@@ -83,14 +95,34 @@ Keep both renderers behind the existing public surface so we can ship incrementa
 
 ## Risks & open questions
 
-- **GPU interop availability.** `WGL_NV_DX_interop2` is broadly supported but not universal (rare on pure software/RDP GL); keep the native-window path as a fallback, or a `glReadPixels`→`WriteableBitmap` slow path. ANGLE on WinUI has its own device-loss handling to get right.
+- **GPU read-back cost.** `glReadPixels` stalls the GL pipeline and transfers to system RAM every frame. For most map interactions (pan, zoom, tilt) the frame rate is render-bound and the transfer cost is negligible. For very high-frequency animation or very large windows, a future optimisation could use a PBO (pixel buffer object) to overlap transfer with the next render tick — but measure first.
+- **`WGL_NV_DX_interop2` revisited.** A future maintainer wanting GPU→GPU transfer would need to patch `WGLRenderableResource::bind()` in `platform_frontend_windows.cpp` (replace the hardcoded `glBindFramebuffer(0)` with the interop FBO binding), then restore the D3D9/D3D11 interop paths. The `glReadPixels` approach is the simpler baseline that works on every driver today.
 - **Resize / mixed-DPI / multi-monitor.** Surfaces must be recreated on size/DPI change; front-load testing on the multi-monitor cases the current WPF/Windows code handles explicitly.
-- **Frame pacing.** In-tree presentation (D3DImage dirty-rects, DXGI present) has different vsync/tearing behavior than `SwapBuffers`; retune the `DispatcherTimer(Render,16ms)` cadence against the framework compositor.
+- **Frame pacing.** `WriteableBitmap.Invalidate` / `AddDirtyRect` participates in the WPF/WinUI compositor tick; latency is one compositor frame (~16 ms at 60 Hz). Acceptable for map interaction.
 - **Android hole vs. perf.** `TextureView` copies each frame; measure vs. `SurfaceView` before switching.
 
 ## Effort estimate
 
-WPF `D3DImage` prototype (happy-path interop + input, no fallback): ~1–2 focused days. MAUI Windows `SwapChainPanel`/ANGLE prototype: similar-to-larger (device-loss + ANGLE bring-up). Android `TextureView` swap: small. iOS/mac: none required. Production parity across desktop (fallbacks, DPI/multi-monitor, controls ported, A/B flag): meaningfully more — build prototypes on a branch behind the factory flag first.
+WPF `WriteableBitmap` prototype (hidden window + glReadPixels + input, no fallback): ~1 focused day. MAUI Windows `Image`+`WriteableBitmap` prototype: similar. Android `TextureView` swap: small. iOS/mac: none required. Production parity across desktop (fallbacks, DPI/multi-monitor, controls ported, A/B flag): meaningfully more — build prototypes on a branch behind the factory flag first.
+
+---
+
+## Why `glReadPixels` instead of `WGL_NV_DX_interop2`?
+
+The original design for both WPF (`D3DImage`) and MAUI Windows (`SwapChainPanel`) relied on `WGL_NV_DX_interop2` to avoid a CPU round-trip: OpenGL would render directly into a D3D surface, which the framework compositor would sample without any pixel copy.
+
+Both produced a blank (solid fill) map at runtime. Root cause, found in `native/src/platform_frontend_windows.cpp`:
+
+```cpp
+void WGLRenderableResource::bind() {
+    _backend.setFramebufferBinding(0);   // always binds FBO 0
+    _backend.setViewport(0, 0, _backend.getSize());
+}
+```
+
+`WGLRenderableResource::bind()` is called at the start of every `mbgl_frontend_render` invocation. It unconditionally binds framebuffer **0** — the default framebuffer of the WGL context's surface (the hidden Win32 window). There is no path through which it binds a custom FBO created by `WGL_NV_DX_interop2`. So MapLibre's output always lands in FBO 0 of the hidden window; the D3D-backed interop FBOs were never written.
+
+Fixing this would require patching `platform_frontend_windows.cpp` (e.g. storing the desired FBO and using it in `bind()`), which would require rebuilding the native `mln-cabi.dll`. As a simpler, dependency-free solution: **just read FBO 0**. Resize the hidden window to match the map control, render normally, then `glReadPixels` after each frame. The `glReadPixels` approach trades GPU→GPU zero-copy for a GPU→CPU transfer, but eliminates the `WGL_NV_DX_interop2` requirement, the D3D9/D3D11 device, and the Vortice NuGet dependencies entirely.
 
 ---
 
