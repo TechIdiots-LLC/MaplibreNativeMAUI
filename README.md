@@ -36,6 +36,22 @@ The `mln-cabi` native library is compiled per-platform:
 
 MapLibre Native is included as a **git submodule** at `dependencies/maplibre-native`.
 
+### Surface integration (how the rendered map reaches the UI)
+
+On the desktop compositors that enforce *airspace* (WPF and WinUI), the native GL surface and
+the map's controls historically had to float above the framework content. Each desktop path now
+has an **airspace-free, in-tree alternative** so the map is an ordinary framework visual and its
+controls are real framework children. See [docs/design/in-tree-map-surface.md](docs/design/in-tree-map-surface.md).
+
+| Platform | Default surface | In-tree alternative |
+|---|---|---|
+| WPF | `MlnMapHost` — `HwndHost` child HWND; controls are WPF `Popup`s | `MlnMapImage` — `D3DImage` (shared D3D9Ex surface via `WGL_NV_DX_interop2`); controls are WPF children |
+| MAUI Windows | `WS_POPUP` GL window tracked to the main window | `SwapChainPanel` (`MAPLIBRE_WIN_RENDERER=swapchain` / `MapLibreMapController.UseSwapChainPanel`); controls are XAML children |
+| Android | `SurfaceView` + native subview controls | — (subview controls already in-tree; `TextureView` planned) |
+| iOS / macCatalyst | `MTKView` + subview controls | — (already in-tree; no airspace) |
+
+The in-tree desktop renderers are experimental and opt-in; the default paths are unchanged.
+
 ---
 
 ## Getting Started
@@ -374,6 +390,20 @@ xmlns:mlwpf="clr-namespace:MapLibreNative.Maui.WPF;assembly=MapLibreNative.Maui.
 ```
 
 `MlnMapHost` is a `HwndHost` that owns a child HWND rendered with OpenGL (WGL). It supports the same camera, source, layer, and query operations as the MAUI handler. See `sample/WpfExample` for a full working example.
+
+### Airspace-free alternative: `MlnMapImage` (experimental)
+
+`MlnMapImage` (same namespace) renders the map into a WPF `D3DImage` instead of a child HWND, so
+the map is an ordinary WPF visual and its controls are real WPF children — no `Popup`s, correct
+z-order/clipping, input via normal WPF events. It's a drop-in for the common properties
+(`StyleUrl`, `CenterOn`/`ZoomIn`/`ZoomOut`, `MapReady`/`StyleLoaded`/`MapClicked`):
+
+```xml
+<mlwpf:MlnMapImage StyleUrl="https://demotiles.maplibre.org/style.json" />
+```
+
+It requires a GPU/driver exporting `WGL_NV_DX_interop2` (all modern desktop GPUs); where that is
+unavailable, use `MlnMapHost`. See [docs/design/in-tree-map-surface.md](docs/design/in-tree-map-surface.md).
 
 ---
 
