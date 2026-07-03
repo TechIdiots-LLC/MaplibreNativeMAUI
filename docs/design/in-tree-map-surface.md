@@ -3,7 +3,7 @@
 **Status:** in progress. **Scope:** the host/controller layer per platform. No change to the `mln-cabi` C ABI.
 
 **Implementation status**
-- ✅ **WPF — `D3DImage`:** implemented as `MlnMapImage` + `GlDxInteropContext` (Vortice.Direct3D9). Renders MapLibre into a shared D3D9Ex surface via `WGL_NV_DX_interop2`, presents through `D3DImage`, and hosts all three on-map controls (nav / GPS / attribution) as real WPF children — GPS tracking modes + location indicator ("blue dot") and attribution fetch/expand match `MlnMapHost`. Kept alongside `MlnMapHost` (the default). Needs on-GPU validation of the interop path.
+- ✅ **WPF — `D3DImage`:** implemented as `MlnMapImage` + `GlDxInteropContext` (Vortice.Direct3D9). Renders MapLibre into a shared D3D9Ex surface via `WGL_NV_DX_interop2`, presents through `D3DImage`, and hosts all three on-map controls (nav / GPS / attribution) as real WPF children — full 4-way d-pad (rotate/pitch/reset-north) + live compass tick, GPS tracking modes + location indicator ("blue dot"), and attribution fetch/expand match `MlnMapHost`. Corner-positioning DPs, source/layer API, `RotateBy`/`PitchBy`, and `CameraIdle` event all at parity with `MlnMapHost`. `LayoutPropertyNames` expanded to the full symbol/line/fill/circle set. Kept alongside `MlnMapHost` (the default). Needs on-GPU validation of the interop path.
 - ✅ **MAUI Windows — `SwapChainPanel`:** `SwapChainMapView` + `GlDxgiInteropContext` (Vortice.Direct3D11/DXGI + `ISwapChainPanelNative`), integrated into `MapLibreMapController.Windows` behind `UseSwapChainPanel` / `MAPLIBRE_WIN_RENDERER=swapchain`. mbgl renders through the GL→DXGI bridge (FBO backed by a shared D3D11 offscreen texture via `WGL_NV_DX_interop2`, `CopyResource`'d into the composition swap chain's back buffer, then Present; element-level vertical flip). All three on-map controls (nav / GPS / attribution) are real XAML children wired to the existing renderer-agnostic logic. Needs on-GPU validation; `WS_POPUP` remains the default.
 - ⬜ **Android (`TextureView`)** and **iOS/mac (already in-tree):** not started.
 
@@ -140,7 +140,7 @@ This is a feature, not a refactor, and is independent of the compositing work ab
 
 `Pin` currently renders as a **circle marker**. MapLibre's legacy `mbgl` annotation API (`SymbolAnnotation` etc.) is *not* exposed through `mln-cabi` and is deprecated upstream anyway — so it is not the path. The correct native marker is a **SymbolLayer with a registered sprite image**, and the cabi already exposes the key primitive: [`mbgl_style_add_image`](../../native/include/mln_cabi.h) → `MbglStyle.AddImage`. Upgrading `Pin` to a real icon + text-label marker requires:
 
-1. Implement `SymbolLayerProperties.ToDictionary()` (currently a stub that throws): `icon-image`, `icon-size`, `icon-anchor`, `icon-allow-overlap`, `text-field`, `text-font`, `text-size`, `text-color`, `text-halo-*`, `text-anchor`, `text-offset`.
+1. ✅ ~~Implement `SymbolLayerProperties.ToDictionary()` (currently a stub that throws)~~ — **Done.** Full layout + paint property set (`icon-image/size/anchor/allow-overlap/offset/rotate`, `text-field/font/size/anchor/offset/halo-*/transform/max-width`, etc.) implemented with `ToDictionary()` and `FromJson()`.
 2. Surface `AddImage` (sprite registration) through `IMapLibreMapController` / `MapLibreMap` on Android, iOS/mac and Windows.
 3. Register a default marker sprite (or let `Pin` supply an image) and switch `Pin` to a SymbolLayer, keeping `Label`/`Address` as `text-field`.
 
