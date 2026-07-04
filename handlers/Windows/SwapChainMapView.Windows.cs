@@ -162,7 +162,9 @@ public sealed class SwapChainMapView : IDisposable
         try { _frontend.Render(); } catch { return; }
 
         // Write pixels directly into the WriteableBitmap's backing store via IBufferByteAccess.
-        var ibb = (IBufferByteAccess)(object)_bitmap.PixelBuffer;
+        // NOTE: a plain (IBufferByteAccess)(object) cast throws InvalidCastException under CsWinRT
+        // (WinUI 3) — the projected IBuffer must be QueryInterface'd via WinRT's .As<T>().
+        var ibb = _bitmap.PixelBuffer.As<IBufferByteAccess>();
         ibb.Buffer(out IntPtr ptr);
         _interop.ReadPixels(ptr);
         _bitmap.Invalidate();

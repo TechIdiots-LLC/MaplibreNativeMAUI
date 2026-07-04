@@ -469,10 +469,16 @@ public class MlnMapImage : Grid
 
     // ── Input (real WPF routed events — no WndProc) ────────────────────────────
 
+    // The map surface is the only element that should drive pan/zoom/click. Overlay controls
+    // (nav / GPS / attribution) are siblings on top; a press on one of them must reach that
+    // control's own handler instead of being captured here for a map pan.
+    private bool IsOnMapSurface(RoutedEventArgs e)
+        => ReferenceEquals(e.OriginalSource, _image) || ReferenceEquals(e.OriginalSource, this);
+
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
         base.OnMouseLeftButtonDown(e);
-        if (_map == null) return;
+        if (_map == null || !IsOnMapSurface(e)) return;
         var pos = e.GetPosition(this);
         if (e.ClickCount == 2)
         {
@@ -523,7 +529,7 @@ public class MlnMapImage : Grid
     protected override void OnMouseWheel(MouseWheelEventArgs e)
     {
         base.OnMouseWheel(e);
-        if (_map == null) return;
+        if (_map == null || !IsOnMapSurface(e)) return;
         var p = ToPhysical(e.GetPosition(this));
         _map.OnScroll((double)e.Delta / 120, p.X, p.Y);
         _renderNeedsUpdate = true;
