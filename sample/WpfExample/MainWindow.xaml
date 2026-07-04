@@ -32,6 +32,16 @@
 
             <Separator Margin="4,0" />
 
+            <Label Content="Pins:" VerticalAlignment="Center" />
+            <Button x:Name="BtnAddPins" Content="Add City Pins"
+                    Click="BtnAddPins_Click" Margin="2,0" Padding="6,2"
+                    ToolTip="Bind an ObservableCollection&lt;MlnMapMarker&gt; to MlnMapImage.ItemsSource" />
+            <Button x:Name="BtnClearPins" Content="Clear Pins"
+                    Click="BtnClearPins_Click" Margin="2,0" Padding="6,2"
+                    ToolTip="Clear the bound marker collection (updates the map live)" />
+
+            <Separator Margin="4,0" />
+
             <Button x:Name="BtnDataDrivenTest" Content="Run Data-Driven Circle Test"
                     Click="BtnDataDrivenTest_Click" Margin="2,0" Padding="6,2"
                     ToolTip="Adds runtime circle layers using literal, property-function (stops), case-expression and match-expression circle-color, then logs how many features render for each — see %TEMP%\maplibre_datadriven_test.log" />

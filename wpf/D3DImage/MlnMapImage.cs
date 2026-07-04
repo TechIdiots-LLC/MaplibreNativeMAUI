@@ -33,7 +33,7 @@ namespace MapLibreNative.Maui.WPF;
 /// <see cref="Image"/> element, so on-map controls are real WPF children with correct z-order and
 /// clipping — no HwndHost, no airspace, no Popup windows.
 /// </summary>
-public class MlnMapImage : Grid
+public partial class MlnMapImage : Grid
 {
     [DllImport("opengl32.dll")] private static extern void glViewport(int x, int y, int w, int h);
     [DllImport("opengl32.dll")] private static extern void glReadPixels(int x, int y, int w, int h, uint fmt, uint type, IntPtr data);
@@ -133,6 +133,46 @@ public class MlnMapImage : Grid
     private static void OnControlPositionChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         if (d is MlnMapImage m) m.RepositionControls();
+    }
+
+    // ── Visible region (read-only, bindable) ──────────────────────────────────
+
+    private static readonly DependencyPropertyKey VisibleRegionPropertyKey =
+        DependencyProperty.RegisterReadOnly(nameof(VisibleRegion),
+            typeof(MapLibreNative.Maui.Geometry.MapSpan), typeof(MlnMapImage),
+            new PropertyMetadata(null));
+
+    /// <summary>
+    /// The map region currently visible on screen, as a
+    /// <see cref="MapLibreNative.Maui.Geometry.MapSpan"/>. Refreshed whenever the camera becomes
+    /// idle and <see langword="null"/> until the map has rendered its first frame.
+    /// </summary>
+    public static readonly DependencyProperty VisibleRegionProperty =
+        VisibleRegionPropertyKey.DependencyProperty;
+
+    /// <inheritdoc cref="VisibleRegionProperty"/>
+    public MapLibreNative.Maui.Geometry.MapSpan? VisibleRegion
+    {
+        get => (MapLibreNative.Maui.Geometry.MapSpan?)GetValue(VisibleRegionProperty);
+        private set => SetValue(VisibleRegionPropertyKey, value);
+    }
+
+    /// <summary>
+    /// Reads the map's currently visible region on demand. Returns <see langword="null"/> when the
+    /// map is not yet ready.
+    /// </summary>
+    public MapLibreNative.Maui.Geometry.MapSpan? GetVisibleRegion()
+    {
+        if (_map == null) return null;
+        var (latSW, lonSW, latNE, lonNE) = _map.LatLngBoundsForCamera();
+        if (double.IsNaN(latSW) || double.IsNaN(lonSW) || double.IsNaN(latNE) || double.IsNaN(lonNE))
+            return null;
+        double centerLat = (latSW + latNE) / 2.0;
+        double centerLon = (lonSW + lonNE) / 2.0;
+        double latDegrees = Math.Abs(latNE - latSW);
+        double lonDegrees = Math.Abs(lonNE - lonSW);
+        return new MapLibreNative.Maui.Geometry.MapSpan(
+            new MapLibreNative.Maui.Geometry.MapCoordinate(centerLat, centerLon), latDegrees, lonDegrees);
     }
 
     /// <summary>When true, each GPS fix re-centres the map. Controlled by the GPS tracking mode.</summary>
@@ -768,6 +808,7 @@ public class MlnMapImage : Grid
                     _renderNeedsUpdate = true;
                     if (_pendingLocInd.HasValue) ApplyPendingLocationIndicator();
                     RefreshAttribution();
+                    RebuildItemsLayer();
                     StyleLoaded?.Invoke(this, EventArgs.Empty);
                 });
                 break;
@@ -775,7 +816,7 @@ public class MlnMapImage : Grid
                 Dispatcher.BeginInvoke(RefreshCompassRotation);
                 break;
             case "onCameraDidChange":
-                Dispatcher.BeginInvoke(() => { RefreshGpsBearingButton(); RefreshCompassRotation(); CameraIdle?.Invoke(this, EventArgs.Empty); });
+                Dispatcher.BeginInvoke(() => { VisibleRegion = GetVisibleRegion(); RefreshGpsBearingButton(); RefreshCompassRotation(); CameraIdle?.Invoke(this, EventArgs.Empty); });
                 break;
             case "onDidFinishRenderingFramePlacementChanged":
                 _map?.TriggerRepaint();

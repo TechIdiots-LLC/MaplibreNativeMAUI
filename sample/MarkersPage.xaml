@@ -2,22 +2,42 @@
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:maplibre="clr-namespace:MapLibreNative.Maui.Handlers;assembly=MapLibreNative.Maui.Handlers"
+             xmlns:overlays="clr-namespace:MapLibreNative.Maui.Handlers.Overlays;assembly=MapLibreNative.Maui.Handlers"
+             xmlns:local="clr-namespace:MauiSample"
              x:Class="MauiSample.MarkersPage"
+             x:DataType="local:MarkersViewModel"
              Title="Markers">
 
     <!--
-        Declarative Pin overlay elements (SDF sprite + text label) instead of low-level
-        source/layer calls. The Pins are added as children of the map in code-behind (Location
-        is not expressible as a XAML literal). Tapping a marker identifies it via a rendered-feature
-        query — the pattern you'd wire MarkerClicked to.
+        Data-bound markers: MapLibreMap.ItemsSource is bound to an ObservableCollection<LandmarkItem>
+        and ItemTemplate materialises each item as a Pin (SDF sprite + label). Add/Remove/Reset mutate
+        the collection and the map updates live. The status row shows the current VisibleRegion, updated
+        on every camera-idle. Tapping a marker identifies it via a rendered-feature query.
     -->
-    <Grid RowDefinitions="*,Auto">
+    <Grid RowDefinitions="*,Auto,Auto,Auto">
         <maplibre:MapLibreMap x:Name="Map"
                               Grid.Row="0"
                               StyleUrl="{Binding StyleUrl}"
+                              ItemsSource="{Binding Landmarks}"
                               MapReady="OnMapReady"
-                              MapClick="OnMapClick" />
+                              CameraIdle="OnCameraIdle"
+                              MapClick="OnMapClick">
+            <maplibre:MapLibreMap.ItemTemplate>
+                <DataTemplate x:DataType="local:LandmarkItem">
+                    <overlays:Pin Location="{Binding Location}"
+                                  Label="{Binding Name}"
+                                  TintColor="{Binding Color}" />
+                </DataTemplate>
+            </maplibre:MapLibreMap.ItemTemplate>
+        </maplibre:MapLibreMap>
 
-        <Label Grid.Row="1" Text="{Binding Status}" Padding="8,4" />
+        <HorizontalStackLayout Grid.Row="1" Padding="8,4" Spacing="8">
+            <Button Text="Add pin" Command="{Binding AddMarkerCommand}" />
+            <Button Text="Remove last" Command="{Binding RemoveLastCommand}" />
+            <Button Text="Reset" Command="{Binding ResetCommand}" />
+        </HorizontalStackLayout>
+
+        <Label Grid.Row="2" Text="{Binding Status}" Padding="8,4" />
+        <Label Grid.Row="3" Text="{Binding RegionText}" Padding="8,0,8,6" FontSize="12" TextColor="Gray" />
     </Grid>
 </ContentPage>

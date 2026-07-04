@@ -10,9 +10,12 @@
  */
 using System.IO;
 using System.Text.Json;
+using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
+using MapLibreNative.Maui.WPF;
 
 namespace WpfExample;
 
@@ -79,7 +82,6 @@ public partial class MainWindow : Window
 
     const string MarkerSourceId = "example-marker";
     const string MarkerLayerId  = "example-marker-layer";
-
     // Seattle GeoJSON point — matches the default fly-to location
     const string MarkerGeoJson = """
         {
@@ -100,6 +102,10 @@ public partial class MainWindow : Window
         InitializeComponent();
         StylePicker.ItemsSource   = Styles.Keys;
         StylePicker.SelectedIndex = 0;
+
+        // Data-bound markers: bind an ObservableCollection<MlnMapMarker> to ItemsSource once; the
+        // Add City Pins / Clear Pins buttons mutate it and the map updates live.
+        MapHost.ItemsSource = _pins;
 
         _autoTestRequested = Environment.GetCommandLineArgs().Contains("--autotest");
         if (_autoTestRequested)
@@ -136,7 +142,13 @@ public partial class MainWindow : Window
     }
 
     private void MapHost_CameraIdle(object sender, EventArgs e)
-        => StatusText.Text = $"Camera idle.";
+    {
+        var region = MapHost.VisibleRegion;
+        StatusText.Text = region is null
+            ? "Camera idle."
+            : $"Camera idle \u2014 visible center ({region.Center.Latitude:F3}, {region.Center.Longitude:F3}), " +
+              $"span \u00B1{region.LatitudeDegrees / 2:F3}\u00B0, \u00B1{region.LongitudeDegrees / 2:F3}\u00B0";
+    }
 
     // ── Style switcher ────────────────────────────────────────────────────────────────────────
 
@@ -180,6 +192,27 @@ public partial class MainWindow : Window
     private void BtnZoomIn_Click(object sender, RoutedEventArgs e)  => MapHost.ZoomIn();
     private void BtnZoomOut_Click(object sender, RoutedEventArgs e) => MapHost.ZoomOut();
     private void BtnNorth_Click(object sender, RoutedEventArgs e)   => MapHost.ResetNorth();
+
+    // ── Data-bound pins (ItemsSource of MlnMapMarker) ──────────────────────
+
+    private readonly ObservableCollection<MlnMapMarker> _pins = new();
+
+    private void BtnAddPins_Click(object sender, RoutedEventArgs e)
+    {
+        _pins.Clear();
+        _pins.Add(new MlnMapMarker(47.6062, -122.3321, "Seattle",  Colors.DodgerBlue));
+        _pins.Add(new MlnMapMarker(51.5074,   -0.1278, "London",   Colors.Crimson));
+        _pins.Add(new MlnMapMarker(40.7128,  -74.0060, "New York", Colors.SeaGreen));
+        _pins.Add(new MlnMapMarker(35.6762,  139.6503, "Tokyo",    Colors.DarkOrange));
+        _pins.Add(new MlnMapMarker(-33.8688, 151.2093, "Sydney",   Colors.MediumPurple));
+        StatusText.Text = $"Added {_pins.Count} data-bound pins (ItemsSource).";
+    }
+
+    private void BtnClearPins_Click(object sender, RoutedEventArgs e)
+    {
+        _pins.Clear();
+        StatusText.Text = "Cleared pins.";
+    }
 
     // ── GeoJSON marker (toggle) ────────────────────────────────────────────────
 
