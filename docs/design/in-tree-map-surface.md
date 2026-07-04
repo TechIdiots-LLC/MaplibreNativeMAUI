@@ -151,12 +151,13 @@ They hang off two `ObservableCollection`s on the map — `Map.Pins` and `Map.Map
 - It gives MAUI developers the API shape they already know from `Microsoft.Maui.Controls.Maps`, easing migration.
 - Because these elements render as ordinary MapLibre style layers *inside* the surface, they composite correctly on **every** platform today — independent of the compositing work above.
 
-### Proposed sample additions
+### Sample additions
 
-Add pages to `sample/` (and matching XAML in `sample/WpfExample`) that exercise the new elements:
+- ✅ **ShapesPage** (`sample/ShapesPage.xaml`, registered in `AppShell`) — a `Polyline` route, a `Polygon` region and a `Circle` radius as children of `MapLibreMap`; Grow/Shrink buttons re-set `Circle.Radius` to demonstrate live rebuilds. Geometry (`Geopath`, `Center`, `Radius`) is set in code-behind because `Location`/`Distance` are not XAML literals; colours/stroke are set in XAML.
+- ✅ **MarkersPage** — converted from low-level `AddGeoJsonSource`/`AddCircleLayer`/`AddSymbolLayer` calls to declarative `Pin` elements; tapping a marker identifies it via `QueryRenderedFeaturesInBox` reading the `Pin`'s `label` from the feature properties (the `MarkerClicked` pattern).
+- The overlay elements are **MAUI-only** (`StyleView : ContentView`), so they are not usable from the WPF sample; `sample/WpfExample` keeps its low-level shape/marker demos via `MlnMapImage`.
 
-- **ShapesPage** — a `Polyline` route, a `Polygon` region, and a `Circle` radius (bindable center/radius) declared entirely in XAML.
-- Extend the existing **MarkersPage** to use the declarative `Pin` element with `MarkerClicked`, instead of low-level source/layer calls.
+**Follow-up — dynamic add/remove.** `StyleView` only materialises an overlay on a `StyleLoaded` event that fires *after* the element is parented, so overlays declared/added before the style loads work, but overlays added at runtime (after the style is already loaded) do not — which is why `MarkersPage` uses static `Pin`s rather than the previous add/remove buttons. To support runtime add/remove: add `MapLibreMap.IsStyleLoaded`, and in `StyleView.OnParentChanged` materialise immediately when the style is already loaded and remove on detach (base no-op; `MapOverlayElement` overrides to call `RemoveOverlay`). Deferred here to avoid a core-class change mid-PR without runtime testing.
 
 ### Suggested implementation order
 
