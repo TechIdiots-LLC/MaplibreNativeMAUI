@@ -64,6 +64,13 @@ public sealed class MapImageView : IDisposable
     private WriteableBitmap? _bitmap;
 
     private HiddenWglContext? _interop;
+
+    // mbgl allows exactly one RunLoop per thread. Every MapImageView on the UI thread shares a
+    // single app-lifetime RunLoop; constructing a second one on the same thread aborts natively.
+    // This is what crashed the app when navigating back to a map tab — MAUI builds the new map
+    // (and its RunLoop) before the previous handler/map is torn down, so two RunLoops briefly
+    // co-existed on the UI thread. Sharing one avoids that entirely.
+    [ThreadStatic] private static MbglRunLoop? _sharedRunLoop;
     private MbglRunLoop?   _runLoop;
     private MbglFrontend?  _frontend;
     private MbglMap?       _map;
@@ -106,7 +113,7 @@ public sealed class MapImageView : IDisposable
         _interop.Resize(_width, _height);
         CreateBitmap(_width, _height);
 
-        _runLoop  = new MbglRunLoop();
+        _runLoop  = _sharedRunLoop ??= new MbglRunLoop();
         _frontend = new MbglFrontend(_interop.Hdc, _interop.GlContext, _width, _height, _dpi,
             () => _renderNeedsUpdate = true);
         _map = new MbglMap(_frontend, _runLoop, pixelRatio: _dpi, observer: OnMapObserverEvent);
@@ -290,7 +297,8 @@ public sealed class MapImageView : IDisposable
         Stop();
         _map?.Dispose();      _map      = null;
         _frontend?.Dispose(); _frontend = null;
-        _runLoop?.Dispose();  _runLoop  = null;
+        // _runLoop is the shared per-thread RunLoop (app-lifetime) — never dispose it here.
+        _runLoop  = null;
         _interop?.Dispose();  _interop  = null;
         _style = null;
     }
