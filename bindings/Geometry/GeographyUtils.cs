@@ -35,7 +35,7 @@ public static class GeographyUtils
         double centerLongitude = center.Longitude.ToRadians();
         double distance = radius.Kilometers / EarthRadiusKm;
 
-        for (int i = 0; i <= segments; i++)
+        for (int i = 0; i < segments; i++)
         {
             double angleInRadians = (i * 360.0 / segments).ToRadians();
             double latitude = Math.Asin(Math.Sin(centerLatitude) * Math.Cos(distance) +
@@ -46,6 +46,12 @@ public static class GeographyUtils
 
             positions.Add(new MapCoordinate(latitude.ToDegrees(), longitude.ToDegrees()));
         }
+
+        // Close the ring with a copy of the first position rather than computing the 360°
+        // vertex trigonometrically: cos(2π) is not bit-identical to cos(0), so for some radii
+        // the computed endpoint differs by one ulp and GeoJSON consumers that require exactly
+        // closed rings (e.g. GeoJSON.Text's Polygon) reject or throw.
+        positions.Add(positions[0]);
 
         return positions;
     }
