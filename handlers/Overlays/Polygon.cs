@@ -24,7 +24,7 @@ public class Polygon : MapOverlayElement
         Geopath = observable;
     }
 
-    void OnGeopathChanged(object? sender, NotifyCollectionChangedEventArgs e) => Refresh();
+    void OnGeopathChanged(object? sender, NotifyCollectionChangedEventArgs e) => UpdateGeometryInPlace();
 
     public static readonly BindableProperty FillColorProperty = BindableProperty.Create(
         nameof(FillColor), typeof(Color), typeof(Polygon), null, propertyChanged: OnVisualChanged);
@@ -39,9 +39,9 @@ public class Polygon : MapOverlayElement
     string FillLayerId => ElementId + "_fill";
     string LineLayerId => ElementId + "_line";
 
-    protected override void BuildOverlay(MapLibreMap map)
+    protected override GeoJSON.Text.Feature.FeatureCollection? BuildSourceFeatures()
     {
-        if (Geopath.Count < 3) return;
+        if (Geopath.Count < 3) return null;
 
         var positions = ToPositions(Geopath);
         // GeoJSON polygon rings must be closed (first == last).
@@ -49,7 +49,15 @@ public class Polygon : MapOverlayElement
             positions.Add(positions[0]);
 
         var polygon = new GeoJSON.Text.Geometry.Polygon(new List<LineString> { new(positions) });
-        map.AddGeoJsonSource(SourceId, ToFeatureCollection(polygon));
+        return ToFeatureCollection(polygon);
+    }
+
+    protected override void BuildOverlay(MapLibreMap map)
+    {
+        var features = BuildSourceFeatures();
+        if (features == null) return;
+
+        map.AddGeoJsonSource(SourceId, features);
 
         var fill = new FillLayerProperties(
             null, true, null, ToMlnColor(FillColor, Color.FromRgba(0, 122, 255, 0.25f)), null, null, null, null);

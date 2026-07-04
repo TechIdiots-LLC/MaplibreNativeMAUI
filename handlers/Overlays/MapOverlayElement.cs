@@ -74,7 +74,33 @@ public abstract class MapOverlayElement : StyleView
     /// <summary>Removes this element's layer(s) and source from <paramref name="map"/>.</summary>
     protected abstract void RemoveOverlay(MapLibreMap map);
 
-    /// <summary>Property-changed handler that rebuilds the element when a visual/geometry property changes.</summary>
+    /// <summary>
+    /// Returns the element's source features when the geometry can be updated in place, or
+    /// <see langword="null"/> to fall back to a full rebuild. Overridden by geometry-based
+    /// elements (Circle/Polyline/Polygon) so that geometry changes update the existing source
+    /// via <c>SetGeoJsonSource</c> instead of removing and re-adding the source and its layers.
+    /// </summary>
+    protected virtual FeatureCollection? BuildSourceFeatures() => null;
+
+    /// <summary>
+    /// Updates the source data in place (no layer churn — which can destabilise the renderer)
+    /// when the element supports it; otherwise falls back to a full rebuild.
+    /// </summary>
+    protected void UpdateGeometryInPlace()
+    {
+        if (Map == null || !IsAdded) return;
+        var features = BuildSourceFeatures();
+        if (features != null) Map.SetGeoJsonSource(SourceId, features);
+        else Refresh();
+    }
+
+    /// <summary>Property-changed handler for a <b>geometry</b> property (updates the source in place).</summary>
+    protected static void OnGeometryChanged(BindableObject bindable, object oldValue, object newValue)
+    {
+        if (bindable is MapOverlayElement e) e.UpdateGeometryInPlace();
+    }
+
+    /// <summary>Property-changed handler for a <b>style</b> property that rebuilds the element's layers.</summary>
     protected static void OnVisualChanged(BindableObject bindable, object oldValue, object newValue)
     {
         if (bindable is MapOverlayElement e)

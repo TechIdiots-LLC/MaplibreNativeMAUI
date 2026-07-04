@@ -23,16 +23,23 @@ public class Polyline : MapOverlayElement
         Geopath = observable;
     }
 
-    void OnGeopathChanged(object? sender, NotifyCollectionChangedEventArgs e) => Refresh();
+    void OnGeopathChanged(object? sender, NotifyCollectionChangedEventArgs e) => UpdateGeometryInPlace();
 
     string LineLayerId => ElementId + "_line";
 
+    protected override GeoJSON.Text.Feature.FeatureCollection? BuildSourceFeatures()
+    {
+        if (Geopath.Count < 2) return null;
+        var line = new LineString(ToPositions(Geopath));
+        return ToFeatureCollection(line);
+    }
+
     protected override void BuildOverlay(MapLibreMap map)
     {
-        if (Geopath.Count < 2) return;
+        var features = BuildSourceFeatures();
+        if (features == null) return;
 
-        var line = new LineString(ToPositions(Geopath));
-        map.AddGeoJsonSource(SourceId, ToFeatureCollection(line));
+        map.AddGeoJsonSource(SourceId, features);
 
         var props = new LineLayerProperties(
             lineColor: ToMlnColor(StrokeColor, Color.FromRgb(0, 122, 255)),
