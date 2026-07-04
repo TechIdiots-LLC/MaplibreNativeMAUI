@@ -47,7 +47,7 @@ controls are real framework children. See [docs/design/in-tree-map-surface.md](d
 |---|---|---|
 | WPF | `MlnMapHost` — `HwndHost` child HWND; controls are WPF `Popup`s | `MlnMapImage` — WPF `Image` backed by `WriteableBitmap` (pixels transferred each frame via `glReadPixels`); controls are real WPF children |
 | MAUI Windows | `WS_POPUP` GL window tracked to the main window | `Image`+`WriteableBitmap` via `glReadPixels` (`MapLibreMapController.UseSwapChainPanel`); controls are real XAML children |
-| Android | `SurfaceView` + native subview controls | — (subview controls already in-tree; `TextureView` planned) |
+| Android | `TextureView` + native subview controls | — (already in-tree; `TextureView` is an ordinary in-tree `View`, so sibling content composites over it with no hole) |
 | iOS / macCatalyst | `MTKView` + subview controls | — (already in-tree; no airspace) |
 
 The in-tree desktop renderers are experimental and opt-in; the default paths are unchanged.
