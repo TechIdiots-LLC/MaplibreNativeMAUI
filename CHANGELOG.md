@@ -9,7 +9,7 @@
 
 ## 4.0.0
 ### ⚠️ Breaking changes
-- **WPF: `MlnMapHost` removed** — The old `HwndHost`+`Popup` renderer has been deleted. `MlnMapImage` is now the only WPF map control. Migration: replace `<wpf:MlnMapHost …>` with `<wpf:MlnMapImage …>` in XAML; the public API surface (properties, events, methods) is identical. `MlnMapClickEventArgs` is also removed; `MapClick` now uses a value-tuple `(double Lat, double Lon, double ScreenX, double ScreenY)`.
+- **WPF: `MlnMapHost` removed** — The old `HwndHost`+`Popup` renderer has been deleted. `MlnMapImage` is now the only WPF map control. Migration: replace `<wpf:MlnMapHost …>` with `<wpf:MlnMapImage …>` in XAML; the public API surface (properties, events, methods) is identical, including the `MapClicked` event and its `MlnMapClickEventArgs` args.
 - **MAUI Windows: `WS_POPUP` GL window renderer removed** — The floating `WS_POPUP` renderer is gone; `SwapChainMapView` (in-tree `Image`+`WriteableBitmap`) is now the only Windows path. `MapLibreMapController.UseSwapChainPanel` and `MAPLIBRE_WIN_RENDERER=swapchain` are no longer meaningful.
 
 ### ✨ Features and improvements
