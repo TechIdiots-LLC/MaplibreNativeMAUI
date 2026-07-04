@@ -193,9 +193,15 @@ public sealed class SwapChainMapView : IDisposable
     private (double X, double Y) Phys(Windows.Foundation.Point dip)
         => (dip.X * _dpi, dip.Y * _dpi);
 
+    // Only the map image should drive pan/zoom/click. The nav / GPS / attribution overlays are
+    // sibling children on top; a press on one of them must reach that control instead of being
+    // captured here for a map pan.
+    private bool IsOnMapSurface(object? src)
+        => ReferenceEquals(src, _mapImage) || ReferenceEquals(src, View);
+
     private void OnPointerPressed(object sender, WUXI.PointerRoutedEventArgs e)
     {
-        if (_map == null) return;
+        if (_map == null || !IsOnMapSurface(e.OriginalSource)) return;
         View.CapturePointer(e.Pointer);
         _lastPos = e.GetCurrentPoint(View).Position;
         _isDragging = true;
@@ -226,7 +232,7 @@ public sealed class SwapChainMapView : IDisposable
 
     private void OnPointerWheel(object sender, WUXI.PointerRoutedEventArgs e)
     {
-        if (_map == null) return;
+        if (_map == null || !IsOnMapSurface(e.OriginalSource)) return;
         var pt = e.GetCurrentPoint(View);
         var p = Phys(pt.Position);
         _map.OnScroll(pt.Properties.MouseWheelDelta / 120.0, p.X, p.Y);
@@ -236,7 +242,7 @@ public sealed class SwapChainMapView : IDisposable
 
     private void OnTapped(object sender, WUXI.TappedRoutedEventArgs e)
     {
-        if (_map == null) return;
+        if (_map == null || !IsOnMapSurface(e.OriginalSource)) return;
         var p = Phys(e.GetPosition(View));
         var ll = _map.LatLngForPixel(p.X, p.Y);
         MapClicked?.Invoke(this, (ll.Lat, ll.Lon, p.X, p.Y));
@@ -244,7 +250,7 @@ public sealed class SwapChainMapView : IDisposable
 
     private void OnDoubleTapped(object sender, WUXI.DoubleTappedRoutedEventArgs e)
     {
-        if (_map == null) return;
+        if (_map == null || !IsOnMapSurface(e.OriginalSource)) return;
         var p = Phys(e.GetPosition(View));
         _map.OnDoubleTap(p.X, p.Y);
         _renderNeedsUpdate = true;

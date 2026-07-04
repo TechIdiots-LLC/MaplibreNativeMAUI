@@ -700,6 +700,9 @@ public class MapLibreMapController : IMapLibreMapController
             {
                 Text = glyph,
                 FontSize = 18,
+                // Explicit dark foreground — the WinUI default can be white (theme-dependent),
+                // which would make +/- invisible on the white button.
+                Foreground = new WUXM.SolidColorBrush(Rgb(0x33, 0x33, 0x33)),
                 HorizontalAlignment = WUX.HorizontalAlignment.Center,
                 VerticalAlignment = WUX.VerticalAlignment.Center,
                 IsHitTestVisible = false,
