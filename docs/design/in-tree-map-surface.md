@@ -1,6 +1,6 @@
 # Design: making the map surface (and its controls) first-class on every platform
 
-**Status:** in progress. **Scope:** the host/controller layer per platform. No change to the `mln-cabi` C ABI.
+**Status:** complete — the in-tree renderers are the only renderers; the old airspace-based paths (WPF `HwndHost`/`MlnMapHost` and MAUI Windows `WS_POPUP`) have been **removed**. **Scope:** the host/controller layer per platform. No change to the `mln-cabi` C ABI. (The sections below on the "old" surfaces and the migration strategy are retained as design rationale.)
 
 **Implementation status**
 - ✅ **WPF — `WriteableBitmap`:** implemented as `MlnMapImage` + `GlDxInteropContext`. MapLibre renders into FBO 0 of a hidden, properly-sized Win32 window (`SetWindowPos`); after each frame `glReadPixels(GL_BGRA)` transfers pixels directly into a WPF `WriteableBitmap.BackBuffer` (Lock / AddDirtyRect / Unlock) displayed in a WPF `Image`. All three on-map controls (nav / GPS / attribution) are real WPF children. Earlier design targeted `D3DImage` via `WGL_NV_DX_interop2` + D3D9 — see [Why `glReadPixels`?](#why-glreadpixels-instead-of-wgl_nv_dx_interop2) below.
@@ -30,7 +30,9 @@ Make the map surface a **real, in-tree visual** on each platform so that:
 1. Built-in controls become ordinary in-tree elements (correct z-order, clipping, hit-testing, DPI, transforms) and the popup/owned-window babysitting is deleted; and
 2. **App content can be drawn over the map** as normal framework content — which is the prerequisite for the higher-level overlay elements in the companion section below.
 
-The public API of `MlnMapHost` (WPF) and the MAUI `MapLibreMap`/controller stays source-compatible so the samples and VistumblerCS need no changes.
+The MAUI `MapLibreMap`/controller public API is unchanged. On WPF the replacement control
+`MlnMapImage` keeps the same public surface as the old `MlnMapHost` (properties, methods, events),
+so consumers migrate with a one-line control swap (`MlnMapHost` → `MlnMapImage`).
 
 ## Per-platform approach
 
@@ -84,14 +86,18 @@ Either way the built-in controls stay real subviews; the change is about letting
 
 The `MTKView` is a normal subview and UIKit/AppKit have no airspace rule, so overlays already composite. The only open question is stylistic: whether the built-in controls should remain native subviews or be reprojected as MAUI content for consistency with the other platforms (see below).
 
-## Migration strategy (applies to WPF + MAUI Windows)
+## Migration strategy (completed)
 
-Keep both renderers behind the existing public surface so we can ship incrementally and A/B them:
+The in-tree renderers were built alongside the old airspace-based paths behind an opt-in flag
+(`MapLibreMapController.UseSwapChainPanel` on MAUI Windows; a separate `MlnMapImage` control on
+WPF), the samples were switched over, and once the in-tree paths reached parity (input, DPI,
+resize, style reload, nav/GPS/attribution) they became the default and the old paths were
+**removed**:
 
-1. Extract the public API into a small interface / abstract base implemented by the current native-window renderer **and** the new in-tree renderer.
-2. Add a feature flag / factory (e.g. `RendererMode`) defaulting to the current implementation until the in-tree path is proven.
-3. Port the built-in controls off popups/owned-windows to in-tree children **only** in the new renderer.
-4. Once at parity (input, DPI, multi-monitor move, resize, style reload, GPS/attribution), flip the default and deprecate the old path.
+- WPF: `MlnMapHost` (the `HwndHost` + `Popup` control) deleted; `MlnMapImage` is the only WPF control.
+- MAUI Windows: the `WS_POPUP` GL window + GDI-painted overlays deleted from
+  `MapLibreMapController.Windows`, along with the `UseSwapChainPanel` flag; the in-tree
+  `SwapChainMapView` path is the only renderer.
 
 ## Risks & open questions
 

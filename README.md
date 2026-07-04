@@ -20,9 +20,17 @@ mln-cabi  (C++ native library — flat C ABI)
        ▼
 MapLibreNative.Maui  (C# typed wrappers: MbglMap, MbglStyle, MbglFrontend …)
        │
-       ▼
-MapLibreNative.Maui.Handlers  (MAUI controls, handlers, sources, layers)
+       ├───────────────────────────────┬───────────────────────────────┐
+       ▼                               ▼                               ▼
+MapLibreNative.Maui.Handlers    MapLibreNative.Maui.WPF        (any consumer of the
+ (MAUI MapLibreMap + handlers,   (WPF MlnMapImage control)      typed C# bindings)
+  sources, layers, overlays;
+  Android/iOS/macOS/Windows)
 ```
+
+Both the MAUI handlers and the WPF control render the map as an **in-tree framework
+visual** (WinUI/WPF `Image` fed by `glReadPixels`, Android `TextureView`, iOS/mac `MTKView`)
+with their on-map controls as ordinary framework children — see [Surface integration](#surface-integration-how-the-rendered-map-reaches-the-ui).
 
 The `mln-cabi` native library is compiled per-platform:
 
