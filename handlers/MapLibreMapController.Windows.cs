@@ -513,6 +513,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     // XAML overlay controls for the SwapChainPanel renderer (real in-tree children of View).
     private WUXC.StackPanel? _swapNavPanel;
+    private WUXM.RotateTransform? _swapCompassRotate;   // north tick on the nav d-pad
     private WUXC.StackPanel? _swapGpsPanel;
     private WUXC.Border?     _swapGpsTopBtn;
     private WUXC.TextBlock?  _swapGpsTopIcon;
@@ -599,7 +600,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     private void CreateSwapChainOverlays()
     {
-        // Navigation (zoom) — top-right corner.
+        // Navigation — top-right corner: rotate/pitch/compass d-pad, then zoom in/out.
         _swapNavPanel = new WUXC.StackPanel
         {
             HorizontalAlignment = WUX.HorizontalAlignment.Right,
@@ -607,16 +608,19 @@ public class MapLibreMapController : IMapLibreMapController
             Margin = new WUX.Thickness(0, 10, 10, 0),
             Width = 30,
         };
-        _swapNavPanel.Children.Add(MakeSwapButton("+", () => _swapView?.ZoomIn(), true));
-        _swapNavPanel.Children.Add(MakeSwapButton("−", () => _swapView?.ZoomOut(), false));
+        _swapNavPanel.Children.Add(BuildSwapDpad());
+        _swapNavPanel.Children.Add(MakeSwapDivider());
+        _swapNavPanel.Children.Add(MakeSwapNavButton("+", () => _swapView?.ZoomIn(), new WUX.CornerRadius(0)));
+        _swapNavPanel.Children.Add(MakeSwapDivider());
+        _swapNavPanel.Children.Add(MakeSwapNavButton("−", () => _swapView?.ZoomOut(), new WUX.CornerRadius(0, 0, 4, 4)));
         View.Children.Add(_swapNavPanel);
 
-        // GPS control — top-right, stacked below the nav panel.
+        // GPS control — top-right, stacked below the nav panel (d-pad 30 + 2 zoom 30 + 2 dividers ≈ 92).
         _swapGpsPanel = new WUXC.StackPanel
         {
             HorizontalAlignment = WUX.HorizontalAlignment.Right,
             VerticalAlignment = WUX.VerticalAlignment.Top,
-            Margin = new WUX.Thickness(0, 90, 10, 0),
+            Margin = new WUX.Thickness(0, 112, 10, 0),
             Width = 30,
             Visibility = _showGpsControl ? WUX.Visibility.Visible : WUX.Visibility.Collapsed,
         };
@@ -682,9 +686,113 @@ public class MapLibreMapController : IMapLibreMapController
         return b;
     }
 
+    private static WUXC.Border MakeSwapDivider()
+        => new() { Height = 1, Background = new WUXM.SolidColorBrush(Rgb(0xDA, 0xDA, 0xDA)) };
+
+    private static WUXC.Border MakeSwapNavButton(string glyph, Action onClick, WUX.CornerRadius corners)
+    {
+        var b = new WUXC.Border
+        {
+            Height = 29,
+            Background = new WUXM.SolidColorBrush(Microsoft.UI.Colors.White),
+            CornerRadius = corners,
+            Child = new WUXC.TextBlock
+            {
+                Text = glyph,
+                FontSize = 18,
+                HorizontalAlignment = WUX.HorizontalAlignment.Center,
+                VerticalAlignment = WUX.VerticalAlignment.Center,
+                IsHitTestVisible = false,
+            },
+        };
+        b.PointerEntered += (_, _) => b.Background = new WUXM.SolidColorBrush(Rgb(0xF0, 0xF0, 0xF0));
+        b.PointerExited  += (_, _) => b.Background = new WUXM.SolidColorBrush(Microsoft.UI.Colors.White);
+        b.Tapped += (_, e) => { onClick(); e.Handled = true; };
+        return b;
+    }
+
+    // Rotate/pitch/compass d-pad — WinUI equivalent of the WPF MlnMapImage d-pad.
+    private WUXC.Border BuildSwapDpad()
+    {
+        const double size = 30;
+        var root = new WUXC.Grid { Width = size, Height = size, Background = new WUXM.SolidColorBrush(Microsoft.UI.Colors.White) };
+
+        var grid = new WUXC.Grid();
+        for (int i = 0; i < 3; i++)
+        {
+            grid.ColumnDefinitions.Add(new WUXC.ColumnDefinition { Width = new WUX.GridLength(1, WUX.GridUnitType.Star) });
+            grid.RowDefinitions.Add(new WUXC.RowDefinition { Height = new WUX.GridLength(1, WUX.GridUnitType.Star) });
+        }
+        void Add(WUX.FrameworkElement el, int row, int col) { WUXC.Grid.SetRow(el, row); WUXC.Grid.SetColumn(el, col); grid.Children.Add(el); }
+        Add(MakeSwapDpadArrow("▲", () => PitchBy(10)),  0, 1);  // ▲ up    → more tilt
+        Add(MakeSwapDpadArrow("◀", () => RotateBy(-15)), 1, 0);  // ◀ left  → rotate ccw
+        Add(MakeSwapDpadArrow(null,      ResetNorth),         1, 1);  // centre  → reset north
+        Add(MakeSwapDpadArrow("▶", () => RotateBy(15)),  1, 2);  // ▶ right → rotate cw
+        Add(MakeSwapDpadArrow("▼", () => PitchBy(-10)), 2, 1);  // ▼ down  → less tilt
+        root.Children.Add(grid);
+
+        double ringSize = size * 0.80;
+        root.Children.Add(new Microsoft.UI.Xaml.Shapes.Ellipse
+        {
+            Width = ringSize,
+            Height = ringSize,
+            Stroke = new WUXM.SolidColorBrush(Rgb(0xCC, 0xCC, 0xCC)),
+            StrokeThickness = 1,
+            IsHitTestVisible = false,
+            HorizontalAlignment = WUX.HorizontalAlignment.Center,
+            VerticalAlignment = WUX.VerticalAlignment.Center,
+        });
+
+        _swapCompassRotate = new WUXM.RotateTransform { Angle = 0 };
+        var northTick = new Microsoft.UI.Xaml.Shapes.Rectangle
+        {
+            Width = 2,
+            Height = size * 0.14,
+            Fill = new WUXM.SolidColorBrush(Rgb(0x0A, 0x66, 0xCC)),
+            IsHitTestVisible = false,
+            HorizontalAlignment = WUX.HorizontalAlignment.Center,
+            VerticalAlignment = WUX.VerticalAlignment.Top,
+            Margin = new WUX.Thickness(0, (size - ringSize) / 2, 0, 0),
+        };
+        var tickHost = new WUXC.Grid
+        {
+            Width = size,
+            Height = size,
+            IsHitTestVisible = false,
+            RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5),
+            RenderTransform = _swapCompassRotate,
+        };
+        tickHost.Children.Add(northTick);
+        root.Children.Add(tickHost);
+
+        return new WUXC.Border { CornerRadius = new WUX.CornerRadius(4, 4, 0, 0), Child = root };
+    }
+
+    private static WUXC.Border MakeSwapDpadArrow(string? glyph, Action onClick)
+    {
+        var btn = new WUXC.Border { Background = new WUXM.SolidColorBrush(Microsoft.UI.Colors.Transparent) };
+        if (glyph != null)
+        {
+            btn.Child = new WUXC.TextBlock
+            {
+                Text = glyph,
+                FontSize = 8,
+                Foreground = new WUXM.SolidColorBrush(Rgb(0x33, 0x33, 0x33)),
+                HorizontalAlignment = WUX.HorizontalAlignment.Center,
+                VerticalAlignment = WUX.VerticalAlignment.Center,
+                IsHitTestVisible = false,
+            };
+        }
+        btn.PointerEntered += (_, _) => btn.Background = new WUXM.SolidColorBrush(Windows.UI.Color.FromArgb(30, 0, 0, 0));
+        btn.PointerExited  += (_, _) => btn.Background = new WUXM.SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        btn.Tapped += (_, e) => { onClick(); e.Handled = true; };
+        return btn;
+    }
+
     /// <summary>Updates the GPS button glyphs/colours from the current tracking mode + bearing.</summary>
     private void RefreshSwapChainGps()
     {
+        if (_swapCompassRotate != null) _swapCompassRotate.Angle = -GetBearing();
         if (_swapGpsTopIcon == null || _swapGpsTopBtn == null || _swapGpsBottomIcon == null) return;
 
         (string glyph, Windows.UI.Color fg, Windows.UI.Color bg) = _gpsMode switch
