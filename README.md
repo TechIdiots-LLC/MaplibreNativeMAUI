@@ -38,19 +38,20 @@ MapLibre Native is included as a **git submodule** at `dependencies/maplibre-nat
 
 ### Surface integration (how the rendered map reaches the UI)
 
-On the desktop compositors that enforce *airspace* (WPF and WinUI), the native GL surface and
-the map's controls historically had to float above the framework content. Each desktop path now
-has an **airspace-free, in-tree alternative** so the map is an ordinary framework visual and its
-controls are real framework children. See [docs/design/in-tree-map-surface.md](docs/design/in-tree-map-surface.md).
+On the desktop compositors that enforce *airspace* (WPF and WinUI), the native GL surface and the
+map's controls used to float above the framework content (an `HwndHost`/`WS_POPUP` window with the
+controls as separate top-level popups). Every platform now renders the map as an ordinary **in-tree
+framework visual** with its controls as real framework children. See
+[docs/design/in-tree-map-surface.md](docs/design/in-tree-map-surface.md).
 
-| Platform | Default surface | In-tree alternative |
+| Platform | Map surface | Controls |
 |---|---|---|
-| WPF | `MlnMapHost` — `HwndHost` child HWND; controls are WPF `Popup`s | `MlnMapImage` — WPF `Image` backed by `WriteableBitmap` (pixels transferred each frame via `glReadPixels`); controls are real WPF children |
-| MAUI Windows | `WS_POPUP` GL window tracked to the main window | `Image`+`WriteableBitmap` via `glReadPixels` (`MapLibreMapController.UseSwapChainPanel`); controls are real XAML children |
-| Android | `TextureView` + native subview controls | — (already in-tree; `TextureView` is an ordinary in-tree `View`, so sibling content composites over it with no hole) |
-| iOS / macCatalyst | `MTKView` + subview controls | — (already in-tree; no airspace) |
+| WPF | `MlnMapImage` — WPF `Image` backed by a `WriteableBitmap` (pixels transferred each frame via `glReadPixels`) | real WPF children |
+| MAUI Windows | WinUI `Image` + `WriteableBitmap` via `glReadPixels` | real XAML children |
+| Android | `TextureView` (an ordinary in-tree `View`) | native subviews |
+| iOS / macCatalyst | `MTKView` | native subviews |
 
-The in-tree desktop renderers are experimental and opt-in; the default paths are unchanged.
+The old airspace-based paths (WPF `HwndHost`/`MlnMapHost`, MAUI Windows `WS_POPUP`) have been removed.
 
 ---
 
@@ -376,34 +377,25 @@ The `MbglDebugOptions` enum in `MapLibreNative.Maui` names the individual bits (
 
 ## WPF Usage
 
-For WPF apps (not MAUI), use `MlnMapHost` from `MapLibreNative.Maui.WPF`:
+For classic WPF apps (not MAUI), use `MlnMapImage` from `MapLibreNative.Maui.WPF`:
 
 ```xml
 xmlns:mlwpf="clr-namespace:MapLibreNative.Maui.WPF;assembly=MapLibreNative.Maui.WPF"
 
-<mlwpf:MlnMapHost x:Name="MapHost"
-                  StyleUrl="https://demotiles.maplibre.org/style.json"
-                  ShowNavigationControls="True"
-                  MapReady="MapHost_MapReady"
-                  StyleLoaded="MapHost_StyleLoaded"
-                  CameraIdle="MapHost_CameraIdle" />
+<mlwpf:MlnMapImage x:Name="MapHost"
+                   StyleUrl="https://demotiles.maplibre.org/style.json"
+                   ShowNavigationControls="True"
+                   MapReady="MapHost_MapReady"
+                   StyleLoaded="MapHost_StyleLoaded"
+                   CameraIdle="MapHost_CameraIdle" />
 ```
 
-`MlnMapHost` is a `HwndHost` that owns a child HWND rendered with OpenGL (WGL). It supports the same camera, source, layer, and query operations as the MAUI handler. See `sample/WpfExample` for a full working example.
-
-### Airspace-free alternative: `MlnMapImage` (experimental)
-
-`MlnMapImage` (same namespace) renders the map into a WPF `D3DImage` instead of a child HWND, so
-the map is an ordinary WPF visual and its controls are real WPF children — no `Popup`s, correct
-z-order/clipping, input via normal WPF events. It's a drop-in for the common properties
-(`StyleUrl`, `CenterOn`/`ZoomIn`/`ZoomOut`, `MapReady`/`StyleLoaded`/`MapClicked`):
-
-```xml
-<mlwpf:MlnMapImage StyleUrl="https://demotiles.maplibre.org/style.json" />
-```
-
-It requires a GPU/driver exporting `WGL_NV_DX_interop2` (all modern desktop GPUs); where that is
-unavailable, use `MlnMapHost`. See [docs/design/in-tree-map-surface.md](docs/design/in-tree-map-surface.md).
+`MlnMapImage` renders MapLibre into a WPF `Image` backed by a `WriteableBitmap` (pixels transferred
+each frame via `glReadPixels`), so the map is an ordinary WPF visual and its nav / GPS / attribution
+controls are real WPF children — no `HwndHost`, no floating `Popup`s, correct z-order/clipping, and
+input via normal WPF events. It supports the same camera, source, layer, and query operations as the
+MAUI handler. See `sample/WpfExample` for a full working example, and
+[docs/design/in-tree-map-surface.md](docs/design/in-tree-map-surface.md) for the design.
 
 ---
 
