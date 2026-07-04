@@ -1273,6 +1273,9 @@ public class MapLibreMapController : IMapLibreMapController
     // -- Tier 1 – bounds read-back ─────────────────────────────────────────────
     public BoundOptions GetBounds() => _map?.GetBounds() ?? default;
 
+    public (double LatSW, double LonSW, double LatNE, double LonNE) GetVisibleBounds()
+        => _map?.LatLngBoundsForCamera() ?? default;
+
     // -- Tier 2 – tile LOD / prefetch ─────────────────────────────────────────
     public void SetPrefetchZoomDelta(int delta) => _map?.SetPrefetchZoomDelta(delta);
     public int  GetPrefetchZoomDelta() => _map?.GetPrefetchZoomDelta() ?? 4;

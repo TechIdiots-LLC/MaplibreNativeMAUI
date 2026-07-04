@@ -190,6 +190,13 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
     // ── Tier 1 – bounds read-back ─────────────────────────────────────────────
     BoundOptions GetBounds();
 
+    /// <summary>
+    /// Returns the map's currently visible region as a lat/lng bounding box
+    /// (south-west and north-east corners). Corners are <see cref="double.NaN"/>
+    /// when the map is not yet ready.
+    /// </summary>
+    (double LatSW, double LonSW, double LatNE, double LonNE) GetVisibleBounds();
+
     // ── Tier 2 – tile LOD / prefetch ─────────────────────────────────────────
     void SetPrefetchZoomDelta(int delta);
     int  GetPrefetchZoomDelta();

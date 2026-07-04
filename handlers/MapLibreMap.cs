@@ -10,7 +10,7 @@ using Style = MapLibreNative.Maui.Handlers.Maps.Style;
 namespace MapLibreNative.Maui.Handlers;
 
 // All the code in this file is included in all platforms.
-public class MapLibreMap : StackLayout
+public partial class MapLibreMap : StackLayout
 {
     public static readonly BindableProperty StyleUrlProperty = BindableProperty.Create(nameof(StyleUrl), typeof(string), typeof(MapLibreMap));
     public static readonly BindableProperty MinZoomProperty = BindableProperty.Create(nameof(MinZoom), typeof(float), typeof(MapLibreMap));
@@ -500,6 +500,52 @@ public class MapLibreMap : StackLayout
         return handler.Controller.LatLngToScreenPoint(latitude, longitude);
     }
 
+    // ── Visible region ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// <see langword="true"/> once the map's style has finished loading (the <see cref="StyleLoaded"/>
+    /// event has fired at least once). Declarative overlay elements use this to materialise
+    /// immediately when they are added after the map is already ready.
+    /// </summary>
+    public bool IsStyleLoaded { get; private set; }
+
+    private MapLibreNative.Maui.Geometry.MapSpan? _visibleRegion;
+
+    /// <summary>
+    /// The map region currently visible on screen, as a
+    /// <see cref="MapLibreNative.Maui.Geometry.MapSpan"/>. Refreshed whenever the camera becomes
+    /// idle and <see langword="null"/> until the map has rendered its first frame. Mirrors
+    /// <c>Microsoft.Maui.Controls.Maps.Map.VisibleRegion</c>.
+    /// </summary>
+    public MapLibreNative.Maui.Geometry.MapSpan? VisibleRegion
+    {
+        get => _visibleRegion;
+        private set
+        {
+            if (Equals(_visibleRegion, value)) return;
+            _visibleRegion = value;
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Reads the map's currently visible region on demand. Returns <see langword="null"/> when the
+    /// handler is not connected or the map is not yet ready.
+    /// </summary>
+    public MapLibreNative.Maui.Geometry.MapSpan? GetVisibleRegion()
+    {
+        if (Handler is not MapLibreMapHandler handler) return null;
+        var (latSW, lonSW, latNE, lonNE) = handler.Controller.GetVisibleBounds();
+        if (double.IsNaN(latSW) || double.IsNaN(lonSW) || double.IsNaN(latNE) || double.IsNaN(lonNE))
+            return null;
+        double centerLat = (latSW + latNE) / 2.0;
+        double centerLon = (lonSW + lonNE) / 2.0;
+        double latDegrees = System.Math.Abs(latNE - latSW);
+        double lonDegrees = System.Math.Abs(lonNE - lonSW);
+        return new MapLibreNative.Maui.Geometry.MapSpan(
+            new MapLibreNative.Maui.Geometry.MapCoordinate(centerLat, centerLon), latDegrees, lonDegrees);
+    }
+
     // TODO Map parameter may want to return the controller here. 
     public event EventHandler<MapReadyEventArgs>? MapReady;
     public event EventHandler? DidBecomeIdle;
@@ -531,6 +577,7 @@ public class MapLibreMap : StackLayout
     
     internal void OnStyleLoaded(Style style)
     {
+        IsStyleLoaded = true;
         var args = new StyleLoadedEventArgs
         {
             Style = style
@@ -563,6 +610,7 @@ public class MapLibreMap : StackLayout
 
     internal void OnCameraIdle()
     {
+        VisibleRegion = GetVisibleRegion();
         CameraIdle?.Invoke(this, System.EventArgs.Empty);
         CameraIdleCommand?.Execute(null);
     }

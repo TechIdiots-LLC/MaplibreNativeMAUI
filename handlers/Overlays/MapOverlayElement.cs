@@ -60,6 +60,12 @@ public abstract class MapOverlayElement : StyleView
         BuildOverlay(Map);
     }
 
+    protected sealed override void RemoveLayerFromParentMap()
+    {
+        if (Map != null) RemoveOverlay(Map);
+        Map = null;
+    }
+
     /// <summary>Rebuilds the element in place. Called when a bindable property changes after add.</summary>
     protected void Refresh()
     {

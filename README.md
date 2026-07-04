@@ -214,7 +214,7 @@ correctly on every platform. Changing a property (or mutating a `Geopath` collec
 
 | XAML type | Draws | Key properties |
 |---|---|---|
-| `Pin` | Circle marker | `Location`, `Label`, `Address`, `TintColor`; `MarkerClicked` |
+| `Pin` | SDF symbol marker (icon + optional label) | `Location`, `Label`, `Address`, `TintColor`/`IconColor`; `MarkerClicked` |
 | `Polyline` | Line | `Geopath` (`IList<Location>`), `StrokeColor`, `StrokeWidth` |
 | `Polygon` | Filled area | `Geopath`, `FillColor`, `StrokeColor`, `StrokeWidth` |
 | `Circle` | Circle of a geographic radius | `Center`, `Radius` (`Distance`), `FillColor`, `StrokeColor`, `StrokeWidth` |
@@ -232,9 +232,30 @@ xmlns:overlays="clr-namespace:MapLibreNative.Maui.Handlers.Overlays;assembly=Map
 `Circle.Radius` uses the ported `MapLibreNative.Maui.Geometry.Distance` (e.g. `Distance.FromMeters(500)`),
 and the circle geometry is generated with `GeographyUtils.ToCircumferencePositions`.
 
-> Markers are drawn as circle markers today; a symbol/icon + text-label pin is a follow-up
-> (the underlying `SymbolLayerProperties` is not yet implemented). `MarkerClicked` is exposed but must
-> be wired from the map's click/feature-query pipeline.
+`Pin` renders as a `SymbolLayer` backed by an SDF sprite (`mln_marker`), so `IconColor`/`TintColor`
+tinting and text labels work out of the box. `MarkerClicked` is exposed but must be wired from the
+map's click/feature-query pipeline.
+
+### Data binding (`ItemsSource`)
+
+Instead of declaring overlay children statically you can bind a collection to `MapLibreMap.ItemsSource`
+and supply an `ItemTemplate` (or `ItemTemplateSelector`) whose `DataTemplate` produces an overlay
+element. Each item becomes that element's `BindingContext`, mirroring
+`Microsoft.Maui.Controls.Maps.Map`:
+
+```xaml
+<maps:MapLibreMap ItemsSource="{Binding Stops}">
+    <maps:MapLibreMap.ItemTemplate>
+        <DataTemplate>
+            <overlays:Pin Location="{Binding Coordinate}" Label="{Binding Name}" />
+        </DataTemplate>
+    </maps:MapLibreMap.ItemTemplate>
+</maps:MapLibreMap>
+```
+
+Collections implementing `INotifyCollectionChanged` (e.g. `ObservableCollection<T>`) sync
+add/remove/replace/reset automatically. The template must create a `MapOverlayElement` (`Pin`,
+`Polyline`, `Polygon`, or `Circle`).
 
 ---
 
@@ -258,6 +279,18 @@ controller.SetBounds(latSw: 51.4, lonSw: -0.2, latNe: 51.6, lonNe: 0.0);
 // Coordinate conversion
 var (x, y) = controller.PixelForLatLng(51.5, -0.1);
 var (lat, lon) = controller.LatLngForPixel(x, y);
+```
+
+The map also exposes the currently visible region for read-back. `MapLibreMap.VisibleRegion`
+(a `MapSpan?`) is refreshed whenever the camera becomes idle and raises `PropertyChanged` for data
+binding; `GetVisibleRegion()` reads it on demand:
+
+```csharp
+if (map.VisibleRegion is { } region)
+{
+    var center = region.Center;                 // MapCoordinate
+    var span = (region.LatitudeDegrees, region.LongitudeDegrees);
+}
 ```
 
 ---
