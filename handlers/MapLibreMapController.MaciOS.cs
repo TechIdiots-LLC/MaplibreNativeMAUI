@@ -809,13 +809,18 @@ public class MapLibreMapController : IMapLibreMapController
     public void AddGeoJsonSource(string sourceName, string source)
     {
         if (!_styleReady || _style == null) return;
-        if (_style.HasSource(sourceName)) return;
-        var s = _style.AddGeoJsonSource(sourceName);
+        // Reuse the existing source if present so a re-add updates it in place
+        // instead of no-op'ing (which left overlay geometry stale).
+        var s = _style.HasSource(sourceName) ? _style.GetSource(sourceName)! : _style.AddGeoJsonSource(sourceName);
         s.SetGeoJson(source);
     }
 
     public void SetGeoJsonSource(string sourceName, string source)
-        => AddGeoJsonSource(sourceName, source);
+    {
+        if (!_styleReady || _style == null) return;
+        // Update the existing source's data in place (no layer churn).
+        _style.GetSource(sourceName)?.SetGeoJson(source);
+    }
 
     public void SetGeoJsonFeature(string sourceName, string geojsonFeature)
     {
