@@ -90,9 +90,8 @@
 
         <!-- ── Map ── -->
         <!--
-            MlnMapImage is a D3DImage-backed WPF ImageSource — the map renders into
-            a D3D9 surface via WGL_NV_DX_interop2 and the WPF compositor samples it
-            directly.  No airspace: WPF content draws over the map normally.
+            MlnMapImage renders the map into a WriteableBitmap shown by an ordinary
+            WPF Image element.  No airspace: WPF content draws over the map normally.
             Nav / GPS / attribution controls are real XAML children stacked inside
             the Grid at the corners specified by the *ControlPosition properties.
         -->

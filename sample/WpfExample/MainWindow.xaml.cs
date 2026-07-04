@@ -1,5 +1,5 @@
 ﻿/**
- * MainWindow.xaml.cs — WPF example using MapLibreNative.Maui.WPF.MlnMapImage (D3DImage renderer).
+ * MainWindow.xaml.cs — WPF example using MapLibreNative.Maui.WPF.MlnMapImage.
  *
  * Demonstrates:
  *  • Loading a MapLibre style via the StyleUrl dependency property
@@ -44,7 +44,7 @@ public partial class MainWindow : Window
 
     // ── Data-driven circle-color investigation ──────────────────────────────────
     // See https://github.com/TechIdiots-LLC/MaplibreNativeMAUI investigate/runtime-data-driven-circle-color.
-    // Reproduces (minimally, without a basemap or vector tiles) the VistumblerCS
+    // Reproduces (minimally, without a basemap or vector tiles) a consumer-reported
     // symptom: a circle-color value that depends on a per-feature property renders
     // zero features when added at RUNTIME (AddGeoJsonSource + AddCircleLayer after
     // the style is already loaded), even though the identical property+stops/case/

@@ -1,16 +1,12 @@
 ﻿#if WINDOWS
 /**
- * SwapChainMapView.Windows.cs — in-tree map view for the MAUI Windows renderer.
+ * MapImageView.Windows.cs — in-tree map view for the MAUI Windows renderer.
  *
- * MapLibre (mln-cabi GL) renders into FBO 0 of a hidden off-screen window; after each
- * frame glReadPixels captures the result and writes it directly into a WinUI
- * WriteableBitmap.  The bitmap is displayed in an ordinary XAML Image element so the
- * map is real in-tree content: correct z-order, clipping, pointer input — no floating
- * WS_POPUP window, no airspace.
- *
- * (Earlier design used a SwapChainPanel + WGL_NV_DX_interop2 + D3D11, which failed
- * because WGLRenderableResource::bind() in platform_frontend_windows.cpp always calls
- * glBindFramebuffer(0), so MapLibre's output lands in FBO 0 — not in any custom FBO.)
+ * MapLibre (mln-cabi GL) renders into FBO 0 of a hidden off-screen window
+ * (HiddenWglContext); after each frame glReadPixels captures the result and writes it
+ * directly into a WinUI WriteableBitmap.  The bitmap is displayed in an ordinary XAML
+ * Image element so the map is real in-tree content: correct z-order, clipping, pointer
+ * input — no floating window, no airspace.
  */
 using System.Runtime.InteropServices;
 using MapLibreNative.Maui;
@@ -27,7 +23,7 @@ namespace MapLibreNative.Maui.Handlers.WinUI;
 /// Hosts a <see cref="WUXC.Image"/> backed by a <see cref="WriteableBitmap"/> that is updated
 /// each frame via <c>glReadPixels</c> — the in-tree map surface used by the MAUI Windows handler.
 /// </summary>
-public sealed class SwapChainMapView : IDisposable
+public sealed class MapImageView : IDisposable
 {
     // Access WinRT IBufferByteAccess to write directly into the WriteableBitmap pixel buffer.
     [ComImport, Guid("905a0fef-bc53-11df-8c49-001e4fc686da"),
@@ -67,7 +63,7 @@ public sealed class SwapChainMapView : IDisposable
     };
     private WriteableBitmap? _bitmap;
 
-    private GlDxgiInteropContext? _interop;
+    private HiddenWglContext? _interop;
     private MbglRunLoop?   _runLoop;
     private MbglFrontend?  _frontend;
     private MbglMap?       _map;
@@ -78,7 +74,7 @@ public sealed class SwapChainMapView : IDisposable
     private bool  _renderNeedsUpdate = true, _rendering, _isDragging;
     private Windows.Foundation.Point _lastPos;
 
-    public SwapChainMapView()
+    public MapImageView()
     {
         View.Children.Add(_mapImage);
         // Nav / GPS / attribution controls are added by MapLibreMapController.Windows.
@@ -105,7 +101,7 @@ public sealed class SwapChainMapView : IDisposable
         _width  = Math.Max(1, (int)(View.ActualWidth  * _dpi));
         _height = Math.Max(1, (int)(View.ActualHeight * _dpi));
 
-        _interop = new GlDxgiInteropContext();
+        _interop = new HiddenWglContext();
         _interop.Initialize();
         _interop.Resize(_width, _height);
         CreateBitmap(_width, _height);

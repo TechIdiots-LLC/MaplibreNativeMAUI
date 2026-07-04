@@ -1,13 +1,10 @@
 /**
  * MlnMapImage.cs — airspace-free WPF MapLibre control.
  *
- * Unlike MlnMapHost (an HwndHost whose controls must be floating Popups), this control
- * renders MapLibre into a shared D3D surface and presents it through a WPF D3DImage. The
- * map is therefore an ordinary WPF visual, so on-map controls are real WPF children with
- * correct z-order, clipping and hit-testing — no popups, no airspace.
- *
- * Status: functional architecture; needs on-GPU validation of the WGL_NV_DX_interop path.
- * Kept alongside MlnMapHost (the default) so consumers opt in by choosing this control.
+ * MapLibre renders into the framebuffer of a hidden WGL window (HiddenWglContext); each
+ * frame the pixels are read back with glReadPixels into a WriteableBitmap shown by an
+ * ordinary WPF Image. The map is therefore a normal WPF visual, so on-map controls are
+ * real WPF children with correct z-order, clipping and hit-testing — no popups, no airspace.
  *
  * Usage in XAML:
  *   xmlns:mlwpf="clr-namespace:MapLibreNative.Maui.WPF;assembly=MapLibreNative.Maui.WPF"
@@ -22,7 +19,6 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using MapLibreNative.Maui;
-using MapLibreNative.Maui.WPF.D3DImageRenderer;
 
 namespace MapLibreNative.Maui.WPF;
 
@@ -192,7 +188,7 @@ public partial class MlnMapImage : Grid
 
     private readonly Image _image = new() { Stretch = Stretch.Fill };
     private WriteableBitmap? _bitmap;
-    private GlDxInteropContext? _interop;
+    private HiddenWglContext? _interop;
     private MbglRunLoop? _runLoop;
     private MbglFrontend? _frontend;
     private MbglMap? _map;
@@ -238,7 +234,7 @@ public partial class MlnMapImage : Grid
         _physW = Math.Max(1, (int)Math.Round(ActualWidth * _dpi));
         _physH = Math.Max(1, (int)Math.Round(ActualHeight * _dpi));
 
-        _interop = new GlDxInteropContext();
+        _interop = new HiddenWglContext();
         _interop.Initialize();
         _interop.Resize(_physW, _physH);
         CreateBitmap(_physW, _physH);
@@ -354,7 +350,7 @@ public partial class MlnMapImage : Grid
         _renderNeedsUpdate = true;
     }
 
-    // ── Sources / layers / queries (parity with MlnMapHost) ────────────────────
+    // ── Sources / layers / queries ─────────────────────────────────────────────
 
     public void AddGeoJsonSource(string sourceId, string geojson)
     {
@@ -771,28 +767,6 @@ public partial class MlnMapImage : Grid
             top ? 0 : edge);
     }
 
-    private static Border MakeButton(string glyph, Action onClick, bool top)
-    {
-        var b = new Border
-        {
-            Height = 30,
-            Background = Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.FromRgb(218, 218, 218)),
-            BorderThickness = new Thickness(1, top ? 1 : 0, 1, 1),
-            CornerRadius = top ? new CornerRadius(4, 4, 0, 0) : new CornerRadius(0, 0, 4, 4),
-            Cursor = Cursors.Hand,
-            Child = new TextBlock
-            {
-                Text = glyph,
-                FontSize = 18,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-            },
-        };
-        b.MouseLeftButtonUp += (_, e) => { onClick(); e.Handled = true; };
-        return b;
-    }
-
     // ── mbgl observer ─────────────────────────────────────────────────────────
 
     private void OnMapObserverEvent(string eventName, string? detail)
@@ -1136,7 +1110,7 @@ public partial class MlnMapImage : Grid
         _attrCollapseTimer = null;
         if (_attrTextBlock == null) return;
         _attrCollapsed = true;
-        _attrTextBlock.Text = "ⓘ"; // ⓘ
+        _attrTextBlock.Text = "ⓘ";
     }
 
     private static string StripHtml(string html)

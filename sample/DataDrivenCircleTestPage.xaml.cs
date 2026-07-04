@@ -7,7 +7,7 @@ namespace MauiSample;
 /// <summary>
 /// Mirrors WpfExample's "Run Data-Driven Circle Test" harness on the MAUI side.
 ///
-/// Reproduces the VistumblerCS-reported symptom: a circle layer added at RUNTIME
+/// Reproduces a consumer-reported symptom: a circle layer added at RUNTIME
 /// (AddGeoJsonSource/AddVectorSource + AddCircleLayer after the style is already
 /// loaded) renders zero features. Two scenarios:
 ///   1. A local GeoJSON source with literal / property+stops / case / match
@@ -126,7 +126,7 @@ public partial class DataDrivenCircleTestPage : ContentPage
 
         // ── Vector-tile source-layer test ───────────────────────────────────────
         // Same runtime AddVectorSource + AddCircleLayer(sourceLayer:) pattern as
-        // VistumblerCS's WifiDB history layers, but against the public demotiles
+        // a consuming app's vector-tile history layers, but against the public demotiles
         // vector source ("maplibre"), source-layer "centroids" (one point per
         // country). Before the mln_cabi setSourceLayer relayout fix this rendered
         // zero features for BOTH the literal control and the data-driven layer;

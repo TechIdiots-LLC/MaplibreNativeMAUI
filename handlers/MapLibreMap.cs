@@ -15,7 +15,7 @@ public partial class MapLibreMap : StackLayout
     public static readonly BindableProperty StyleUrlProperty = BindableProperty.Create(nameof(StyleUrl), typeof(string), typeof(MapLibreMap));
     public static readonly BindableProperty MinZoomProperty = BindableProperty.Create(nameof(MinZoom), typeof(float), typeof(MapLibreMap));
     public static readonly BindableProperty MaxZoomProperty = BindableProperty.Create(nameof(MaxZoom), typeof(float), typeof(MapLibreMap));
-    public static readonly BindableProperty RotateGestureEnabledProperty = BindableProperty.Create(nameof(RotateGestureEnabled), typeof(bool), typeof(MapLibreMap));
+    public static readonly BindableProperty RotateGesturesEnabledProperty = BindableProperty.Create(nameof(RotateGesturesEnabled), typeof(bool), typeof(MapLibreMap));
     public static readonly BindableProperty ScrollGesturesEnabledProperty = BindableProperty.Create(nameof(ScrollGesturesEnabled), typeof(bool), typeof(MapLibreMap));
     public static readonly BindableProperty TiltGesturesEnabledProperty = BindableProperty.Create(nameof(TiltGesturesEnabled), typeof(bool), typeof(MapLibreMap));
     public static readonly BindableProperty TrackCameraPositionProperty = BindableProperty.Create(nameof(TrackCameraPosition), typeof(bool), typeof(MapLibreMap));
@@ -153,10 +153,10 @@ public partial class MapLibreMap : StackLayout
         set => SetValue(MaxZoomProperty, value);
     }
     
-    public bool RotateGestureEnabled
+    public bool RotateGesturesEnabled
     {
-        get => (bool)GetValue(RotateGestureEnabledProperty);
-        set => SetValue(RotateGestureEnabledProperty, value);
+        get => (bool)GetValue(RotateGesturesEnabledProperty);
+        set => SetValue(RotateGesturesEnabledProperty, value);
     }
     
     public bool ScrollGesturesEnabled

@@ -33,7 +33,7 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, UIView>
 
     public void UpdateStyleUrl(string styleUrl)         => _controller.SetStyleString(styleUrl);
     public void UpdateMinMaxZoomPreference(double? min, double? max) => _controller.SetMinMaxZoomPreference(min, max);
-    public void UpdateRotateGestureEnabled(bool v)      => _controller.SetRotateGesturesEnabled(v);
+    public void UpdateRotateGesturesEnabled(bool v)      => _controller.SetRotateGesturesEnabled(v);
     public void UpdateScrollGesturesEnabled(bool v)     => _controller.SetScrollGesturesEnabled(v);
     public void UpdateTiltGesturesEnabled(bool v)       => _controller.SetTiltGesturesEnabled(v);
     public void UpdateTrackCameraPosition(bool v)       => _controller.SetTrackCameraPosition(v);

@@ -1,25 +1,26 @@
-#if WINDOWS
 /**
- * GlDxgiInteropContext.Windows.cs — off-screen WGL context for the MAUI Windows map renderer.
+ * HiddenWglContext.cs — off-screen WGL context for the airspace-free WPF map renderer.
  *
  * Creates a hidden, full-size Win32 window with an OpenGL context.  MapLibre's WGL backend
- * renders into FBO 0 (the window's framebuffer) as it always does; after each frame the caller
- * reads the pixels with glReadPixels and hands them to a WinUI WriteableBitmap.
+ * renders into FBO 0 (the window's framebuffer) as it always does; after each frame the
+ * caller reads the pixels out with glReadPixels and hands them to a WPF WriteableBitmap.
  *
- * Replaces the earlier WGL_NV_DX_interop2 + D3D11 design which failed because
+ * A plain window framebuffer is used (rather than a custom FBO) because
  * WGLRenderableResource::bind() in platform_frontend_windows.cpp unconditionally calls
- * glBindFramebuffer(0), so MapLibre's output always lands in FBO 0 — not in any custom FBO.
+ * glBindFramebuffer(0) — MapLibre's output always lands in FBO 0.
+ *
+ * Kept in sync with the MAUI Windows twin: handlers/Windows/HiddenWglContext.Windows.cs.
  */
 using System.Runtime.InteropServices;
 
-namespace MapLibreNative.Maui.Handlers.WinUI;
+namespace MapLibreNative.Maui.WPF;
 
 /// <summary>
-/// Owns a hidden Win32 window and its WGL rendering context.  MapLibre renders into FBO 0 of
-/// that window; call <see cref="ReadPixels"/> after each <c>MbglFrontend.Render</c> to copy the
-/// result into the caller-supplied pixel buffer (e.g. a WinUI <c>WriteableBitmap</c>'s backing store).
+/// Owns a hidden Win32 window and its WGL rendering context.  MapLibre renders into FBO 0
+/// of that window; call <see cref="ReadPixels"/> after each <c>MbglFrontend.Render</c> to
+/// copy the result into a caller-supplied buffer (e.g. a <c>WriteableBitmap</c> back-buffer).
 /// </summary>
-internal sealed class GlDxgiInteropContext : IDisposable
+internal sealed class HiddenWglContext : IDisposable
 {
     // ── P/Invoke ──────────────────────────────────────────────────────────────
 
@@ -36,6 +37,7 @@ internal sealed class GlDxgiInteropContext : IDisposable
 
     [DllImport("gdi32.dll")] private static extern int ChoosePixelFormat(IntPtr hdc, ref PIXELFORMATDESCRIPTOR ppfd);
     [DllImport("gdi32.dll")] private static extern bool SetPixelFormat(IntPtr hdc, int fmt, ref PIXELFORMATDESCRIPTOR ppfd);
+
     [DllImport("opengl32.dll")] private static extern IntPtr wglCreateContext(IntPtr hDC);
     [DllImport("opengl32.dll")] private static extern bool wglDeleteContext(IntPtr hGLRC);
     [DllImport("opengl32.dll")] private static extern bool wglMakeCurrent(IntPtr hDC, IntPtr hGLRC);
@@ -68,13 +70,13 @@ internal sealed class GlDxgiInteropContext : IDisposable
 
     private const uint PFD_DRAW_TO_WINDOW = 0x00000004;
     private const uint PFD_SUPPORT_OPENGL = 0x00000020;
-    // Single-buffered (no PFD_DOUBLEBUFFER) — glReadPixels captures from the only buffer.
-    private const uint CS_OWNDC       = 0x0020;
-    private const uint WS_POPUP       = 0x80000000;
-    private const uint SWP_NOMOVE     = 0x0002;
-    private const uint SWP_NOZORDER   = 0x0004;
+    // Single-buffered: no PFD_DOUBLEBUFFER — FBO 0 is the only buffer, glReadPixels captures it directly.
+    private const uint CS_OWNDC      = 0x0020;
+    private const uint WS_POPUP      = 0x80000000;
+    private const uint SWP_NOMOVE    = 0x0002;
+    private const uint SWP_NOZORDER  = 0x0004;
     private const uint SWP_NOACTIVATE = 0x0010;
-    private const uint GL_BGRA        = 0x80E1;   // GL 1.2 — supported by all modern drivers
+    private const uint GL_BGRA       = 0x80E1;   // GL 1.2 — supported by all modern drivers
     private const uint GL_UNSIGNED_BYTE = 0x1401;
 
     // ── State ─────────────────────────────────────────────────────────────────
@@ -83,7 +85,7 @@ internal sealed class GlDxgiInteropContext : IDisposable
     private static WndProcDelegate? _wndProcKeepAlive;
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     private delegate IntPtr WndProcDelegate(IntPtr hWnd, uint msg, IntPtr w, IntPtr l);
-    private const string WndClass = "MlnGlHiddenDxgi";
+    private const string WndClass = "MlnGlHidden";
 
     private IntPtr _hwnd, _hdc, _glrc;
 
@@ -122,6 +124,8 @@ internal sealed class GlDxgiInteropContext : IDisposable
     /// <summary>
     /// Reads the rendered pixels (bottom-left origin, BGRA) from FBO 0 into
     /// <paramref name="buffer"/>. Call after <see cref="MbglFrontend.Render"/>.
+    /// Callers typically hand this the <c>WriteableBitmap.BackBuffer</c> pointer
+    /// (locked) so the data is written directly without a second copy.
     /// </summary>
     public void ReadPixels(IntPtr buffer) =>
         glReadPixels(0, 0, Width, Height, GL_BGRA, GL_UNSIGNED_BYTE, buffer);
@@ -129,17 +133,20 @@ internal sealed class GlDxgiInteropContext : IDisposable
     private void CreateHiddenGlContext()
     {
         EnsureClass();
+        // WS_POPUP: top-level, no chrome. CS_OWNDC ensures the DC persists across resizes.
         _hwnd = CreateWindowEx(0, WndClass, "", WS_POPUP, 0, 0, 1, 1,
             IntPtr.Zero, IntPtr.Zero, GetModuleHandleW(IntPtr.Zero), IntPtr.Zero);
         if (_hwnd == IntPtr.Zero)
             throw new InvalidOperationException("Failed to create hidden GL window.");
         _hdc = GetDC(_hwnd);
 
+        // Single-buffered: no PFD_DOUBLEBUFFER. MapLibre renders into the only buffer;
+        // glReadPixels captures it directly without needing SwapBuffers.
         var pfd = new PIXELFORMATDESCRIPTOR
         {
-            nSize     = (ushort)Marshal.SizeOf<PIXELFORMATDESCRIPTOR>(),
-            nVersion  = 1,
-            dwFlags   = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL,
+            nSize = (ushort)Marshal.SizeOf<PIXELFORMATDESCRIPTOR>(),
+            nVersion = 1,
+            dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL,
             cColorBits = 32,
             cDepthBits = 24,
             cStencilBits = 8,
@@ -157,7 +164,7 @@ internal sealed class GlDxgiInteropContext : IDisposable
         var wc = new WNDCLASSEXA
         {
             cbSize    = (uint)Marshal.SizeOf<WNDCLASSEXA>(),
-            style     = CS_OWNDC,
+            style     = CS_OWNDC,  // persistent DC — survives window resize
             lpfnWndProc = Marshal.GetFunctionPointerForDelegate(_wndProcKeepAlive),
             hInstance = GetModuleHandleW(IntPtr.Zero),
             lpszClassName = WndClass,
@@ -174,4 +181,3 @@ internal sealed class GlDxgiInteropContext : IDisposable
         if (_hwnd != IntPtr.Zero) { DestroyWindow(_hwnd);   _hwnd = IntPtr.Zero; }
     }
 }
-#endif

@@ -25,26 +25,12 @@
         <PackageReference Include="System.Text.Json" Version="9.0.4" />
     </ItemGroup>
 
-    <!-- D3D11/DXGI interop for the in-tree SwapChainPanel renderer (Windows only,
-         airspace-free alternative to the WS_POPUP GL window). -->
-    <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
-    </ItemGroup>
-
     <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'
                         Or $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'
                         Or $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'
                         Or $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
         <ProjectReference Include="..\bindings\MapLibreNative.Maui.csproj" />
     </ItemGroup>
-
-  <!-- Reference to MaciOS Binding project -->
-  <!--<ItemGroup Condition="$(TargetFramework.Contains('ios')) Or $(TargetFramework.Contains('maccatalyst'))">
-    <ProjectReference Include="..\..\macios\MapLibre.MaciOS.Binding\MapLibre.MaciOS.Binding.csproj" />
-  </ItemGroup>-->
-
-  <!-- Reference to Android Binding project -->
-    
- 
 
   <!-- Android -->
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) != 'android'">

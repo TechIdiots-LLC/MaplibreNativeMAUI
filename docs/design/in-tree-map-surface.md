@@ -3,8 +3,8 @@
 **Status:** complete — the in-tree renderers are the only renderers; the old airspace-based paths (WPF `HwndHost`/`MlnMapHost` and MAUI Windows `WS_POPUP`) have been **removed**. **Scope:** the host/controller layer per platform. No change to the `mln-cabi` C ABI. (The sections below on the "old" surfaces and the migration strategy are retained as design rationale.)
 
 **Implementation status**
-- ✅ **WPF — `WriteableBitmap`:** implemented as `MlnMapImage` + `GlDxInteropContext`. MapLibre renders into FBO 0 of a hidden, properly-sized Win32 window (`SetWindowPos`); after each frame `glReadPixels(GL_BGRA)` transfers pixels directly into a WPF `WriteableBitmap.BackBuffer` (Lock / AddDirtyRect / Unlock) displayed in a WPF `Image`. All three on-map controls (nav / GPS / attribution) are real WPF children. Earlier design targeted `D3DImage` via `WGL_NV_DX_interop2` + D3D9 — see [Why `glReadPixels`?](#why-glreadpixels-instead-of-wgl_nv_dx_interop2) below.
-- ✅ **MAUI Windows — `WriteableBitmap`:** implemented as `SwapChainMapView` + `GlDxgiInteropContext`. Same hidden-window + `glReadPixels` approach; pixels written into a WinUI `WriteableBitmap` via `IBufferByteAccess`, displayed in a WinUI `Image` element. All three on-map controls are real XAML children wired to the renderer-agnostic logic. Earlier design targeted `SwapChainPanel` + D3D11 + `WGL_NV_DX_interop2` — same root cause; see below.
+- ✅ **WPF — `WriteableBitmap`:** implemented as `MlnMapImage` + `HiddenWglContext`. MapLibre renders into FBO 0 of a hidden, properly-sized Win32 window (`SetWindowPos`); after each frame `glReadPixels(GL_BGRA)` transfers pixels directly into a WPF `WriteableBitmap.BackBuffer` (Lock / AddDirtyRect / Unlock) displayed in a WPF `Image`. All three on-map controls (nav / GPS / attribution) are real WPF children. Earlier design targeted `D3DImage` via `WGL_NV_DX_interop2` + D3D9 — see [Why `glReadPixels`?](#why-glreadpixels-instead-of-wgl_nv_dx_interop2) below.
+- ✅ **MAUI Windows — `WriteableBitmap`:** implemented as `MapImageView` + `HiddenWglContext`. Same hidden-window + `glReadPixels` approach; pixels written into a WinUI `WriteableBitmap` via `IBufferByteAccess`, displayed in a WinUI `Image` element. All three on-map controls are real XAML children wired to the renderer-agnostic logic. Earlier design targeted `SwapChainPanel` + D3D11 + `WGL_NV_DX_interop2` — same root cause; see below.
 - ✅ **Android (`TextureView`)**: swapped `SurfaceView` for `TextureView` in `MapLibreMapController.Android`. `TextureView` is an ordinary in-tree `View` backed by a `SurfaceTexture`; `SurfaceCallback`/`ISurfaceHolderCallback` replaced by `TextureSurfaceListener`/`ISurfaceTextureListener`. Surface lifecycle: `OnSurfaceTextureAvailable` wraps the `SurfaceTexture` in an `Android.Views.Surface`, acquires the `ANativeWindow`, and calls `InitMaplibre`; `OnSurfaceTextureDestroyed` disposes the `Surface` + releases the native window. No more compositing hole for sibling MAUI content.
 - ✅ **iOS/mac (already in-tree):** no change needed.
 
@@ -16,10 +16,10 @@ It is worst on the two desktop compositors that enforce **airspace** (a native G
 
 | Platform | Map surface today | Controls today | Compositing reality |
 |---|---|---|---|
-| **WPF** | `HwndHost` child HWND, WGL/OpenGL ([`MlnMapHost.cs`](../../wpf/MlnMapHost.cs)) | WPF `Popup` objects (separate top-level windows) | **Airspace.** WPF content cannot draw over the HWND, so controls must be popups → don't clip to the map, float over other apps, need constant reposition/hide babysitting. |
-| **MAUI Windows** | Borderless **top-level `WS_POPUP`** window tracked to the main window, WGL/OpenGL ([`MapLibreMapController.Windows.cs:546`](../../handlers/MapLibreMapController.Windows.cs#L546)) | Nav/GPS panels are also `WS_POPUP` windows ([`:1185`](../../handlers/MapLibreMapController.Windows.cs#L1185)) | **Airspace, worst case.** Even the *map itself* is a floating window chasing the parent; XAML never sees the pointer over the map. |
-| **Android** | `SurfaceView` + native subview controls in a `FrameLayout` ([`MapLibreMapController.Android.cs:369`](../../handlers/MapLibreMapController.Android.cs#L369)) | Native views `AddView`'d into the container | **Mostly fine.** `SurfaceView` punches a compositing hole (z-order caveats vs. sibling MAUI content), but the built-in controls are real in-tree subviews so they layer correctly over the map. |
-| **iOS / Mac Catalyst** | Metal `MTKView`/`CAMetalLayer` in a container `UIView` ([`MapLibreMapController.MaciOS.cs`](../../handlers/MapLibreMapController.MaciOS.cs)) | Native views `AddSubview`'d | **Clean.** UIKit/AppKit have no airspace rule; subviews composite over the Metal view normally. |
+| **WPF** | `HwndHost` child HWND, WGL/OpenGL (`MlnMapHost.cs`, removed in 4.0.0) | WPF `Popup` objects (separate top-level windows) | **Airspace.** WPF content cannot draw over the HWND, so controls must be popups → don't clip to the map, float over other apps, need constant reposition/hide babysitting. |
+| **MAUI Windows** | Borderless **top-level `WS_POPUP`** window tracked to the main window, WGL/OpenGL (`MapLibreMapController.Windows.cs`, removed in 4.0.0) | Nav/GPS panels are also `WS_POPUP` windows (also removed in 4.0.0) | **Airspace, worst case.** Even the *map itself* is a floating window chasing the parent; XAML never sees the pointer over the map. |
+| **Android** | `SurfaceView` + native subview controls in a `FrameLayout` ([`MapLibreMapController.Android.cs`](https://github.com/TechIdiots-LLC/MaplibreNativeMAUI/blob/main/handlers/MapLibreMapController.Android.cs)) | Native views `AddView`'d into the container | **Mostly fine.** `SurfaceView` punches a compositing hole (z-order caveats vs. sibling MAUI content), but the built-in controls are real in-tree subviews so they layer correctly over the map. |
+| **iOS / Mac Catalyst** | Metal `MTKView`/`CAMetalLayer` in a container `UIView` ([`MapLibreMapController.MaciOS.cs`](https://github.com/TechIdiots-LLC/MaplibreNativeMAUI/blob/main/handlers/MapLibreMapController.MaciOS.cs)) | Native views `AddSubview`'d | **Clean.** UIKit/AppKit have no airspace rule; subviews composite over the Metal view normally. |
 
 So: **iOS/mac are already right, Android is acceptable but has a hole, and WPF + MAUI Windows both need real work.** The official .NET MAUI Windows map handler avoids all of this only because it hosts a WinUI 3 `MapControl` (a real XAML element) and does no native rendering itself — it is not a reference for fixing native-GPU compositing.
 
@@ -65,8 +65,8 @@ The implemented path is identical in concept to the WPF path:
 MapLibre (mln-cabi) → GL FBO 0 (hidden Win32 window) → glReadPixels(GL_BGRA) → WriteableBitmap (IBufferByteAccess) → WinUI Image
 ```
 
-1. `GlDxgiInteropContext` owns the same hidden-window + WGL context as the WPF `GlDxInteropContext`.
-2. `SwapChainMapView` (the name is kept for backward compatibility; it no longer uses a swap chain) hosts a WinUI `Image` element backed by a `Microsoft.UI.Xaml.Media.Imaging.WriteableBitmap`.
+1. `HiddenWglContext` owns the same hidden-window + WGL context as the WPF control's `HiddenWglContext`.
+2. `MapImageView` (named `SwapChainMapView` before 4.0.0) hosts a WinUI `Image` element backed by a `Microsoft.UI.Xaml.Media.Imaging.WriteableBitmap`.
 3. Per render tick: `wglMakeCurrent` → `glViewport` → `mln_frontend_render` → obtain the pixel buffer pointer via `IBufferByteAccess::Buffer` → `glReadPixels(... ptr)` → `bitmap.Invalidate()`.
 4. `IBufferByteAccess` (GUID `905a0fef-bc53-11df-8c49-001e4fc686da`) is the WinRT COM interface for direct byte access to a `Windows.Storage.Streams.IBuffer` — the only way to write pixels into a WinUI `WriteableBitmap` without a second copy.
 5. The same `ScaleTransform(1, -1)` flip is applied to the `Image` element. Nav/GPS/attribution overlays are ordinary XAML children.
@@ -97,7 +97,7 @@ resize, style reload, nav/GPS/attribution) they became the default and the old p
 - WPF: `MlnMapHost` (the `HwndHost` + `Popup` control) deleted; `MlnMapImage` is the only WPF control.
 - MAUI Windows: the `WS_POPUP` GL window + GDI-painted overlays deleted from
   `MapLibreMapController.Windows`, along with the `UseSwapChainPanel` flag; the in-tree
-  `SwapChainMapView` path is the only renderer.
+  `MapImageView` path (named `SwapChainMapView` before 4.0.0) is the only renderer.
 
 ## Risks & open questions
 
@@ -140,12 +140,12 @@ The above makes it *possible* to draw over the map cleanly. The second question 
 
 | MAUI element | Shape | Public surface |
 |---|---|---|
-| [`Pin`](../../../maui/src/Controls/Maps/src/Pin.cs) | Marker | `Location`, `Label`, `Address`, `PinType`, `MarkerId`; `MarkerClicked` |
-| [`Polyline`](../../../maui/src/Controls/Maps/src/Polyline.cs) | Line | `Geopath : IList<Location>`, `StrokeColor`, `StrokeWidth` |
-| [`Polygon`](../../../maui/src/Controls/Maps/src/Polygon.cs) | Filled area | `Geopath`, `FillColor`, `StrokeColor`, `StrokeWidth` |
-| [`Circle`](../../../maui/src/Controls/Maps/src/Circle.cs) | Circle | `Center : Location`, `Radius : Distance`, `FillColor`, `StrokeColor`, `StrokeWidth` |
+| [`Pin`](https://github.com/dotnet/maui/blob/main/src/Controls/Maps/src/Pin.cs) | Marker | `Location`, `Label`, `Address`, `PinType`, `MarkerId`; `MarkerClicked` |
+| [`Polyline`](https://github.com/dotnet/maui/blob/main/src/Controls/Maps/src/Polyline.cs) | Line | `Geopath : IList<Location>`, `StrokeColor`, `StrokeWidth` |
+| [`Polygon`](https://github.com/dotnet/maui/blob/main/src/Controls/Maps/src/Polygon.cs) | Filled area | `Geopath`, `FillColor`, `StrokeColor`, `StrokeWidth` |
+| [`Circle`](https://github.com/dotnet/maui/blob/main/src/Controls/Maps/src/Circle.cs) | Circle | `Center : Location`, `Radius : Distance`, `FillColor`, `StrokeColor`, `StrokeWidth` |
 
-They hang off two `ObservableCollection`s on the map — `Map.Pins` and `Map.MapElements` — so XAML stays declarative and data-bindable ([`Map.cs`](../../../maui/src/Controls/Maps/src/Map.cs)).
+They hang off two `ObservableCollection`s on the map — `Map.Pins` and `Map.MapElements` — so XAML stays declarative and data-bindable ([`Map.cs`](https://github.com/dotnet/maui/blob/main/src/Controls/Maps/src/Map.cs)).
 
 ### Why this fits us well
 
@@ -178,7 +178,7 @@ This is a feature, not a refactor, and is independent of the compositing work ab
 
 ### Follow-up: proper marker via SymbolLayer + sprite (not the legacy annotation API)
 
-`Pin` currently renders as a **circle marker**. MapLibre's legacy `mbgl` annotation API (`SymbolAnnotation` etc.) is *not* exposed through `mln-cabi` and is deprecated upstream anyway — so it is not the path. The correct native marker is a **SymbolLayer with a registered sprite image**, and the cabi already exposes the key primitive: [`mbgl_style_add_image`](../../native/include/mln_cabi.h) → `MbglStyle.AddImage`. Upgrading `Pin` to a real icon + text-label marker requires:
+`Pin` currently renders as a **circle marker**. MapLibre's legacy `mbgl` annotation API (`SymbolAnnotation` etc.) is *not* exposed through `mln-cabi` and is deprecated upstream anyway — so it is not the path. The correct native marker is a **SymbolLayer with a registered sprite image**, and the cabi already exposes the key primitive: [`mbgl_style_add_image`](https://github.com/TechIdiots-LLC/MaplibreNativeMAUI/blob/main/native/include/mln_cabi.h) → `MbglStyle.AddImage`. Upgrading `Pin` to a real icon + text-label marker requires:
 
 1. ✅ ~~Implement `SymbolLayerProperties.ToDictionary()` (currently a stub that throws)~~ — **Done.** Full layout + paint property set (`icon-image/size/anchor/allow-overlap/offset/rotate`, `text-field/font/size/anchor/offset/halo-*/transform/max-width`, etc.) implemented with `ToDictionary()` and `FromJson()`.
 2. ✅ ~~Surface `AddImage` (sprite registration) through `IMapLibreMapController` / `MapLibreMap` on Android, iOS/mac and Windows~~ — **Done.** `AddSpriteImage(imageId, width, height, rgba, pixelRatio, sdf)` and `RemoveSpriteImage(imageId)` added to `IMapLibreMapController`, implemented in all three platform controllers, and exposed on `MapLibreMap`.
@@ -194,4 +194,4 @@ This is a cross-platform task (touches the per-platform controllers), which is w
 - `WGL_NV_DX_interop2`: <https://registry.khronos.org/OpenGL/extensions/NV/NV_DX_interop2.txt>
 - Android `TextureView`: <https://developer.android.com/reference/android/view/TextureView>
 - Airspace overview: <https://learn.microsoft.com/dotnet/desktop/wpf/advanced/technology-regions-overview>
-- MAUI overlay elements: [`Pin`](../../../maui/src/Controls/Maps/src/Pin.cs), [`Polyline`](../../../maui/src/Controls/Maps/src/Polyline.cs), [`Polygon`](../../../maui/src/Controls/Maps/src/Polygon.cs), [`Circle`](../../../maui/src/Controls/Maps/src/Circle.cs)
+- MAUI overlay elements: [`Pin`](https://github.com/dotnet/maui/blob/main/src/Controls/Maps/src/Pin.cs), [`Polyline`](https://github.com/dotnet/maui/blob/main/src/Controls/Maps/src/Polyline.cs), [`Polygon`](https://github.com/dotnet/maui/blob/main/src/Controls/Maps/src/Polygon.cs), [`Circle`](https://github.com/dotnet/maui/blob/main/src/Controls/Maps/src/Circle.cs)

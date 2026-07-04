@@ -17,7 +17,8 @@
 // MauiProgram.cs
 using MapLibreNative.Maui.Handlers;
 
-builder.UseMapLibre();
+builder.ConfigureMauiHandlers(handlers =>
+    handlers.AddHandler(typeof(MapLibreMap), typeof(MapLibreMapHandler)));
 ```
 
 ```xml

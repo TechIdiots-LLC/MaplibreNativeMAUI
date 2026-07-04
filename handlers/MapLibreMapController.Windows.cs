@@ -44,9 +44,9 @@ public class MapLibreMapController : IMapLibreMapController
 
     // ── State ─────────────────────────────────────────────────────────────────
 
-    private readonly IntPtr _parentHwnd;
+    // The factory passes parentHwnd/pixelRatio to keep the cross-platform controller
+    // signature; the in-tree view derives its own surface and DPI, so neither is stored.
     private string? _styleString;
-    private float            _pixelRatio;
 
     private MbglMap?      _map;
     private MbglStyle?    _style;
@@ -64,43 +64,24 @@ public class MapLibreMapController : IMapLibreMapController
     private double _lastGpsLat, _lastGpsLon;
     private float  _lastGpsBearing, _lastGpsAccuracy;
     private bool   _hasGpsFix;
-    // Hit-testing constants (logical pixels, scaled by _pixelRatio internally)
-    private const int NavButtonSize   = 29;   // px (zoom button height)
-    private const int NavDpadSize     = NavButtonSize;   // px — round d-pad; matches button width so nav/zoom/GPS align when stacked
-    private const int NavPanelMargin  = 10;   // from map edge
-    private const int AttrPadH        = 6;    // horizontal text padding
-    private const int AttrPadV        = 3;    // vertical text padding
-    // Below this map height (logical px) the nav panel is hidden so its buttons
-    // don't spill past the map edge or stack over the attribution on short maps.
-    // Nav panel = 3×29 px buttons + 2×1 px dividers + ~10 px top margin ≈ 99 px.
-    // Cached overlay positions — skip SetWindowPos when nothing changed (prevents repaint flicker)
-    private (int x, int y, int w, int h) _lastNavRect;
-    private (int x, int y, int w, int h) _lastAttrRect;
-    // Cached attr text measurement — only re-measure via GDI when text or available width changes
-    private (int cx, int cy) _cachedAttrMeasure;
     // Collapse state
     private bool _attrCollapsed;
     private System.Threading.Timer? _attrCollapseTimer;
 
-    // Pumps the libuv run loop on the UI thread. Without this, async HTTP responses
-    // for style/tile downloads are never delivered and StyleLoaded never fires.
-    private bool _renderNeedsUpdate;
-
-    private bool _initialized;
     private bool _styleReady;
 
     // Owns the in-tree map surface + mbgl objects (the airspace-free renderer; the only path).
-    private WinUI.SwapChainMapView? _swapView;
+    private WinUI.MapImageView? _mapView;
 
-    // XAML overlay controls for the SwapChainPanel renderer (real in-tree children of View).
-    private WUXC.StackPanel? _swapNavPanel;
-    private WUXM.RotateTransform? _swapCompassRotate;   // north tick on the nav d-pad
-    private WUXC.StackPanel? _swapGpsPanel;
-    private WUXC.Border?     _swapGpsTopBtn;
-    private WUXC.TextBlock?  _swapGpsTopIcon;
-    private WUXC.TextBlock?  _swapGpsBottomIcon;
-    private WUXC.Border?     _swapAttrBorder;
-    private WUXC.TextBlock?  _swapAttrText;
+    // XAML overlay controls (real in-tree children of View).
+    private WUXC.StackPanel? _navPanel;
+    private WUXM.RotateTransform? _compassRotate;   // north tick on the nav d-pad
+    private WUXC.StackPanel? _gpsPanel;
+    private WUXC.Border?     _gpsTopBtn;
+    private WUXC.TextBlock?  _gpsTopIcon;
+    private WUXC.TextBlock?  _gpsBottomIcon;
+    private WUXC.Border?     _attrBorder;
+    private WUXC.TextBlock?  _attrTextBlock;
 
     /// <summary>The WinUI placeholder element the handler uses as the platform view.</summary>
     public Microsoft.UI.Xaml.Controls.Grid View { get; } = new();
@@ -123,20 +104,18 @@ public class MapLibreMapController : IMapLibreMapController
 
     public MapLibreMapController(IntPtr parentHwnd, float pixelRatio, string? styleString)
     {
-        _parentHwnd  = parentHwnd;
-        _pixelRatio  = pixelRatio;
         _styleString = styleString;
     }
 
     // ── Init ──────────────────────────────────────────────────────────────────
 
-    public void Init() => InitSwapChain();
+    public void Init() => InitMapView();
 
-    // ── SwapChainPanel renderer (airspace-free, in-tree) ───────────────────────
+    // ── Map view (airspace-free, in-tree) ──────────────────────────────────────
 
-    private void InitSwapChain()
+    private void InitMapView()
     {
-        _swapView = new WinUI.SwapChainMapView
+        _mapView = new WinUI.MapImageView
         {
             StyleUrl = string.IsNullOrEmpty(_styleString)
                 ? "https://demotiles.maplibre.org/style.json" : _styleString!,
@@ -144,53 +123,52 @@ public class MapLibreMapController : IMapLibreMapController
 
         // The self-contained view owns the mbgl objects; mirror them onto the controller's
         // fields so all existing camera/source/layer operations work unchanged.
-        _swapView.MapReady += (_, _) =>
+        _mapView.MapReady += (_, _) =>
         {
-            _map = _swapView.Map;
-            _initialized = true;
+            _map = _mapView.Map;
             OnMapReadyReceived?.Invoke(new Map(null));
         };
-        _swapView.StyleLoaded += (_, _) =>
+        _mapView.StyleLoaded += (_, _) =>
         {
-            _style = _swapView.Style;
+            _style = _mapView.Style;
             _styleReady = true;
             RefreshAttributionText();   // build attribution from the new style's sources
             OnStyleLoadedReceived?.Invoke(new Style(null));
         };
-        _swapView.DidBecomeIdle += (_, _) =>
+        _mapView.DidBecomeIdle += (_, _) =>
         {
             if (_attrText.Length == 0) RefreshAttributionText();
             OnDidBecomeIdleReceived?.Invoke();
         };
-        _swapView.CameraIdle    += (_, _) => { RefreshSwapChainGps(); OnCameraIdleReceived?.Invoke(); };
-        _swapView.MapClicked    += (_, e) => OnMapClickReceived?.Invoke(new LatLng(e.Lat, e.Lon), e.X, e.Y);
+        _mapView.CameraIdle    += (_, _) => { RefreshGpsControl(); OnCameraIdleReceived?.Invoke(); };
+        _mapView.MapClicked    += (_, e) => OnMapClickReceived?.Invoke(new LatLng(e.Lat, e.Lon), e.X, e.Y);
 
-        View.Children.Add(_swapView.View);
-        CreateSwapChainOverlays();
+        View.Children.Add(_mapView.View);
+        CreateOverlays();
         View.Unloaded += (_, _) => DisposeNative();
     }
 
-    // ── SwapChainPanel XAML overlays (nav / GPS / attribution) ─────────────────
+    // ── XAML overlays (nav / GPS / attribution) ────────────────────────────────
 
-    private void CreateSwapChainOverlays()
+    private void CreateOverlays()
     {
         // Navigation — top-right corner: rotate/pitch/compass d-pad, then zoom in/out.
-        _swapNavPanel = new WUXC.StackPanel
+        _navPanel = new WUXC.StackPanel
         {
             HorizontalAlignment = WUX.HorizontalAlignment.Right,
             VerticalAlignment = WUX.VerticalAlignment.Top,
             Margin = new WUX.Thickness(0, 10, 10, 0),
             Width = 30,
         };
-        _swapNavPanel.Children.Add(BuildSwapDpad());
-        _swapNavPanel.Children.Add(MakeSwapDivider());
-        _swapNavPanel.Children.Add(MakeSwapNavButton("+", () => _swapView?.ZoomIn(), new WUX.CornerRadius(0)));
-        _swapNavPanel.Children.Add(MakeSwapDivider());
-        _swapNavPanel.Children.Add(MakeSwapNavButton("−", () => _swapView?.ZoomOut(), new WUX.CornerRadius(0, 0, 4, 4)));
-        View.Children.Add(_swapNavPanel);
+        _navPanel.Children.Add(BuildDpad());
+        _navPanel.Children.Add(MakeDivider());
+        _navPanel.Children.Add(MakeNavButton("+", () => _mapView?.ZoomIn(), new WUX.CornerRadius(0)));
+        _navPanel.Children.Add(MakeDivider());
+        _navPanel.Children.Add(MakeNavButton("−", () => _mapView?.ZoomOut(), new WUX.CornerRadius(0, 0, 4, 4)));
+        View.Children.Add(_navPanel);
 
         // GPS control — top-right, stacked below the nav panel (d-pad 30 + 2 zoom 30 + 2 dividers ≈ 92).
-        _swapGpsPanel = new WUXC.StackPanel
+        _gpsPanel = new WUXC.StackPanel
         {
             HorizontalAlignment = WUX.HorizontalAlignment.Right,
             VerticalAlignment = WUX.VerticalAlignment.Top,
@@ -198,16 +176,16 @@ public class MapLibreMapController : IMapLibreMapController
             Width = 30,
             Visibility = _showGpsControl ? WUX.Visibility.Visible : WUX.Visibility.Collapsed,
         };
-        _swapGpsTopBtn = MakeSwapButton("○", CycleGpsMode, true);
-        _swapGpsTopIcon = (WUXC.TextBlock)_swapGpsTopBtn.Child;
-        var gpsBottom = MakeSwapButton("↺", GpsBearingButtonPressed, false);
-        _swapGpsBottomIcon = (WUXC.TextBlock)gpsBottom.Child;
-        _swapGpsPanel.Children.Add(_swapGpsTopBtn);
-        _swapGpsPanel.Children.Add(gpsBottom);
-        View.Children.Add(_swapGpsPanel);
+        _gpsTopBtn = MakeGpsButton("○", CycleGpsMode, true);
+        _gpsTopIcon = (WUXC.TextBlock)_gpsTopBtn.Child;
+        var gpsBottom = MakeGpsButton("↺", GpsBearingButtonPressed, false);
+        _gpsBottomIcon = (WUXC.TextBlock)gpsBottom.Child;
+        _gpsPanel.Children.Add(_gpsTopBtn);
+        _gpsPanel.Children.Add(gpsBottom);
+        View.Children.Add(_gpsPanel);
 
         // Attribution — bottom-left, collapsed ⓘ that expands on tap.
-        _swapAttrText = new WUXC.TextBlock
+        _attrTextBlock = new WUXC.TextBlock
         {
             Text = "ⓘ",
             FontSize = 11,
@@ -215,7 +193,7 @@ public class MapLibreMapController : IMapLibreMapController
             TextWrapping = WUX.TextWrapping.Wrap,
             MaxWidth = 320,
         };
-        _swapAttrBorder = new WUXC.Border
+        _attrBorder = new WUXC.Border
         {
             Background = new WUXM.SolidColorBrush(Windows.UI.Color.FromArgb(235, 248, 248, 248)),
             BorderBrush = new WUXM.SolidColorBrush(Windows.UI.Color.FromArgb(255, 208, 208, 208)),
@@ -225,20 +203,20 @@ public class MapLibreMapController : IMapLibreMapController
             HorizontalAlignment = WUX.HorizontalAlignment.Left,
             VerticalAlignment = WUX.VerticalAlignment.Bottom,
             Margin = new WUX.Thickness(10, 0, 0, 10),
-            Child = _swapAttrText,
+            Child = _attrTextBlock,
             Visibility = _showAttrControl ? WUX.Visibility.Visible : WUX.Visibility.Collapsed,
         };
-        _swapAttrBorder.Tapped += (_, e) =>
+        _attrBorder.Tapped += (_, e) =>
         {
             if (_attrCollapsed) ExpandAttribution(); else CollapseAttribution();
             e.Handled = true;
         };
-        View.Children.Add(_swapAttrBorder);
+        View.Children.Add(_attrBorder);
 
-        RefreshSwapChainGps();
+        RefreshGpsControl();
     }
 
-    private static WUXC.Border MakeSwapButton(string glyph, Action onClick, bool top)
+    private static WUXC.Border MakeGpsButton(string glyph, Action onClick, bool top)
     {
         var b = new WUXC.Border
         {
@@ -260,10 +238,10 @@ public class MapLibreMapController : IMapLibreMapController
         return b;
     }
 
-    private static WUXC.Border MakeSwapDivider()
+    private static WUXC.Border MakeDivider()
         => new() { Height = 1, Background = new WUXM.SolidColorBrush(Rgb(0xDA, 0xDA, 0xDA)) };
 
-    private static WUXC.Border MakeSwapNavButton(string glyph, Action onClick, WUX.CornerRadius corners)
+    private static WUXC.Border MakeNavButton(string glyph, Action onClick, WUX.CornerRadius corners)
     {
         var b = new WUXC.Border
         {
@@ -289,7 +267,7 @@ public class MapLibreMapController : IMapLibreMapController
     }
 
     // Rotate/pitch/compass d-pad — WinUI equivalent of the WPF MlnMapImage d-pad.
-    private WUXC.Border BuildSwapDpad()
+    private WUXC.Border BuildDpad()
     {
         const double size = 30;
         var root = new WUXC.Grid { Width = size, Height = size, Background = new WUXM.SolidColorBrush(Microsoft.UI.Colors.White) };
@@ -301,11 +279,11 @@ public class MapLibreMapController : IMapLibreMapController
             grid.RowDefinitions.Add(new WUXC.RowDefinition { Height = new WUX.GridLength(1, WUX.GridUnitType.Star) });
         }
         void Add(WUX.FrameworkElement el, int row, int col) { WUXC.Grid.SetRow(el, row); WUXC.Grid.SetColumn(el, col); grid.Children.Add(el); }
-        Add(MakeSwapDpadArrow("▲", () => PitchBy(10)),  0, 1);  // ▲ up    → more tilt
-        Add(MakeSwapDpadArrow("◀", () => RotateBy(-15)), 1, 0);  // ◀ left  → rotate ccw
-        Add(MakeSwapDpadArrow(null,      ResetNorth),         1, 1);  // centre  → reset north
-        Add(MakeSwapDpadArrow("▶", () => RotateBy(15)),  1, 2);  // ▶ right → rotate cw
-        Add(MakeSwapDpadArrow("▼", () => PitchBy(-10)), 2, 1);  // ▼ down  → less tilt
+        Add(MakeDpadArrow("▲", () => PitchBy(10)),  0, 1);  // ▲ up    → more tilt
+        Add(MakeDpadArrow("◀", () => RotateBy(-15)), 1, 0);  // ◀ left  → rotate ccw
+        Add(MakeDpadArrow(null,      ResetNorth),         1, 1);  // centre  → reset north
+        Add(MakeDpadArrow("▶", () => RotateBy(15)),  1, 2);  // ▶ right → rotate cw
+        Add(MakeDpadArrow("▼", () => PitchBy(-10)), 2, 1);  // ▼ down  → less tilt
         root.Children.Add(grid);
 
         double ringSize = size * 0.80;
@@ -320,7 +298,7 @@ public class MapLibreMapController : IMapLibreMapController
             VerticalAlignment = WUX.VerticalAlignment.Center,
         });
 
-        _swapCompassRotate = new WUXM.RotateTransform { Angle = 0 };
+        _compassRotate = new WUXM.RotateTransform { Angle = 0 };
         var northTick = new Microsoft.UI.Xaml.Shapes.Rectangle
         {
             Width = 2,
@@ -337,7 +315,7 @@ public class MapLibreMapController : IMapLibreMapController
             Height = size,
             IsHitTestVisible = false,
             RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5),
-            RenderTransform = _swapCompassRotate,
+            RenderTransform = _compassRotate,
         };
         tickHost.Children.Add(northTick);
         root.Children.Add(tickHost);
@@ -345,7 +323,7 @@ public class MapLibreMapController : IMapLibreMapController
         return new WUXC.Border { CornerRadius = new WUX.CornerRadius(4, 4, 0, 0), Child = root };
     }
 
-    private static WUXC.Border MakeSwapDpadArrow(string? glyph, Action onClick)
+    private static WUXC.Border MakeDpadArrow(string? glyph, Action onClick)
     {
         var btn = new WUXC.Border { Background = new WUXM.SolidColorBrush(Microsoft.UI.Colors.Transparent) };
         if (glyph != null)
@@ -367,10 +345,10 @@ public class MapLibreMapController : IMapLibreMapController
     }
 
     /// <summary>Updates the GPS button glyphs/colours from the current tracking mode + bearing.</summary>
-    private void RefreshSwapChainGps()
+    private void RefreshGpsControl()
     {
-        if (_swapCompassRotate != null) _swapCompassRotate.Angle = -GetBearing();
-        if (_swapGpsTopIcon == null || _swapGpsTopBtn == null || _swapGpsBottomIcon == null) return;
+        if (_compassRotate != null) _compassRotate.Angle = -GetBearing();
+        if (_gpsTopIcon == null || _gpsTopBtn == null || _gpsBottomIcon == null) return;
 
         (string glyph, Windows.UI.Color fg, Windows.UI.Color bg) = _gpsMode switch
         {
@@ -379,22 +357,22 @@ public class MapLibreMapController : IMapLibreMapController
             GpsTrackingMode.FollowBearing => ("▲", Rgb(0xF5, 0x7C, 0x00), Rgb(0xFF, 0xF3, 0xE0)),
             _                             => ("○", Rgb(0x99, 0x99, 0x99), Rgb(255, 255, 255)),
         };
-        _swapGpsTopIcon.Text = glyph;
-        _swapGpsTopIcon.Foreground = new WUXM.SolidColorBrush(fg);
-        _swapGpsTopBtn.Background = new WUXM.SolidColorBrush(bg);
+        _gpsTopIcon.Text = glyph;
+        _gpsTopIcon.Foreground = new WUXM.SolidColorBrush(fg);
+        _gpsTopBtn.Background = new WUXM.SolidColorBrush(bg);
 
         bool rotated = Math.Abs(GetBearing()) > 0.5;
-        _swapGpsBottomIcon.Foreground = new WUXM.SolidColorBrush(rotated ? Rgb(0x1E, 0x88, 0xE5) : Rgb(0x55, 0x55, 0x55));
+        _gpsBottomIcon.Foreground = new WUXM.SolidColorBrush(rotated ? Rgb(0x1E, 0x88, 0xE5) : Rgb(0x55, 0x55, 0x55));
     }
 
     /// <summary>Updates the attribution control text from <c>_attrText</c> / collapsed state (UI thread safe).</summary>
-    private void RefreshSwapChainAttribution()
+    private void RefreshAttributionControl()
     {
-        if (_swapAttrText == null) return;
-        _swapAttrText.DispatcherQueue.TryEnqueue(() =>
+        if (_attrTextBlock == null) return;
+        _attrTextBlock.DispatcherQueue.TryEnqueue(() =>
         {
-            if (_swapAttrText == null || _swapAttrBorder == null) return;
-            _swapAttrText.Text = _attrCollapsed || _attrText.Length == 0 ? "ⓘ" : _attrText;
+            if (_attrTextBlock == null || _attrBorder == null) return;
+            _attrTextBlock.Text = _attrCollapsed || _attrText.Length == 0 ? "ⓘ" : _attrText;
         });
     }
 
@@ -404,7 +382,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     /// <summary>
     /// Called by the handler after a layout pass settles (e.g. window restore). The in-tree
-    /// SwapChainPanel surface repositions itself with XAML layout, so this is a no-op.
+    /// map surface repositions itself with XAML layout, so this is a no-op.
     /// </summary>
     internal void RefreshPosition() { }
 
@@ -667,7 +645,7 @@ public class MapLibreMapController : IMapLibreMapController
         };
 
         ApplyGpsMode();
-        RefreshSwapChainGps();
+        RefreshGpsControl();
     }
 
     /// <summary>Apply the current GPS mode to the location indicator and camera.</summary>
@@ -689,7 +667,6 @@ public class MapLibreMapController : IMapLibreMapController
             }
             if (_styleReady && _style != null)
                 ApplyPendingLocationIndicator();
-            _renderNeedsUpdate = true;
         }
     }
 
@@ -724,11 +701,10 @@ public class MapLibreMapController : IMapLibreMapController
 
         if (_styleReady && _style != null)
             ApplyPendingLocationIndicator();
-        _renderNeedsUpdate = true;
         _map?.TriggerRepaint();
 
         // Refresh the GPS button (state indicator icon may change on first fix)
-        if (isFirstFix) RefreshSwapChainGps();
+        if (isFirstFix) RefreshGpsControl();
     }
 
     /// <summary>
@@ -740,7 +716,7 @@ public class MapLibreMapController : IMapLibreMapController
         if (_gpsMode == GpsTrackingMode.FollowBearing)
         {
             _gpsMode = GpsTrackingMode.Follow;
-            RefreshSwapChainGps();
+            RefreshGpsControl();
         }
         ResetNorth();
     }
@@ -748,13 +724,9 @@ public class MapLibreMapController : IMapLibreMapController
     public void SetShowGpsControl(bool show)
     {
         _showGpsControl = show;
-        if (_swapGpsPanel != null)
-            _swapGpsPanel.Visibility = show ? WUX.Visibility.Visible : WUX.Visibility.Collapsed;
+        if (_gpsPanel != null)
+            _gpsPanel.Visibility = show ? WUX.Visibility.Visible : WUX.Visibility.Collapsed;
     }
-
-
-    // ── Attribution overlay WndProc ────────────────────────────────────────────
-
 
 
     // ── Nav/attribution public API ─────────────────────────────────────────────
@@ -764,7 +736,6 @@ public class MapLibreMapController : IMapLibreMapController
         if (_map == null) return;
         var center = GetCenter();
         EaseTo(center.Latitude, center.Longitude, GetZoom() + 1, GetBearing(), GetPitch(), durationMs: 250);
-        _renderNeedsUpdate = true;
     }
 
     private void ZoomOut()
@@ -772,7 +743,6 @@ public class MapLibreMapController : IMapLibreMapController
         if (_map == null) return;
         var center = GetCenter();
         EaseTo(center.Latitude, center.Longitude, GetZoom() - 1, GetBearing(), GetPitch(), durationMs: 250);
-        _renderNeedsUpdate = true;
     }
 
     private void ResetNorth()
@@ -784,7 +754,6 @@ public class MapLibreMapController : IMapLibreMapController
         double currentBearing = GetBearing();
         double newPitch = Math.Abs(currentBearing) < 0.5 ? 0 : GetPitch();
         EaseTo(center.Latitude, center.Longitude, GetZoom(), bearing: 0, pitch: newPitch, durationMs: 300);
-        _renderNeedsUpdate = true;
     }
 
     /// <summary>Rotate the map by <paramref name="deltaDeg"/> (positive = clockwise).</summary>
@@ -798,7 +767,6 @@ public class MapLibreMapController : IMapLibreMapController
         double target = Math.Round(GetBearing() / step) * step + deltaDeg;
         var center = GetCenter();
         EaseTo(center.Latitude, center.Longitude, GetZoom(), target, GetPitch(), durationMs: 200);
-        _renderNeedsUpdate = true;
     }
 
     /// <summary>Tilt the map by <paramref name="deltaDeg"/>, clamped to 0–60°.</summary>
@@ -808,7 +776,6 @@ public class MapLibreMapController : IMapLibreMapController
         var center = GetCenter();
         double newPitch = Math.Max(0, Math.Min(60, GetPitch() + deltaDeg));
         EaseTo(center.Latitude, center.Longitude, GetZoom(), GetBearing(), newPitch, durationMs: 200);
-        _renderNeedsUpdate = true;
     }
 
     /// <summary>
@@ -834,7 +801,7 @@ public class MapLibreMapController : IMapLibreMapController
         if (_attrText.Length > 0)
             ExpandAttribution();
         else
-            RefreshSwapChainAttribution();
+            RefreshAttributionControl();
     }
 
     private static string StripHtmlTags(string html)
@@ -869,8 +836,8 @@ public class MapLibreMapController : IMapLibreMapController
     public void SetShowNavigationControls(bool show)
     {
         _showNavControls = show;
-        if (_swapNavPanel != null)
-            _swapNavPanel.Visibility = show ? WUX.Visibility.Visible : WUX.Visibility.Collapsed;
+        if (_navPanel != null)
+            _navPanel.Visibility = show ? WUX.Visibility.Visible : WUX.Visibility.Collapsed;
     }
 
     // The in-tree XAML overlays use fixed corners (nav/GPS top-right, attribution bottom-left);
@@ -884,15 +851,15 @@ public class MapLibreMapController : IMapLibreMapController
         _showAttrControl   = show;
         _customAttribution = customAttribution;
         _attrCollapsed     = false;  // reset collapse when attribution settings change
-        if (_swapAttrBorder != null)
-            _swapAttrBorder.Visibility = show ? WUX.Visibility.Visible : WUX.Visibility.Collapsed;
+        if (_attrBorder != null)
+            _attrBorder.Visibility = show ? WUX.Visibility.Visible : WUX.Visibility.Collapsed;
         RefreshAttributionText();
     }
 
     private void ExpandAttribution()
     {
         _attrCollapsed = false;
-        RefreshSwapChainAttribution();
+        RefreshAttributionControl();
         ScheduleAutoCollapse();
     }
 
@@ -902,7 +869,7 @@ public class MapLibreMapController : IMapLibreMapController
         _attrCollapseTimer = null;
         if (_attrCollapsed) return;
         _attrCollapsed = true;
-        RefreshSwapChainAttribution();
+        RefreshAttributionControl();
     }
 
     private void ScheduleAutoCollapse()
@@ -912,10 +879,6 @@ public class MapLibreMapController : IMapLibreMapController
             _ => CollapseAttribution(), null,
             TimeSpan.FromSeconds(5), Timeout.InfiniteTimeSpan);
     }
-
-    // ── Popup WndProc (mouse input) ────────────────────────────────────────────
-
-
 
     // ── Cleanup ───────────────────────────────────────────────────────────────
 
@@ -927,11 +890,10 @@ public class MapLibreMapController : IMapLibreMapController
 
     private void DisposeNative()
     {
-        _swapView?.Dispose();
-        _swapView = null;
+        _mapView?.Dispose();
+        _mapView = null;
         _map = null;
         _style = null;
-        _initialized = false;
     }
 
     // ── Camera ────────────────────────────────────────────────────────────────
@@ -1096,7 +1058,6 @@ public class MapLibreMapController : IMapLibreMapController
         _locIndLayer   = null;
         if (_styleReady && _style?.HasLayer(LocIndLayerId) == true)
             _style.RemoveLayer(LocIndLayerId);
-        _renderNeedsUpdate = true;
     }
 
     private void ApplyPendingLocationIndicator()
@@ -1119,7 +1080,6 @@ public class MapLibreMapController : IMapLibreMapController
             (ShowBearing ? p.Bearing : 0f).ToString(ic));
         _locIndLayer.SetPaintProperty("accuracy-radius", p.AccuracyM.ToString(ic));
 
-        _renderNeedsUpdate = true;
     }
 
     public void OnPointerWheelChanged(double delta, double cx, double cy)

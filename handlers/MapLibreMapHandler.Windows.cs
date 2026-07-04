@@ -190,7 +190,7 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
     public void UpdateMinMaxZoomPreference(double? minZoom, double? maxZoom)
         => _controller.SetMinMaxZoomPreference(minZoom, maxZoom);
 
-    public void UpdateRotateGestureEnabled(bool v)   => _controller.SetRotateGesturesEnabled(v);
+    public void UpdateRotateGesturesEnabled(bool v)   => _controller.SetRotateGesturesEnabled(v);
     public void UpdateScrollGesturesEnabled(bool v)  => _controller.SetScrollGesturesEnabled(v);
     public void UpdateTiltGesturesEnabled(bool v)    => _controller.SetTiltGesturesEnabled(v);
     public void UpdateTrackCameraPosition(bool v)    => _controller.SetTrackCameraPosition(v);

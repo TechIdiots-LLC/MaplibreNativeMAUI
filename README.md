@@ -92,7 +92,7 @@ The old airspace-based paths (WPF `HwndHost`/`MlnMapHost`, MAUI Windows `WS_POPU
 ### Register the handler in MauiProgram.cs
 
 ```csharp
-using Maui.MapLibre.Handlers;
+using MapLibreNative.Maui.Handlers;
 
 public static class MauiProgram
 {
@@ -100,10 +100,10 @@ public static class MauiProgram
     {
         var builder = MauiApp.CreateBuilder();
         builder
-            .UseMaui()
+            .UseMauiApp<App>()
             .ConfigureMauiHandlers(handlers =>
             {
-                handlers.AddMapLibreHandlers();
+                handlers.AddHandler(typeof(MapLibreMap), typeof(MapLibreMapHandler));
             });
         return builder.Build();
     }
@@ -126,7 +126,13 @@ public static class MauiProgram
 | `ScrollGesturesEnabled` | `bool` | Enable pan gesture |
 | `TiltGesturesEnabled` | `bool` | Enable pitch gesture |
 | `ZoomGesturesEnabled` | `bool` | Enable pinch-to-zoom |
-| `CompassEnabled` | `bool` | Show compass |
+| `ShowNavigationControls` | `bool` | Show the zoom / rotate-pitch d-pad overlay (default `true`) |
+| `ShowGpsControl` | `bool` | Show the GPS tracking control overlay (default `true`) |
+| `ShowAttributionControl` | `bool` | Show the attribution overlay (default `true`) |
+| `CustomAttribution` | `string` | Extra attribution text appended after source-derived attributions |
+| `NavigationControlPosition` / `GpsControlPosition` / `AttributionControlPosition` | `MapControlCorner` | Corner each control is anchored to |
+| `ItemsSource` / `ItemTemplate` | — | Data-bound overlay elements, see [Data binding](#data-binding-itemssource) |
+| `VisibleRegion` | `MapSpan?` | Read-only visible region, refreshed on camera idle |
 
 ### Events (as `ICommand` bindable properties)
 
@@ -135,8 +141,10 @@ public static class MauiProgram
 | `MapReadyCommand` | Native map is initialised |
 | `StyleLoadedCommand` | Style has finished loading |
 | `DidBecomeIdleCommand` | Map has finished all pending operations |
+| `CameraMoveStartedCommand` | Camera movement has started (reason `int`) |
 | `CameraMoveCommand` | Camera is moving |
 | `CameraIdleCommand` | Camera has stopped |
+| `CameraTrackingChangedCommand` / `CameraTrackingDismissedCommand` | Location-tracking mode changed / was dismissed |
 | `MapClickCommand` | User taps the map (`LatLng`) |
 | `MapLongClickCommand` | User long-presses the map (`LatLng`) |
 | `UserLocationUpdateCommand` | Device location has changed |
@@ -175,8 +183,9 @@ Declare layers as child elements of `MapLibreMap`. Each layer references a `Sour
 | `RasterLayer` | `raster` |
 | `HeatmapLayer` | `heatmap` |
 | `FillExtrusionLayer` | `fill-extrusion` |
-| `HillshadeLayer` | `hillshade` |
-| `ColorReliefLayer` | `color-relief` |
+
+`hillshade` layers can be added programmatically via `controller.AddHillshadeLayer(...)`;
+`color-relief` (and any other spec layer type) via [`controller.AddLayerJson(...)`](#generic-json-sources-and-layers).
 
 ```xaml
 <layers:FillLayer SourceName="polygons"
@@ -222,11 +231,11 @@ correctly on every platform. Changing a property (or mutating a `Geopath` collec
 ```xaml
 xmlns:overlays="clr-namespace:MapLibreNative.Maui.Handlers.Overlays;assembly=MapLibreNative.Maui.Handlers"
 
-<maps:MapLibreMap StyleUrl="https://demotiles.maplibre.org/style.json">
+<maplibre:MapLibreMap StyleUrl="https://demotiles.maplibre.org/style.json">
     <overlays:Pin Location="{Binding Home}" Label="Home" TintColor="Crimson" />
     <overlays:Circle Center="{Binding Home}" Radius="{Binding Range}"
                      FillColor="#3300A2FF" StrokeColor="#00A2FF" StrokeWidth="2" />
-</maps:MapLibreMap>
+</maplibre:MapLibreMap>
 ```
 
 `Circle.Radius` uses the ported `MapLibreNative.Maui.Geometry.Distance` (e.g. `Distance.FromMeters(500)`),
@@ -244,13 +253,13 @@ element. Each item becomes that element's `BindingContext`, mirroring
 `Microsoft.Maui.Controls.Maps.Map`:
 
 ```xaml
-<maps:MapLibreMap ItemsSource="{Binding Stops}">
-    <maps:MapLibreMap.ItemTemplate>
+<maplibre:MapLibreMap ItemsSource="{Binding Stops}">
+    <maplibre:MapLibreMap.ItemTemplate>
         <DataTemplate>
             <overlays:Pin Location="{Binding Coordinate}" Label="{Binding Name}" />
         </DataTemplate>
-    </maps:MapLibreMap.ItemTemplate>
-</maps:MapLibreMap>
+    </maplibre:MapLibreMap.ItemTemplate>
+</maplibre:MapLibreMap>
 ```
 
 Collections implementing `INotifyCollectionChanged` (e.g. `ObservableCollection<T>`) sync
@@ -273,12 +282,17 @@ controller.EaseTo(51.5, -0.1, zoom: 14, bearing: 0, pitch: 45, durationMs: 800);
 // Animated fly-to
 controller.FlyTo(51.5, -0.1, zoom: 14, bearing: 0, pitch: 0, durationMs: 1500);
 
-// Fit bounds with padding
-controller.SetBounds(latSw: 51.4, lonSw: -0.2, latNe: 51.6, lonNe: 0.0);
+// Constrain the camera to a bounding box (optionally with zoom/pitch limits)
+controller.SetCameraTargetBounds(new LatLngBounds(
+    ne: new LatLng(51.6, 0.0), sw: new LatLng(51.4, -0.2)));
+
+// Fit a region into view (MapSpan overloads of JumpTo / EaseTo / FlyTo)
+controller.EaseTo(MapSpan.FromCenterAndRadius(
+    new MapCoordinate(51.5, -0.1), Distance.FromKilometers(5)));
 
 // Coordinate conversion
-var (x, y) = controller.PixelForLatLng(51.5, -0.1);
-var (lat, lon) = controller.LatLngForPixel(x, y);
+var (x, y) = controller.LatLngToScreenPoint(51.5, -0.1);
+LatLng ll  = controller.ScreenPointToLatLng(x, y);
 ```
 
 The map also exposes the currently visible region for read-back. `MapLibreMap.VisibleRegion`
