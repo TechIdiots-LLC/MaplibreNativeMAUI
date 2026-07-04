@@ -12,6 +12,7 @@
         <ShellContent Title="Basic Map"  ContentTemplate="{DataTemplate local:BasicMapPage}"    Route="BasicMapPage" />
         <ShellContent Title="GeoJSON"    ContentTemplate="{DataTemplate local:GeoJsonLayersPage}" Route="GeoJsonLayersPage" />
         <ShellContent Title="Markers"    ContentTemplate="{DataTemplate local:MarkersPage}"     Route="MarkersPage" />
+        <ShellContent Title="Shapes"     ContentTemplate="{DataTemplate local:ShapesPage}"      Route="ShapesPage" />
         <ShellContent Title="GPS"        ContentTemplate="{DataTemplate local:GpsControlPage}"  Route="GpsControlPage" />
         <ShellContent Title="DD Test"    ContentTemplate="{DataTemplate local:DataDrivenCircleTestPage}" Route="DataDrivenCircleTestPage" />
     </TabBar>

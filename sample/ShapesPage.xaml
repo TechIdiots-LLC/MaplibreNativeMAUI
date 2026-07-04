@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:maplibre="clr-namespace:MapLibreNative.Maui.Handlers;assembly=MapLibreNative.Maui.Handlers"
+             xmlns:overlays="clr-namespace:MapLibreNative.Maui.Handlers.Overlays;assembly=MapLibreNative.Maui.Handlers"
+             x:Class="MauiSample.ShapesPage"
+             Title="Shapes">
+
+    <!--
+        Declarative over-the-map overlay elements (Polyline / Polygon / Circle) as children of
+        MapLibreMap. Each element materialises itself as a GeoJSON source + style layer when the
+        style loads. Geometry (Geopath, Center, Radius) is set in code-behind because Location /
+        Distance are not expressible as XAML literals; colours and stroke are set here.
+    -->
+    <Grid RowDefinitions="*,Auto,Auto">
+        <maplibre:MapLibreMap x:Name="Map"
+                              Grid.Row="0"
+                              StyleUrl="{Binding StyleUrl}"
+                              MapReady="OnMapReady">
+
+            <overlays:Polygon x:Name="Region"
+                              FillColor="#553BB273"
+                              StrokeColor="#2E7D32"
+                              StrokeWidth="2" />
+
+            <overlays:Polyline x:Name="Route"
+                               StrokeColor="#1E88E5"
+                               StrokeWidth="4" />
+
+            <overlays:Circle x:Name="RadiusCircle"
+                             FillColor="#33F57C00"
+                             StrokeColor="#F57C00"
+                             StrokeWidth="2" />
+        </maplibre:MapLibreMap>
+
+        <HorizontalStackLayout Grid.Row="1" Spacing="8" Padding="8">
+            <Button Text="Grow circle"   Clicked="OnGrow" />
+            <Button Text="Shrink circle" Clicked="OnShrink" />
+        </HorizontalStackLayout>
+
+        <Label Grid.Row="2" Text="{Binding Status}" Padding="8,4" />
+    </Grid>
+</ContentPage>

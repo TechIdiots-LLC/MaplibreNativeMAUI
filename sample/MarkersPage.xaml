@@ -1,21 +1,23 @@
-﻿<?xml version="1.0" encoding="utf-8" ?>
+<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:maplibre="clr-namespace:MapLibreNative.Maui.Handlers;assembly=MapLibreNative.Maui.Handlers"
              x:Class="MauiSample.MarkersPage"
              Title="Markers">
 
-    <Grid RowDefinitions="*,Auto,Auto">
+    <!--
+        Declarative Pin overlay elements (SDF sprite + text label) instead of low-level
+        source/layer calls. The Pins are added as children of the map in code-behind (Location
+        is not expressible as a XAML literal). Tapping a marker identifies it via a rendered-feature
+        query — the pattern you'd wire MarkerClicked to.
+    -->
+    <Grid RowDefinitions="*,Auto">
         <maplibre:MapLibreMap x:Name="Map"
                               Grid.Row="0"
                               StyleUrl="{Binding StyleUrl}"
-                              MapReady="OnMapReady" />
+                              MapReady="OnMapReady"
+                              MapClick="OnMapClick" />
 
-        <HorizontalStackLayout Grid.Row="1" Spacing="8" Padding="8">
-            <Button Text="Add Landmarks"   Clicked="OnAddMarkers" />
-            <Button Text="Remove Landmarks" Clicked="OnRemoveMarkers" />
-        </HorizontalStackLayout>
-
-        <Label Grid.Row="2" Text="{Binding Status}" Padding="8,4" />
+        <Label Grid.Row="1" Text="{Binding Status}" Padding="8,4" />
     </Grid>
 </ContentPage>
