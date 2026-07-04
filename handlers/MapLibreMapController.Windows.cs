@@ -2330,9 +2330,14 @@ public class MapLibreMapController : IMapLibreMapController
     /// <summary>Rotate the map by <paramref name="deltaDeg"/> (positive = clockwise).</summary>
     private void RotateBy(double deltaDeg)
     {
-        if (_map == null) return;
+        if (_map == null || deltaDeg == 0) return;
+        // Snap the target onto the increment grid (multiples of |deltaDeg|) so a full
+        // rotation returns exactly to the start. Incrementing the live bearing instead
+        // accumulates float error each ease and never quite closes the loop.
+        double step = Math.Abs(deltaDeg);
+        double target = Math.Round(GetBearing() / step) * step + deltaDeg;
         var center = GetCenter();
-        EaseTo(center.Latitude, center.Longitude, GetZoom(), GetBearing() + deltaDeg, GetPitch(), durationMs: 200);
+        EaseTo(center.Latitude, center.Longitude, GetZoom(), target, GetPitch(), durationMs: 200);
         _renderNeedsUpdate = true;
     }
 

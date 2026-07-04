@@ -293,9 +293,14 @@ public class MlnMapImage : Grid
     /// <summary>Rotate the map by <paramref name="deltaDeg"/> (positive = clockwise).</summary>
     public void RotateBy(double deltaDeg)
     {
-        if (_map == null) return;
+        if (_map == null || deltaDeg == 0) return;
+        // Snap the target onto the increment grid (multiples of |deltaDeg|) so a full
+        // rotation returns exactly to the start, instead of accumulating float error
+        // by incrementing the live (possibly mid-animation) bearing each ease.
+        double step = Math.Abs(deltaDeg);
+        double target = Math.Round(_map.Bearing / step) * step + deltaDeg;
         var (lat, lon) = _map.Center;
-        _map.EaseTo(lat, lon, _map.Zoom, _map.Bearing + deltaDeg, _map.Pitch, durationMs: 200);
+        _map.EaseTo(lat, lon, _map.Zoom, target, _map.Pitch, durationMs: 200);
         _renderNeedsUpdate = true;
     }
 
