@@ -24,11 +24,6 @@ public static class MauiProgram
 		builder.Logging.AddDebug();
 #endif
 
-#if WINDOWS
-		// Use the airspace-free SwapChainPanel renderer instead of the WS_POPUP GL window.
-		MapLibreMapController.UseSwapChainPanel = true;
-#endif
-
 		return builder.Build();
 	}
 }
