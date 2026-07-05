@@ -533,6 +533,62 @@ public partial class MlnMapImage : Grid
         _renderNeedsUpdate = true;
     }
 
+    /// <summary>Adds a line layer for the given source (e.g. paths / measure lines).
+    /// <paramref name="properties"/> are style-spec line paint/layout keys such as
+    /// <c>line-color</c>, <c>line-width</c>, <c>line-dasharray</c>.</summary>
+    public void AddLineLayer(
+        string layerName, string sourceName, string? belowLayerId,
+        string? sourceLayer, IDictionary<string, object?> properties,
+        float minZoom = 0, float maxZoom = 0)
+    {
+        if (_style == null) return;
+        if (_style.HasLayer(layerName)) return;
+        var layer = _style.AddLineLayer(layerName, sourceName, belowLayerId);
+        ApplyLayerProperties(layer, properties);
+        if (minZoom > 0) layer.SetMinZoom(minZoom);
+        if (maxZoom > 0) layer.SetMaxZoom(maxZoom);
+        if (sourceLayer != null) layer.SetSourceLayer(sourceLayer);
+        _renderNeedsUpdate = true;
+    }
+
+    /// <summary>Adds a fill layer for the given source (e.g. polygons).
+    /// <paramref name="properties"/> are style-spec fill paint/layout keys such as
+    /// <c>fill-color</c>, <c>fill-opacity</c>, <c>fill-outline-color</c>.</summary>
+    public void AddFillLayer(
+        string layerName, string sourceName, string? belowLayerId,
+        string? sourceLayer, IDictionary<string, object?> properties,
+        float minZoom = 0, float maxZoom = 0)
+    {
+        if (_style == null) return;
+        if (_style.HasLayer(layerName)) return;
+        var layer = _style.AddFillLayer(layerName, sourceName, belowLayerId);
+        ApplyLayerProperties(layer, properties);
+        if (minZoom > 0) layer.SetMinZoom(minZoom);
+        if (maxZoom > 0) layer.SetMaxZoom(maxZoom);
+        if (sourceLayer != null) layer.SetSourceLayer(sourceLayer);
+        _renderNeedsUpdate = true;
+    }
+
+    /// <summary>Adds a raster layer for the given raster/image source (e.g. image
+    /// overlays or tiled raster basemaps). <paramref name="properties"/> are
+    /// style-spec raster keys such as <c>raster-opacity</c>, <c>raster-resampling</c>.
+    /// Raster sources have no sub-layers, so <paramref name="sourceLayer"/> is
+    /// normally <c>null</c>.</summary>
+    public void AddRasterLayer(
+        string layerName, string sourceName, string? belowLayerId,
+        string? sourceLayer, IDictionary<string, object?> properties,
+        float minZoom = 0, float maxZoom = 0)
+    {
+        if (_style == null) return;
+        if (_style.HasLayer(layerName)) return;
+        var layer = _style.AddRasterLayer(layerName, sourceName, belowLayerId);
+        ApplyLayerProperties(layer, properties);
+        if (minZoom > 0) layer.SetMinZoom(minZoom);
+        if (maxZoom > 0) layer.SetMaxZoom(maxZoom);
+        if (sourceLayer != null) layer.SetSourceLayer(sourceLayer);
+        _renderNeedsUpdate = true;
+    }
+
     public void RemoveLayer(string layerId)
     {
         if (_style == null) return;
