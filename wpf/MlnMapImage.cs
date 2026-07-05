@@ -961,6 +961,7 @@ public partial class MlnMapImage : Grid
                     _styleReady = true;
                     _locIndLayer = null; // invalidated by style reload
                     _style = _map?.GetStyle();
+                    _attrLoaded = false; // new style — sources may have different attribution
                     _renderNeedsUpdate = true;
                     if (_pendingLocInd.HasValue) ApplyPendingLocationIndicator();
                     RefreshAttribution();
@@ -975,7 +976,12 @@ public partial class MlnMapImage : Grid
                 Dispatcher.BeginInvoke(() => { VisibleRegion = GetVisibleRegion(); RefreshGpsBearingButton(); RefreshCompassRotation(); CameraIdle?.Invoke(this, EventArgs.Empty); });
                 break;
             case "onSourceChanged":
-                Dispatcher.BeginInvoke(RefreshAttribution);
+                // Primary trigger: fires when a TileJSON-backed source finishes loading its metadata.
+                if (!_attrLoaded) Dispatcher.BeginInvoke(RefreshAttribution);
+                break;
+            case "onDidBecomeIdle":
+                // Fallback: retry attribution if onSourceChanged fired before the string was ready.
+                if (!_attrLoaded) Dispatcher.BeginInvoke(RefreshAttribution);
                 break;
             case "onDidFinishRenderingFramePlacementChanged":
                 _map?.TriggerRepaint();
@@ -1220,6 +1226,7 @@ public partial class MlnMapImage : Grid
     private TextBlock? _attrTextBlock;
     private string _attrText = string.Empty;
     private bool _attrCollapsed = true;
+    private bool _attrLoaded;           // true once real source attributions have been fetched
     private DispatcherTimer? _attrCollapseTimer;
 
     private void BuildAttributionOverlay()
@@ -1269,6 +1276,7 @@ public partial class MlnMapImage : Grid
         _attrText = sb.ToString();
         if (_attrText.Length > 0 && ShowAttributionControl)
         {
+            _attrLoaded = true;
             _attrBorder.Visibility = Visibility.Visible;
             ExpandAttribution();
         }
