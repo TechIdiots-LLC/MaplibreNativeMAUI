@@ -78,8 +78,19 @@ public sealed class MapImageView : IDisposable
 
     private int   _width = 1, _height = 1;
     private float _dpi = 1f;
-    private bool  _renderNeedsUpdate = true, _rendering, _isDragging;
+    private bool  _renderNeedsUpdate = true, _rendering, _isDragging, _disposed;
     private Windows.Foundation.Point _lastPos;
+
+    private static int _diagCounter;
+    private readonly int _diagId = System.Threading.Interlocked.Increment(ref _diagCounter);
+    private static readonly string _diagPath =
+        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "maplibre_maui_diag.log");
+    private void MDiag(string msg)
+    {
+        try { System.IO.File.AppendAllText(_diagPath,
+            $"{DateTime.Now:HH:mm:ss.fff} [miv#{_diagId}] {msg}\r\n"); }
+        catch { /* ignore */ }
+    }
 
     public MapImageView()
     {
@@ -102,11 +113,15 @@ public sealed class MapImageView : IDisposable
 
     private void Start()
     {
-        if (_interop != null) return;
+        // Once disposed (controller teardown on tab switch), a stale View.Loaded must NOT
+        // resurrect this instance: the owning controller has already nulled its _mapView, so
+        // re-firing MapReady would dereference null. The new tab visit builds a fresh MapImageView.
+        if (_disposed || _interop != null) return;
 
         _dpi    = (float)View.XamlRoot.RasterizationScale;
         _width  = Math.Max(1, (int)(View.ActualWidth  * _dpi));
         _height = Math.Max(1, (int)(View.ActualHeight * _dpi));
+        MDiag($"Start dpi={_dpi} size={_width}x{_height} actual={View.ActualWidth}x{View.ActualHeight} style={StyleUrl}");
 
         _interop = new HiddenWglContext();
         _interop.Initialize();
@@ -269,9 +284,11 @@ public sealed class MapImageView : IDisposable
             case "onDidFinishLoadingStyle":
                 _style = _map?.GetStyle();
                 _renderNeedsUpdate = true;
+                MDiag("onDidFinishLoadingStyle");
                 StyleLoaded?.Invoke(this, System.EventArgs.Empty);
                 break;
             case "onDidBecomeIdle":
+                MDiag("onDidBecomeIdle");
                 DidBecomeIdle?.Invoke(this, System.EventArgs.Empty);
                 break;
             case "onCameraDidChange":
@@ -294,6 +311,8 @@ public sealed class MapImageView : IDisposable
 
     public void Dispose()
     {
+        MDiag("Dispose");
+        _disposed = true;
         Stop();
         _map?.Dispose();      _map      = null;
         _frontend?.Dispose(); _frontend = null;
