@@ -974,6 +974,9 @@ public partial class MlnMapImage : Grid
             case "onCameraDidChange":
                 Dispatcher.BeginInvoke(() => { VisibleRegion = GetVisibleRegion(); RefreshGpsBearingButton(); RefreshCompassRotation(); CameraIdle?.Invoke(this, EventArgs.Empty); });
                 break;
+            case "onSourceChanged":
+                Dispatcher.BeginInvoke(RefreshAttribution);
+                break;
             case "onDidFinishRenderingFramePlacementChanged":
                 _map?.TriggerRepaint();
                 break;
