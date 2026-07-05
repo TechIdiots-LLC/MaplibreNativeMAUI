@@ -682,8 +682,9 @@ public class MapLibreMapController : IMapLibreMapController
                 OnStyleLoadedReceived?.Invoke(new Style(null));
                 break;
             case "onSourceChanged":
-                // Primary trigger: fires when a TileJSON-backed source finishes loading its metadata.
-                if (!_attrLoaded) RefreshAttribution();
+                // Always refresh: fires when a source's TileJSON metadata loads, including
+                // sources added dynamically after the style is already loaded.
+                RefreshAttribution();
                 break;
             case "onDidBecomeIdle":
                 // Fallback: retry attribution if onSourceChanged fired before the string was ready.

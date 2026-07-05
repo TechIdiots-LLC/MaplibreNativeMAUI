@@ -976,8 +976,9 @@ public partial class MlnMapImage : Grid
                 Dispatcher.BeginInvoke(() => { VisibleRegion = GetVisibleRegion(); RefreshGpsBearingButton(); RefreshCompassRotation(); CameraIdle?.Invoke(this, EventArgs.Empty); });
                 break;
             case "onSourceChanged":
-                // Primary trigger: fires when a TileJSON-backed source finishes loading its metadata.
-                if (!_attrLoaded) Dispatcher.BeginInvoke(RefreshAttribution);
+                // Always refresh: fires when a source's TileJSON metadata loads, including
+                // sources added dynamically after the style is already loaded.
+                Dispatcher.BeginInvoke(RefreshAttribution);
                 break;
             case "onDidBecomeIdle":
                 // Fallback: retry attribution if onSourceChanged fired before the string was ready.
