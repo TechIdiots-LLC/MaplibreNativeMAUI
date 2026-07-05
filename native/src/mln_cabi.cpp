@@ -7,6 +7,7 @@
  */
 
 #include "mln_cabi.h"
+#include "mln_cabi_internal.hpp"
 
 #include <mbgl/map/map.hpp>
 #include <mbgl/map/map_options.hpp>
@@ -88,6 +89,15 @@ static mbgl_status_t set_native_error(const std::exception& e) noexcept {
 
 const char* mbgl_get_last_error() noexcept {
     return s_last_error.c_str();
+}
+
+/* Bridges declared in mln_cabi_internal.hpp for sibling translation units
+ * (mln_cabi_offline.cpp) — the helpers above stay static/TU-local. */
+mbgl_status_t cabi_set_error(mbgl_status_t code, std::string msg) noexcept {
+    return set_error(code, std::move(msg));
+}
+mbgl_status_t cabi_set_native_error(const std::exception& e) noexcept {
+    return set_native_error(e);
 }
 
 /* ─── Log callback state ─────────────────────────────────────────────────────── */
@@ -1179,6 +1189,11 @@ static char* dup_string(const std::string& s) {
     return result;
 }
 
+/* Bridge declared in mln_cabi_internal.hpp for sibling translation units. */
+char* cabi_dup_string(const std::string& s) {
+    return dup_string(s);
+}
+
 /* ─── Viewport bounds ───────────────────────────────────────────────────────── */
 
 mbgl_status_t mbgl_map_latlng_bounds_for_camera(mbgl_map_t* map,
@@ -1785,7 +1800,7 @@ int mbgl_layer_get_visibility(mbgl_layer_t* layer) noexcept {
 
 /* ─── Version ───────────────────────────────────────────────────────────────── */
 const char* mln_cabi_version() noexcept {
-    return "2.1.0";
+    return "2.2.0";
 }
 
 /* ─── Android window helpers ────────────────────────────────────────────────── */

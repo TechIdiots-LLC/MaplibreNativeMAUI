@@ -407,7 +407,15 @@ controller.DumpDebugLogs();
 
 ---
 
-## Offline Mode
+## Offline Maps
+
+### Persistent cache
+
+Every map surface uses a persistent tile/resource cache database by default
+(`MbglCache.DefaultPath` — `{LocalApplicationData}/MapLibreNative.Maui/{processName}/cache.db`),
+so tiles survive app restarts.
+
+### Offline mode
 
 MapLibre's network access can be toggled process-wide. When offline, all network
 requests are suspended and only cached resources are served; going back online
@@ -419,6 +427,52 @@ using MapLibreNative.Maui;
 MbglNetwork.Online = false;  // force offline — serve from cache only
 MbglNetwork.Online = true;   // resume network access
 ```
+
+### Offline regions
+
+`MbglOfflineManager` downloads complete regions (style + tiles + glyphs) for
+offline use. It shares the map's cache database by default, so downloaded
+regions are rendered by the map automatically:
+
+```csharp
+using MapLibreNative.Maui;
+
+using var offline = new MbglOfflineManager();   // uses MbglCache.DefaultPath
+
+// Progress/error events arrive on MapLibre's database thread — marshal to
+// your UI thread before touching UI. The observer's Complete flag is the
+// authoritative completion signal.
+offline.RegionProgress += p => Console.WriteLine(
+    $"region {p.RegionId}: {p.CompletedResources}/{p.RequiredResources} complete={p.Complete}");
+offline.RegionError    += e => Console.WriteLine($"region {e.RegionId}: {e.Message}");
+
+// Create a region (style URL + bounds + zoom range) and start downloading
+var region = await offline.CreateRegionAsync(
+    "https://demotiles.maplibre.org/style.json",
+    latSw: 51.4, lonSw: -0.3, latNe: 51.6, lonNe: 0.0,
+    minZoom: 0, maxZoom: 12,
+    metadata: Encoding.UTF8.GetBytes("{\"name\":\"London\"}"));
+offline.ObserveRegion(region.Id);
+offline.SetDownloadState(region.Id, active: true);
+
+// Inspect / manage
+var regions = await offline.ListRegionsAsync();
+var status  = await offline.GetRegionStatusAsync(region.Id);
+byte[]? meta = offline.GetRegionMetadata(region.Id);
+await offline.DeleteRegionAsync(region.Id);
+
+// Side-load a prebuilt cache database
+var merged = await offline.MergeDatabaseAsync(@"C:\data\prepared-regions.db");
+
+// Ambient cache maintenance
+await offline.SetMaximumAmbientCacheSizeAsync(100UL * 1024 * 1024);
+await offline.ClearAmbientCacheAsync();
+await offline.PackDatabaseAsync();
+```
+
+A geometry overload (`CreateRegionAsync(styleUrl, geometryGeoJson, …)`) downloads
+tiles covering an arbitrary GeoJSON geometry instead of a bounding box. See the
+MAUI sample's **Offline** tab for a working download → offline-toggle demo.
 
 ---
 

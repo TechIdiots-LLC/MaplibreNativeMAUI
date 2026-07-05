@@ -640,7 +640,10 @@ public class MapLibreMapController : IMapLibreMapController
     {
         _runLoop  = new MbglRunLoop();
         _frontend = new MbglFrontend(_nativeWindow, IntPtr.Zero, w, h, _pixelRatio, OnRender);
+        // Persistent tile/resource cache (mbgl's default is :memory:), shared
+        // with MbglOfflineManager via MbglCache.DefaultPath.
         _map      = new MbglMap(_frontend, _runLoop,
+                                cachePath: MbglCache.DefaultPath,
                                 pixelRatio: _pixelRatio,
                                 observer: OnMapObserverEvent);
         _map.SetSize(w, h);

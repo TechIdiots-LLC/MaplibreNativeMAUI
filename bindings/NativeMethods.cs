@@ -710,4 +710,135 @@ public static partial class NativeMethods
     [DllImport(Lib, EntryPoint = "mbgl_http_cancel")]
     public static extern void HttpCancel(ulong requestId);
 #endif
+
+    // ── Offline regions + ambient cache ───────────────────────────────────────
+    // All offline callbacks are invoked on MapLibre's internal database thread.
+
+    /// <summary>One-shot completion callback for offline operations with no payload.</summary>
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    public delegate void OfflineDoneFn(
+        MbglStatus status,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string? errorMessage,
+        IntPtr userdata);
+
+    /// <summary>One-shot callback delivering a JSON array of offline regions.</summary>
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    public delegate void OfflineRegionsFn(
+        MbglStatus status,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string? errorMessage,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string? regionsJson,
+        IntPtr userdata);
+
+    /// <summary>One-shot callback delivering a region status JSON object.</summary>
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    public delegate void OfflineStatusFn(
+        MbglStatus status,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string? errorMessage,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string? statusJson,
+        IntPtr userdata);
+
+    /// <summary>Recurring download-progress callback for an observed region.</summary>
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    public delegate void OfflineProgressFn(
+        long regionId,
+        int downloadState,
+        ulong completedResources,
+        ulong completedBytes,
+        ulong completedTiles,
+        ulong requiredResources,
+        int requiredIsPrecise,
+        int complete,
+        IntPtr userdata);
+
+    /// <summary>Recurring download-error callback for an observed region.
+    /// <paramref name="reason"/> matches mbgl's Response::Error::Reason values
+    /// (2=NotFound 3=Server 4=Connection 5=RateLimit 6=Other), or 100 when the
+    /// Mapbox tile count limit was exceeded.</summary>
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    public delegate void OfflineRegionErrorFn(
+        long regionId,
+        int reason,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string? message,
+        IntPtr userdata);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_offline_manager_create",
+        StringMarshalling = StringMarshalling.Utf8)]
+    public static partial IntPtr OfflineManagerCreate(
+        string? cachePath, string? assetPath, string? apiKey, ulong maxCacheSizeBytes);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_offline_manager_destroy")]
+    public static partial MbglStatus OfflineManagerDestroy(IntPtr m);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_offline_list_regions")]
+    public static partial MbglStatus OfflineListRegions(IntPtr m, OfflineRegionsFn cb, IntPtr userdata);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_offline_create_region",
+        StringMarshalling = StringMarshalling.Utf8)]
+    public static partial MbglStatus OfflineCreateRegion(IntPtr m,
+        string styleUrl,
+        double latSw, double lonSw, double latNe, double lonNe,
+        double minZoom, double maxZoom, float pixelRatio, int includeIdeographs,
+        byte[]? metadata, int metadataLen,
+        OfflineRegionsFn cb, IntPtr userdata);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_offline_create_region_geometry",
+        StringMarshalling = StringMarshalling.Utf8)]
+    public static partial MbglStatus OfflineCreateRegionGeometry(IntPtr m,
+        string styleUrl, string geometryGeoJson,
+        double minZoom, double maxZoom, float pixelRatio, int includeIdeographs,
+        byte[]? metadata, int metadataLen,
+        OfflineRegionsFn cb, IntPtr userdata);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_offline_delete_region")]
+    public static partial MbglStatus OfflineDeleteRegion(IntPtr m, long regionId,
+        OfflineDoneFn cb, IntPtr userdata);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_offline_invalidate_region")]
+    public static partial MbglStatus OfflineInvalidateRegion(IntPtr m, long regionId,
+        OfflineDoneFn cb, IntPtr userdata);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_offline_set_region_download_state")]
+    public static partial MbglStatus OfflineSetRegionDownloadState(IntPtr m, long regionId, int active);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_offline_set_region_observer")]
+    public static partial MbglStatus OfflineSetRegionObserver(IntPtr m, long regionId,
+        OfflineProgressFn? progress, OfflineRegionErrorFn? error, IntPtr userdata);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_offline_get_region_status")]
+    public static partial MbglStatus OfflineGetRegionStatus(IntPtr m, long regionId,
+        OfflineStatusFn cb, IntPtr userdata);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_offline_update_region_metadata")]
+    public static partial MbglStatus OfflineUpdateRegionMetadata(IntPtr m, long regionId,
+        byte[]? metadata, int metadataLen, OfflineDoneFn cb, IntPtr userdata);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_offline_region_get_metadata")]
+    public static partial IntPtr OfflineRegionGetMetadata(IntPtr m, long regionId, out int outLen);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_offline_merge_database",
+        StringMarshalling = StringMarshalling.Utf8)]
+    public static partial MbglStatus OfflineMergeDatabase(IntPtr m, string sideDbPath,
+        OfflineRegionsFn cb, IntPtr userdata);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_offline_set_tile_count_limit")]
+    public static partial MbglStatus OfflineSetTileCountLimit(IntPtr m, ulong limit);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_offline_set_maximum_ambient_cache_size")]
+    public static partial MbglStatus OfflineSetMaximumAmbientCacheSize(IntPtr m, ulong bytes,
+        OfflineDoneFn cb, IntPtr userdata);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_offline_clear_ambient_cache")]
+    public static partial MbglStatus OfflineClearAmbientCache(IntPtr m, OfflineDoneFn cb, IntPtr userdata);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_offline_invalidate_ambient_cache")]
+    public static partial MbglStatus OfflineInvalidateAmbientCache(IntPtr m, OfflineDoneFn cb, IntPtr userdata);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_offline_pack_database")]
+    public static partial MbglStatus OfflinePackDatabase(IntPtr m, OfflineDoneFn cb, IntPtr userdata);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_offline_reset_database")]
+    public static partial MbglStatus OfflineResetDatabase(IntPtr m, OfflineDoneFn cb, IntPtr userdata);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_offline_set_pack_database_automatically")]
+    public static partial MbglStatus OfflineSetPackDatabaseAutomatically(IntPtr m, int enabled);
 }

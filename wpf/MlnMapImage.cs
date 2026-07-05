@@ -242,7 +242,10 @@ public partial class MlnMapImage : Grid
         _runLoop = new MbglRunLoop();
         _frontend = new MbglFrontend(_interop.Hdc, _interop.GlContext, _physW, _physH, _dpi,
             () => _renderNeedsUpdate = true);
-        _map = new MbglMap(_frontend, _runLoop, pixelRatio: _dpi, observer: OnMapObserverEvent);
+        // Persistent tile/resource cache (mbgl's default is :memory:), shared
+        // with MbglOfflineManager via MbglCache.DefaultPath.
+        _map = new MbglMap(_frontend, _runLoop, cachePath: MbglCache.DefaultPath,
+                           pixelRatio: _dpi, observer: OnMapObserverEvent);
         _map.SetSize(_physW, _physH);
 
         var url = StyleUrl;

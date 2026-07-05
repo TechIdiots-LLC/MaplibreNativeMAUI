@@ -398,7 +398,77 @@ public partial class MainWindow : Window
 
         DdLog("--- RunDataDrivenCircleTestAsync end ---");
         await RunClusterTestAsync();
+        await RunOfflineTestAsync();
         StatusText.Text = $"Data-driven circle test complete — see {_autoTestLogPath}";
+    }
+
+    /// <summary>
+    /// Exercises the offline-region pipeline added in cabi 2.2.0: create a small
+    /// tile-pyramid region for the demotiles style, download it to completion,
+    /// query status, round-trip metadata, delete it, and clear the ambient cache.
+    /// Uses its own temp cache database, independent of the map's.
+    /// </summary>
+    private async Task RunOfflineTestAsync()
+    {
+        DdLog("--- RunOfflineTestAsync start ---");
+        string cachePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "maplibre_offline_test_cache.db");
+        try { File.Delete(cachePath); } catch { /* fresh DB preferred, stale is fine */ }
+        try
+        {
+            using var mgr = new MapLibreNative.Maui.MbglOfflineManager(cachePath);
+
+            int progressEvents = 0;
+            // The observer's Complete flag is the authoritative completion signal —
+            // GetRegionStatusAsync can report Complete=false forever when a required
+            // resource permanently 404s (demotiles has no 65280-65535 glyph range).
+            var completeTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            mgr.RegionProgress += p =>
+            {
+                System.Threading.Interlocked.Increment(ref progressEvents);
+                if (p.Complete) completeTcs.TrySetResult();
+            };
+            mgr.RegionError    += e => DdLog($"offline error: region={e.RegionId} reason={e.Reason} {e.Message}");
+
+            var meta = System.Text.Encoding.UTF8.GetBytes("{\"name\":\"autotest-region\"}");
+            var region = await mgr.CreateRegionAsync(
+                "https://demotiles.maplibre.org/style.json",
+                latSw: 51.4, lonSw: -0.3, latNe: 51.6, lonNe: 0.0,
+                minZoom: 0, maxZoom: 2, includeIdeographs: false, metadata: meta);
+            DdLog($"created region id={region.Id} type={region.Type} " +
+                  $"bounds=[{string.Join(",", region.Bounds ?? Array.Empty<double>())}] " +
+                  $"zoom={region.MinZoom}-{region.MaxZoom}");
+
+            mgr.ObserveRegion(region.Id);
+            mgr.SetDownloadState(region.Id, true);
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            await Task.WhenAny(completeTcs.Task, Task.Delay(TimeSpan.FromSeconds(90)));
+            var status = await mgr.GetRegionStatusAsync(region.Id);
+            DdLog($"download: observerComplete={completeTcs.Task.IsCompleted} statusComplete={status.Complete} " +
+                  $"resources={status.CompletedResourceCount}/{status.RequiredResourceCount} " +
+                  $"bytes={status.CompletedResourceSize} tiles={status.CompletedTileCount} " +
+                  $"precise={status.RequiredResourceCountIsPrecise} progressEvents={progressEvents} " +
+                  $"elapsed={sw.Elapsed.TotalSeconds:0.#}s");
+
+            var regions = await mgr.ListRegionsAsync();
+            DdLog($"list regions: count={regions.Length} ids=[{string.Join(",", regions.Select(r => r.Id))}]");
+
+            var metaBack = mgr.GetRegionMetadata(region.Id);
+            DdLog($"metadata roundtrip: {(metaBack != null ? System.Text.Encoding.UTF8.GetString(metaBack) : "(null)")}");
+
+            await mgr.DeleteRegionAsync(region.Id);
+            var after = await mgr.ListRegionsAsync();
+            DdLog($"after delete: count={after.Length}");
+
+            await mgr.ClearAmbientCacheAsync();
+            await mgr.PackDatabaseAsync();
+            DdLog("ambient clear + pack ok");
+        }
+        catch (Exception ex)
+        {
+            DdLog($"offline test THREW: {ex}");
+        }
+        DdLog("--- RunOfflineTestAsync end ---");
     }
 
     /// <summary>

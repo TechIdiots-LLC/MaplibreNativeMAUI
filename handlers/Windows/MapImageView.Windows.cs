@@ -131,7 +131,11 @@ public sealed class MapImageView : IDisposable
         _runLoop  = _sharedRunLoop ??= new MbglRunLoop();
         _frontend = new MbglFrontend(_interop.Hdc, _interop.GlContext, _width, _height, _dpi,
             () => _renderNeedsUpdate = true);
-        _map = new MbglMap(_frontend, _runLoop, pixelRatio: _dpi, observer: OnMapObserverEvent);
+        // Persistent tile/resource cache (mbgl's default is :memory:). Shares
+        // MbglCache.DefaultPath with MbglOfflineManager so offline regions
+        // downloaded by the manager are served to the map.
+        _map = new MbglMap(_frontend, _runLoop, cachePath: MbglCache.DefaultPath,
+                           pixelRatio: _dpi, observer: OnMapObserverEvent);
         _map.SetSize(_width, _height);
 
         var url = StyleUrl;

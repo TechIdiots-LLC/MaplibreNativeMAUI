@@ -556,6 +556,191 @@ MLN_CABI_API mbgl_layer_t*   mbgl_style_add_layer_json(mbgl_style_t* st,
                                                          const char* layer_json,
                                                          const char* before_id) MLN_CABI_NOEXCEPT;
 
+/* ── Offline regions + ambient cache ─────────────────────────────────────────
+ *
+ * Wraps mbgl::DatabaseFileSource. The manager shares the map's cache database
+ * when created with the same cache_path / asset_path / api_key, so tiles
+ * downloaded into an offline region are served to the map automatically.
+ *
+ * THREADING: every callback below is invoked on MapLibre's internal database
+ * thread — never on the thread that made the call. Marshal to your UI thread
+ * as needed. Each one-shot callback fires exactly once per accepted call
+ * (a non-OK return from the function itself means the callback will NOT fire).
+ *
+ * Region JSON: functions that return regions deliver a JSON array of objects:
+ *   [{"id":1,"type":"tilepyramid"|"geometry","styleUrl":"...",
+ *     "bounds":[latSw,lonSw,latNe,lonNe] (tilepyramid only),
+ *     "geometry":{...GeoJSON geometry...} (geometry only),
+ *     "minZoom":0,"maxZoom":15,"pixelRatio":1.0,"includeIdeographs":true}, ...]
+ * Region metadata is opaque binary and is exposed separately via
+ * mbgl_offline_region_get_metadata (not embedded in the JSON).
+ */
+typedef struct mbgl_offline_manager_s mbgl_offline_manager_t;
+
+/** Special `reason` value passed to mbgl_offline_region_error_fn when the
+ *  Mapbox tile count limit is exceeded (not an HTTP error). */
+#define MBGL_OFFLINE_TILE_COUNT_LIMIT 100
+
+/** One-shot completion callback for operations with no payload. */
+typedef void (*mbgl_offline_done_fn)(mbgl_status_t status,
+                                     const char*   error_message,
+                                     void*         userdata);
+/** One-shot callback delivering a JSON array of regions (see format above).
+ *  regions_json is NULL when status != MBGL_OK. */
+typedef void (*mbgl_offline_regions_fn)(mbgl_status_t status,
+                                        const char*   error_message,
+                                        const char*   regions_json,
+                                        void*         userdata);
+/** One-shot callback delivering a region status JSON object:
+ *  {"downloadState":0|1,"completedResourceCount":N,"completedResourceSize":N,
+ *   "completedTileCount":N,"requiredTileCount":N,"completedTileSize":N,
+ *   "requiredResourceCount":N,"requiredResourceCountIsPrecise":bool,
+ *   "complete":bool} */
+typedef void (*mbgl_offline_status_fn)(mbgl_status_t status,
+                                       const char*   error_message,
+                                       const char*   status_json,
+                                       void*         userdata);
+/** Recurring download-progress callback (installed per region).
+ *  @param download_state       0=Inactive 1=Active.
+ *  @param required_is_precise  Non-zero once the required count is exact.
+ *  @param complete             Non-zero when the region is fully downloaded. */
+typedef void (*mbgl_offline_progress_fn)(int64_t  region_id,
+                                         int      download_state,
+                                         uint64_t completed_resources,
+                                         uint64_t completed_bytes,
+                                         uint64_t completed_tiles,
+                                         uint64_t required_resources,
+                                         int      required_is_precise,
+                                         int      complete,
+                                         void*    userdata);
+/** Recurring download-error callback. Errors are usually recoverable (the
+ *  downloader retries with backoff).
+ *  @param reason  mbgl::Response::Error::Reason value (matches mbgl_http_error_t),
+ *                 or MBGL_OFFLINE_TILE_COUNT_LIMIT (100) when the Mapbox tile
+ *                 count limit was reached. */
+typedef void (*mbgl_offline_region_error_fn)(int64_t     region_id,
+                                             int         reason,
+                                             const char* message,
+                                             void*       userdata);
+
+/** Create an offline manager for the given cache database.  Use the same
+ *  cache_path / asset_path / api_key / max_cache_size_bytes as the map so the
+ *  underlying DatabaseFileSource instance is shared. Pass 0/NULL for defaults. */
+MLN_CABI_API mbgl_offline_manager_t* mbgl_offline_manager_create(
+    const char* cache_path,
+    const char* asset_path,
+    const char* api_key,
+    uint64_t    max_cache_size_bytes) MLN_CABI_NOEXCEPT;
+/** Destroy the manager. Pending operation callbacks may still fire afterwards
+ *  (the internal state is kept alive until they complete). */
+MLN_CABI_API mbgl_status_t mbgl_offline_manager_destroy(mbgl_offline_manager_t* m) MLN_CABI_NOEXCEPT;
+
+/** List all offline regions in the database. */
+MLN_CABI_API mbgl_status_t mbgl_offline_list_regions(mbgl_offline_manager_t* m,
+                                                     mbgl_offline_regions_fn cb,
+                                                     void* userdata) MLN_CABI_NOEXCEPT;
+/** Create a tile-pyramid offline region (style URL + lat/lng bounds + zoom range).
+ *  The new region starts Inactive; call mbgl_offline_set_region_download_state
+ *  to begin downloading. The callback receives a one-element region array.
+ *  @param metadata  Opaque binary metadata (may be NULL when metadata_len is 0). */
+MLN_CABI_API mbgl_status_t mbgl_offline_create_region(mbgl_offline_manager_t* m,
+                                                      const char* style_url,
+                                                      double lat_sw, double lon_sw,
+                                                      double lat_ne, double lon_ne,
+                                                      double min_zoom, double max_zoom,
+                                                      float  pixel_ratio,
+                                                      int    include_ideographs,
+                                                      const uint8_t* metadata, int metadata_len,
+                                                      mbgl_offline_regions_fn cb,
+                                                      void* userdata) MLN_CABI_NOEXCEPT;
+/** Create an offline region for an arbitrary GeoJSON geometry (a Geometry,
+ *  Feature, or single-feature FeatureCollection). */
+MLN_CABI_API mbgl_status_t mbgl_offline_create_region_geometry(mbgl_offline_manager_t* m,
+                                                               const char* style_url,
+                                                               const char* geometry_geojson,
+                                                               double min_zoom, double max_zoom,
+                                                               float  pixel_ratio,
+                                                               int    include_ideographs,
+                                                               const uint8_t* metadata, int metadata_len,
+                                                               mbgl_offline_regions_fn cb,
+                                                               void* userdata) MLN_CABI_NOEXCEPT;
+/** Delete a region and evict its resources (slow if auto-packing is enabled). */
+MLN_CABI_API mbgl_status_t mbgl_offline_delete_region(mbgl_offline_manager_t* m,
+                                                      int64_t region_id,
+                                                      mbgl_offline_done_fn cb,
+                                                      void* userdata) MLN_CABI_NOEXCEPT;
+/** Force revalidation of all the region's tiles with the server. */
+MLN_CABI_API mbgl_status_t mbgl_offline_invalidate_region(mbgl_offline_manager_t* m,
+                                                          int64_t region_id,
+                                                          mbgl_offline_done_fn cb,
+                                                          void* userdata) MLN_CABI_NOEXCEPT;
+/** Pause (active=0) or start/resume (active=1) downloading a region's resources. */
+MLN_CABI_API mbgl_status_t mbgl_offline_set_region_download_state(mbgl_offline_manager_t* m,
+                                                                  int64_t region_id,
+                                                                  int active) MLN_CABI_NOEXCEPT;
+/** Install (or replace) the progress/error observer for a region.
+ *  Pass NULL for both callbacks to remove the observer. */
+MLN_CABI_API mbgl_status_t mbgl_offline_set_region_observer(mbgl_offline_manager_t* m,
+                                                            int64_t region_id,
+                                                            mbgl_offline_progress_fn progress,
+                                                            mbgl_offline_region_error_fn error,
+                                                            void* userdata) MLN_CABI_NOEXCEPT;
+/** Query the current status of a region. */
+MLN_CABI_API mbgl_status_t mbgl_offline_get_region_status(mbgl_offline_manager_t* m,
+                                                          int64_t region_id,
+                                                          mbgl_offline_status_fn cb,
+                                                          void* userdata) MLN_CABI_NOEXCEPT;
+/** Replace a region's opaque binary metadata. */
+MLN_CABI_API mbgl_status_t mbgl_offline_update_region_metadata(mbgl_offline_manager_t* m,
+                                                               int64_t region_id,
+                                                               const uint8_t* metadata, int metadata_len,
+                                                               mbgl_offline_done_fn cb,
+                                                               void* userdata) MLN_CABI_NOEXCEPT;
+/** Read a region's metadata from the manager's cache (synchronous — the region
+ *  must have been returned by a previous list/create/merge on this manager).
+ *  Returns a buffer to free with mbgl_free_string(), or NULL if the region is
+ *  unknown or has no metadata; *out_len receives the byte length. */
+MLN_CABI_API char* mbgl_offline_region_get_metadata(mbgl_offline_manager_t* m,
+                                                    int64_t region_id,
+                                                    int* out_len) MLN_CABI_NOEXCEPT;
+/** Merge regions from a secondary database file into this one.
+ *  The side database may be upgraded in place (needs write access). */
+MLN_CABI_API mbgl_status_t mbgl_offline_merge_database(mbgl_offline_manager_t* m,
+                                                       const char* side_db_path,
+                                                       mbgl_offline_regions_fn cb,
+                                                       void* userdata) MLN_CABI_NOEXCEPT;
+/** Set the Mapbox-tile count limit for offline regions (does not affect
+ *  non-Mapbox tile sources). */
+MLN_CABI_API mbgl_status_t mbgl_offline_set_tile_count_limit(mbgl_offline_manager_t* m,
+                                                             uint64_t limit) MLN_CABI_NOEXCEPT;
+
+/* ── Ambient cache / database maintenance ──────────────────────────────────── */
+/** Cap the ambient (non-region) cache size in bytes. Call before heavy use. */
+MLN_CABI_API mbgl_status_t mbgl_offline_set_maximum_ambient_cache_size(mbgl_offline_manager_t* m,
+                                                                       uint64_t bytes,
+                                                                       mbgl_offline_done_fn cb,
+                                                                       void* userdata) MLN_CABI_NOEXCEPT;
+/** Erase the ambient cache (offline regions are not affected). */
+MLN_CABI_API mbgl_status_t mbgl_offline_clear_ambient_cache(mbgl_offline_manager_t* m,
+                                                            mbgl_offline_done_fn cb,
+                                                            void* userdata) MLN_CABI_NOEXCEPT;
+/** Force revalidation of ambient-cache resources with the server. */
+MLN_CABI_API mbgl_status_t mbgl_offline_invalidate_ambient_cache(mbgl_offline_manager_t* m,
+                                                                 mbgl_offline_done_fn cb,
+                                                                 void* userdata) MLN_CABI_NOEXCEPT;
+/** Vacuum the database file to reclaim disk space. */
+MLN_CABI_API mbgl_status_t mbgl_offline_pack_database(mbgl_offline_manager_t* m,
+                                                      mbgl_offline_done_fn cb,
+                                                      void* userdata) MLN_CABI_NOEXCEPT;
+/** Delete and re-initialise the database (regions AND ambient cache). */
+MLN_CABI_API mbgl_status_t mbgl_offline_reset_database(mbgl_offline_manager_t* m,
+                                                       mbgl_offline_done_fn cb,
+                                                       void* userdata) MLN_CABI_NOEXCEPT;
+/** Enable/disable automatic packing after region deletion / cache clears
+ *  (enabled by default). */
+MLN_CABI_API mbgl_status_t mbgl_offline_set_pack_database_automatically(mbgl_offline_manager_t* m,
+                                                                        int enabled) MLN_CABI_NOEXCEPT;
+
 /* ── Version ───────────────────────────────────────────────────────────────── */
 MLN_CABI_API const char*     mln_cabi_version(void) MLN_CABI_NOEXCEPT;
 
