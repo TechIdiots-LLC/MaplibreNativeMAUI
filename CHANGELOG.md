@@ -1,6 +1,15 @@
-﻿# Changelog
+# Changelog
 
 ## master
+### ✨ Features and improvements
+- _...Add new stuff here..._
+
+### 🐞 Bug fixes
+- _...Add new stuff here..._
+
+﻿# Changelog
+
+## 4.1.0
 ### ✨ Features and improvements
 - **Offline regions + ambient cache (cabi 2.2.0)** — New `mbgl_offline_*` C ABI family wrapping `mbgl::DatabaseFileSource`, and a new `MbglOfflineManager` (Task-based async API in `MapLibreNative.Maui`): create tile-pyramid or GeoJSON-geometry offline regions, start/pause downloads with progress + error observers (`RegionProgress`/`RegionError` events), list regions, query download status, round-trip opaque binary region metadata, delete/invalidate regions, merge (side-load) a secondary cache database, set the Mapbox tile-count limit, and ambient-cache maintenance (`SetMaximumAmbientCacheSizeAsync`, `ClearAmbientCacheAsync`, `InvalidateAmbientCacheAsync`, `PackDatabaseAsync`, `ResetDatabaseAsync`). Callbacks fire on MapLibre's database thread; the C# wrapper surfaces them as `Task`s and events. Exercised end-to-end by the WPF sample's `--autotest` (download → progress → list → metadata → delete → ambient clear/pack).
 - **Persistent tile cache by default** — mbgl's default cache is `:memory:`, and none of the map views passed a cache path, so nothing survived an app restart and offline regions could never be served to the map. All map surfaces (MAUI Windows/Android/iOS + WPF `MlnMapImage`) now default to the new `MbglCache.DefaultPath` (`{LocalApplicationData}/MapLibreNative.Maui/{processName}/cache.db`), which `MbglOfflineManager` also uses by default — so offline regions downloaded by the manager are rendered by the map automatically, including with the network forced offline via `MbglNetwork.Online = false`.
@@ -15,6 +24,8 @@
 - **Transform state read-back** — New `mbgl_map_is_gesture_in_progress` / `mbgl_map_is_rotating` / `mbgl_map_is_scaling` / `mbgl_map_is_panning` C ABI functions and matching `MbglMap` properties.
 
 ### 🐞 Bug fixes
+
+- WPF: add AddLineLayer/AddFillLayer/AddRasterLayer wrappers to MlnMapI… ([#16](https://github.com/TechIdiots-LLC/MaplibreNativeMAUI/pull/16)) (@acalcutt)
 - **MAUI Windows: map dead after switching Shell tabs away and back** — On a tab switch WinUI only unloads the platform view (the handler is never disconnected), and the controller destroyed the native map on `Unloaded` with nothing recreating it on re-entry: the map stopped rendering and the nav/GPS controls, overlay elements, and programmatic updates (e.g. changing a `Circle`'s `Radius`) all went dead. The Windows controller now rebuilds the native map view when its platform view is re-loaded, restores the camera saved at teardown, and reloads the style — which re-fires `StyleLoaded` so declarative overlay elements re-materialise.
 - **Style source/layer ID lists were newline-ambiguous** — `mbgl_style_get_source_ids` / `mbgl_style_get_layer_ids` returned newline-joined strings, which is ambiguous because MapLibre IDs may contain any character including `\n`. They now return a JSON array; `MbglStyle.GetSourceIds()` / `GetLayerIds()` parse it (public C# API unchanged).
 
@@ -93,7 +104,6 @@
 
 ## 3.2.9
 ### âœ¨ Features and improvements
-- _...Add new stuff here..._
 
 ### ðŸž Bug fixes
 - **Android: app crashed every time a map view was created** â€” this standalone NDK build of `mln-cabi` never runs the `JNI_OnLoad` that the upstream MapLibre Android SDK normally uses to populate `mbgl::android::theJVM`. Every background thread that calls `attachThread()` (notably the `RunLoop`'s "Alarm" timer thread, spawned as soon as a map is constructed) hit `assert(vm != nullptr)` in `jni.cpp` and aborted the process â€” on every Android device and ABI, not just emulators. Fixed by capturing the `JavaVM*` via `JNIEnv::GetJavaVM()` in `mbgl_android_acquire_window()`, which already receives a `JNIEnv*` on the surface-creation path that runs before the `RunLoop`/Alarm thread is spawned.
