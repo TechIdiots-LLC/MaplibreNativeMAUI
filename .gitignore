@@ -415,3 +415,9 @@ build/Firebase.zip
 build/FirebaseSdk/
 
 .gradle/
+
+# CMake / ninja native build output (root build/ dir populated by local builds; not committed)
+/build/
+
+# PR / release working docs (build notes only; never committed)
+pr-*.md

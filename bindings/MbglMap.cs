@@ -22,7 +22,9 @@ public sealed class MbglMap : IDisposable
         string? cachePath = null,
         string? assetPath = null,
         float   pixelRatio = 1.0f,
-        Action<string, string?>? observer = null)
+        Action<string, string?>? observer = null,
+        string? apiKey = null,
+        ulong   maxCacheSizeBytes = 0)
     {
         NativeMethods.MapObserverFn? nativeObserver = null;
         if (observer != null)
@@ -31,11 +33,18 @@ public sealed class MbglMap : IDisposable
             _observerHandle = GCHandle.Alloc(nativeObserver);
         }
 
-        Handle = NativeMethods.MapCreate(
-            frontend.Handle, runLoop.Handle,
-            cachePath, assetPath,
-            pixelRatio,
-            nativeObserver, IntPtr.Zero);
+        Handle = apiKey is null && maxCacheSizeBytes == 0
+            ? NativeMethods.MapCreate(
+                frontend.Handle, runLoop.Handle,
+                cachePath, assetPath,
+                pixelRatio,
+                nativeObserver, IntPtr.Zero)
+            : NativeMethods.MapCreate2(
+                frontend.Handle, runLoop.Handle,
+                cachePath, assetPath,
+                apiKey, maxCacheSizeBytes,
+                pixelRatio,
+                nativeObserver, IntPtr.Zero);
 
         if (Handle == IntPtr.Zero)
             throw new InvalidOperationException("mbgl_map_create returned null.");
@@ -61,6 +70,43 @@ public sealed class MbglMap : IDisposable
 
     public void FlyTo(double lat, double lon, double zoom, double bearing, double pitch, long durationMs)
         => NativeMethods.MapFlyTo(Handle, lat, lon, zoom, bearing, pitch, durationMs);
+
+    // ── Camera with edge padding ───────────────────────────────────────────────
+    // Padding (screen pixels, top/left/bottom/right) shifts the camera's
+    // effective centre so the target is centred in the unobscured part of the
+    // viewport. Pass double.NaN for zoom/bearing/pitch to keep the current value.
+
+    public void JumpTo(double lat, double lon, double zoom, double bearing, double pitch,
+                       double padTop, double padLeft, double padBottom, double padRight)
+        => NativeMethods.MapJumpToPadded(Handle, lat, lon, zoom, bearing, pitch,
+                                         padTop, padLeft, padBottom, padRight);
+
+    public void EaseTo(double lat, double lon, double zoom, double bearing, double pitch,
+                       double padTop, double padLeft, double padBottom, double padRight,
+                       long durationMs)
+        => NativeMethods.MapEaseToPadded(Handle, lat, lon, zoom, bearing, pitch,
+                                         padTop, padLeft, padBottom, padRight, durationMs);
+
+    public void FlyTo(double lat, double lon, double zoom, double bearing, double pitch,
+                      double padTop, double padLeft, double padBottom, double padRight,
+                      long durationMs)
+        => NativeMethods.MapFlyToPadded(Handle, lat, lon, zoom, bearing, pitch,
+                                        padTop, padLeft, padBottom, padRight, durationMs);
+
+    /// <summary>Reads the full camera state in one call, optionally offset by edge padding.</summary>
+    public CameraResult GetCamera(double padTop = 0, double padLeft = 0,
+                                  double padBottom = 0, double padRight = 0)
+    {
+        NativeMethods.MapGetCamera(Handle, padTop, padLeft, padBottom, padRight,
+            out var lat, out var lon, out var zoom, out var bearing, out var pitch);
+        return new CameraResult(lat, lon, zoom, bearing, pitch);
+    }
+
+    /// <summary>Multiply the map scale by <paramref name="scale"/> (2.0 = one zoom level in),
+    /// optionally about a screen anchor point (NaN = viewport centre).</summary>
+    public void ScaleBy(double scale, double anchorX = double.NaN, double anchorY = double.NaN,
+                        long durationMs = 0)
+        => NativeMethods.MapScaleBy(Handle, scale, anchorX, anchorY, durationMs);
 
     /// <summary>Set geographic constraints and zoom/pitch limits.
     /// Pass <see cref="double.NaN"/> for any parameter to leave it unconstrained.</summary>
@@ -121,6 +167,57 @@ public sealed class MbglMap : IDisposable
         NativeMethods.FreeString(ptr);
         return result;
     }
+
+    /// <summary>Query all features in a source's data, regardless of visibility.
+    /// Returns a GeoJSON FeatureCollection string, or null if the renderer is not ready.</summary>
+    /// <param name="sourceLayerIds">Comma-separated source-layer names — required for
+    /// vector sources, ignored for GeoJSON sources.</param>
+    /// <param name="filterJson">Optional style-spec filter expression JSON.</param>
+    public string? QuerySourceFeatures(string sourceId, string? sourceLayerIds = null,
+                                        string? filterJson = null)
+    {
+        var ptr = NativeMethods.MapQuerySourceFeatures(Handle, sourceId, sourceLayerIds, filterJson);
+        if (ptr == IntPtr.Zero) return null;
+        var result = Marshal.PtrToStringUTF8(ptr);
+        NativeMethods.FreeString(ptr);
+        return result;
+    }
+
+    /// <summary>Query a feature extension. For clustered GeoJSON sources use extension
+    /// <c>"supercluster"</c> with field <c>"children"</c>, <c>"leaves"</c>, or
+    /// <c>"expansion-zoom"</c>. Returns JSON (a FeatureCollection or a bare value), or null.</summary>
+    public string? QueryFeatureExtensions(string sourceId, string featureJson,
+                                           string extension, string extensionField,
+                                           string? argsJson = null)
+    {
+        var ptr = NativeMethods.MapQueryFeatureExtensions(Handle, sourceId, featureJson,
+                                                          extension, extensionField, argsJson);
+        if (ptr == IntPtr.Zero) return null;
+        var result = Marshal.PtrToStringUTF8(ptr);
+        NativeMethods.FreeString(ptr);
+        return result;
+    }
+
+    /// <summary>Returns the zoom level at which the given cluster (a Feature returned by a
+    /// rendered-features query on a clustered GeoJSON source) expands, or null.</summary>
+    public double? GetClusterExpansionZoom(string sourceId, string clusterFeatureJson)
+    {
+        var json = QueryFeatureExtensions(sourceId, clusterFeatureJson, "supercluster", "expansion-zoom");
+        return json is not null && double.TryParse(json,
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var zoom) ? zoom : null;
+    }
+
+    /// <summary>Returns the direct children of a cluster as a GeoJSON FeatureCollection string, or null.</summary>
+    public string? GetClusterChildren(string sourceId, string clusterFeatureJson)
+        => QueryFeatureExtensions(sourceId, clusterFeatureJson, "supercluster", "children");
+
+    /// <summary>Returns up to <paramref name="limit"/> leaf features of a cluster
+    /// (from <paramref name="offset"/>) as a GeoJSON FeatureCollection string, or null.</summary>
+    public string? GetClusterLeaves(string sourceId, string clusterFeatureJson,
+                                     uint limit = 10, uint offset = 0)
+        => QueryFeatureExtensions(sourceId, clusterFeatureJson, "supercluster", "leaves",
+                                  $"{{\"limit\":{limit},\"offset\":{offset}}}");
 
     public double Zoom    => NativeMethods.MapGetZoom(Handle);
     public double Bearing => NativeMethods.MapGetBearing(Handle);
@@ -200,6 +297,14 @@ public sealed class MbglMap : IDisposable
 
     public void SetGestureInProgress(bool inProgress)
         => NativeMethods.MapSetGestureInProgress(Handle, inProgress ? 1 : 0);
+
+    public bool IsGestureInProgress => NativeMethods.MapIsGestureInProgress(Handle) != 0;
+    /// <summary>True while a rotate transition/animation is running.</summary>
+    public bool IsRotating => NativeMethods.MapIsRotating(Handle) != 0;
+    /// <summary>True while a zoom/scale transition/animation is running.</summary>
+    public bool IsScaling  => NativeMethods.MapIsScaling(Handle) != 0;
+    /// <summary>True while a pan transition/animation is running.</summary>
+    public bool IsPanning  => NativeMethods.MapIsPanning(Handle) != 0;
 
     public void MoveBy(double dx, double dy, long durationMs = 0)
         => NativeMethods.MapMoveBy(Handle, dx, dy, durationMs);

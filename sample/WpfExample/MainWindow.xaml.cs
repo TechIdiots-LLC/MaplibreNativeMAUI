@@ -1,5 +1,5 @@
 ﻿/**
- * MainWindow.xaml.cs — WPF example using MapLibreNative.Maui.WPF.MlnMapHost.
+ * MainWindow.xaml.cs — WPF example using MapLibreNative.Maui.WPF.MlnMapImage.
  *
  * Demonstrates:
  *  • Loading a MapLibre style via the StyleUrl dependency property
@@ -10,9 +10,12 @@
  */
 using System.IO;
 using System.Text.Json;
+using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
+using MapLibreNative.Maui.WPF;
 
 namespace WpfExample;
 
@@ -41,7 +44,7 @@ public partial class MainWindow : Window
 
     // ── Data-driven circle-color investigation ──────────────────────────────────
     // See https://github.com/TechIdiots-LLC/MaplibreNativeMAUI investigate/runtime-data-driven-circle-color.
-    // Reproduces (minimally, without a basemap or vector tiles) the VistumblerCS
+    // Reproduces (minimally, without a basemap or vector tiles) a consumer-reported
     // symptom: a circle-color value that depends on a per-feature property renders
     // zero features when added at RUNTIME (AddGeoJsonSource + AddCircleLayer after
     // the style is already loaded), even though the identical property+stops/case/
@@ -79,7 +82,6 @@ public partial class MainWindow : Window
 
     const string MarkerSourceId = "example-marker";
     const string MarkerLayerId  = "example-marker-layer";
-
     // Seattle GeoJSON point — matches the default fly-to location
     const string MarkerGeoJson = """
         {
@@ -100,6 +102,10 @@ public partial class MainWindow : Window
         InitializeComponent();
         StylePicker.ItemsSource   = Styles.Keys;
         StylePicker.SelectedIndex = 0;
+
+        // Data-bound markers: bind an ObservableCollection<MlnMapMarker> to ItemsSource once; the
+        // Add City Pins / Clear Pins buttons mutate it and the map updates live.
+        MapHost.ItemsSource = _pins;
 
         _autoTestRequested = Environment.GetCommandLineArgs().Contains("--autotest");
         if (_autoTestRequested)
@@ -136,7 +142,13 @@ public partial class MainWindow : Window
     }
 
     private void MapHost_CameraIdle(object sender, EventArgs e)
-        => StatusText.Text = $"Camera idle.";
+    {
+        var region = MapHost.VisibleRegion;
+        StatusText.Text = region is null
+            ? "Camera idle."
+            : $"Camera idle \u2014 visible center ({region.Center.Latitude:F3}, {region.Center.Longitude:F3}), " +
+              $"span \u00B1{region.LatitudeDegrees / 2:F3}\u00B0, \u00B1{region.LongitudeDegrees / 2:F3}\u00B0";
+    }
 
     // ── Style switcher ────────────────────────────────────────────────────────────────────────
 
@@ -180,6 +192,27 @@ public partial class MainWindow : Window
     private void BtnZoomIn_Click(object sender, RoutedEventArgs e)  => MapHost.ZoomIn();
     private void BtnZoomOut_Click(object sender, RoutedEventArgs e) => MapHost.ZoomOut();
     private void BtnNorth_Click(object sender, RoutedEventArgs e)   => MapHost.ResetNorth();
+
+    // ── Data-bound pins (ItemsSource of MlnMapMarker) ──────────────────────
+
+    private readonly ObservableCollection<MlnMapMarker> _pins = new();
+
+    private void BtnAddPins_Click(object sender, RoutedEventArgs e)
+    {
+        _pins.Clear();
+        _pins.Add(new MlnMapMarker(47.6062, -122.3321, "Seattle",  Colors.DodgerBlue));
+        _pins.Add(new MlnMapMarker(51.5074,   -0.1278, "London",   Colors.Crimson));
+        _pins.Add(new MlnMapMarker(40.7128,  -74.0060, "New York", Colors.SeaGreen));
+        _pins.Add(new MlnMapMarker(35.6762,  139.6503, "Tokyo",    Colors.DarkOrange));
+        _pins.Add(new MlnMapMarker(-33.8688, 151.2093, "Sydney",   Colors.MediumPurple));
+        StatusText.Text = $"Added {_pins.Count} data-bound pins (ItemsSource).";
+    }
+
+    private void BtnClearPins_Click(object sender, RoutedEventArgs e)
+    {
+        _pins.Clear();
+        StatusText.Text = "Cleared pins.";
+    }
 
     // ── GeoJSON marker (toggle) ────────────────────────────────────────────────
 
@@ -364,7 +397,174 @@ public partial class MainWindow : Window
         }
 
         DdLog("--- RunDataDrivenCircleTestAsync end ---");
+        await RunClusterTestAsync();
+        await RunOfflineTestAsync();
         StatusText.Text = $"Data-driven circle test complete — see {_autoTestLogPath}";
+    }
+
+    /// <summary>
+    /// Exercises the offline-region pipeline added in cabi 2.2.0: create a small
+    /// tile-pyramid region for the demotiles style, download it to completion,
+    /// query status, round-trip metadata, delete it, and clear the ambient cache.
+    /// Uses its own temp cache database, independent of the map's.
+    /// </summary>
+    private async Task RunOfflineTestAsync()
+    {
+        DdLog("--- RunOfflineTestAsync start ---");
+        string cachePath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "maplibre_offline_test_cache.db");
+        try { File.Delete(cachePath); } catch { /* fresh DB preferred, stale is fine */ }
+        try
+        {
+            using var mgr = new MapLibreNative.Maui.MbglOfflineManager(cachePath);
+
+            int progressEvents = 0;
+            // The observer's Complete flag is the authoritative completion signal —
+            // GetRegionStatusAsync can report Complete=false forever when a required
+            // resource permanently 404s (demotiles has no 65280-65535 glyph range).
+            var completeTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            mgr.RegionProgress += p =>
+            {
+                System.Threading.Interlocked.Increment(ref progressEvents);
+                if (p.Complete) completeTcs.TrySetResult();
+            };
+            mgr.RegionError    += e => DdLog($"offline error: region={e.RegionId} reason={e.Reason} {e.Message}");
+
+            var meta = System.Text.Encoding.UTF8.GetBytes("{\"name\":\"autotest-region\"}");
+            var region = await mgr.CreateRegionAsync(
+                "https://demotiles.maplibre.org/style.json",
+                latSw: 51.4, lonSw: -0.3, latNe: 51.6, lonNe: 0.0,
+                minZoom: 0, maxZoom: 2, includeIdeographs: false, metadata: meta);
+            DdLog($"created region id={region.Id} type={region.Type} " +
+                  $"bounds=[{string.Join(",", region.Bounds ?? Array.Empty<double>())}] " +
+                  $"zoom={region.MinZoom}-{region.MaxZoom}");
+
+            mgr.ObserveRegion(region.Id);
+            mgr.SetDownloadState(region.Id, true);
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            await Task.WhenAny(completeTcs.Task, Task.Delay(TimeSpan.FromSeconds(90)));
+            var status = await mgr.GetRegionStatusAsync(region.Id);
+            DdLog($"download: observerComplete={completeTcs.Task.IsCompleted} statusComplete={status.Complete} " +
+                  $"resources={status.CompletedResourceCount}/{status.RequiredResourceCount} " +
+                  $"bytes={status.CompletedResourceSize} tiles={status.CompletedTileCount} " +
+                  $"precise={status.RequiredResourceCountIsPrecise} progressEvents={progressEvents} " +
+                  $"elapsed={sw.Elapsed.TotalSeconds:0.#}s");
+
+            var regions = await mgr.ListRegionsAsync();
+            DdLog($"list regions: count={regions.Length} ids=[{string.Join(",", regions.Select(r => r.Id))}]");
+
+            var metaBack = mgr.GetRegionMetadata(region.Id);
+            DdLog($"metadata roundtrip: {(metaBack != null ? System.Text.Encoding.UTF8.GetString(metaBack) : "(null)")}");
+
+            await mgr.DeleteRegionAsync(region.Id);
+            var after = await mgr.ListRegionsAsync();
+            DdLog($"after delete: count={after.Length}");
+
+            await mgr.ClearAmbientCacheAsync();
+            await mgr.PackDatabaseAsync();
+            DdLog("ambient clear + pack ok");
+        }
+        catch (Exception ex)
+        {
+            DdLog($"offline test THREW: {ex}");
+        }
+        DdLog("--- RunOfflineTestAsync end ---");
+    }
+
+    /// <summary>
+    /// Exercises the clustered-GeoJSON pipeline added in cabi 2.1.0:
+    /// AddGeoJsonSource with options (cluster=true), QuerySourceFeatures,
+    /// and the supercluster extension queries (expansion-zoom / leaves).
+    /// </summary>
+    private async Task RunClusterTestAsync()
+    {
+        DdLog("--- RunClusterTestAsync start ---");
+        try
+        {
+            // Six points in two tight groups ~0.02° apart; at zoom 3 each group
+            // collapses into one cluster.
+            const string clusterGeoJson = """
+            { "type": "FeatureCollection", "features": [
+              { "type": "Feature", "properties": {}, "geometry": { "type": "Point", "coordinates": [-10.00, 10.00] } },
+              { "type": "Feature", "properties": {}, "geometry": { "type": "Point", "coordinates": [-10.01, 10.01] } },
+              { "type": "Feature", "properties": {}, "geometry": { "type": "Point", "coordinates": [-10.02, 10.02] } },
+              { "type": "Feature", "properties": {}, "geometry": { "type": "Point", "coordinates": [ 10.00, 10.00] } },
+              { "type": "Feature", "properties": {}, "geometry": { "type": "Point", "coordinates": [ 10.01, 10.01] } },
+              { "type": "Feature", "properties": {}, "geometry": { "type": "Point", "coordinates": [ 10.02, 10.02] } }
+            ] }
+            """;
+
+            MapHost.AddGeoJsonSource("cluster-src", clusterGeoJson,
+                """{"cluster":true,"clusterRadius":50,"clusterMaxZoom":14}""");
+            DdLog("AddGeoJsonSource(cluster-src, cluster=true, radius=50, maxZoom=14)");
+
+            MapHost.AddCircleLayer(
+                layerName:    "cluster-circles",
+                sourceName:   "cluster-src",
+                belowLayerId: null,
+                sourceLayer:  null,
+                properties: new Dictionary<string, object?>
+                {
+                    ["circle-radius"]  = 12.0,
+                    ["circle-color"]   = "#ff8800",
+                    ["circle-opacity"] = 0.8,
+                });
+
+            MapHost.CenterOn(10.0, 0.0, zoom: 3);
+            await Task.Delay(2000); // let cluster tiles build and render
+
+            // Rendered query should see 2 clusters (one per group) with cluster
+            // properties (cluster=true, point_count=3, cluster_id).
+            double cx = MapHost.ActualWidth / 2, cy = MapHost.ActualHeight / 2;
+            double threshold = Math.Max(MapHost.ActualWidth, MapHost.ActualHeight);
+            string? rendered = MapHost.QueryRenderedFeaturesInBox(cx, cy, threshold, new[] { "cluster-circles" });
+            DdLog($"cluster rendered query: featureCount={CountFeatures(rendered)} json={Truncate(rendered, 600)}");
+
+            // QuerySourceFeatures on a clustered source returns the cluster tiles too.
+            string? src = MapHost.QuerySourceFeatures("cluster-src");
+            DdLog($"QuerySourceFeatures(cluster-src): featureCount={CountFeatures(src)}");
+
+            // Take the first cluster feature and drill in.
+            string? clusterFeature = FirstClusterFeature(rendered);
+            if (clusterFeature is null)
+            {
+                DdLog("cluster test: NO cluster feature found in rendered query (FAIL)");
+            }
+            else
+            {
+                double? expZoom = MapHost.GetClusterExpansionZoom("cluster-src", clusterFeature);
+                string? leaves  = MapHost.GetClusterLeaves("cluster-src", clusterFeature, limit: 10);
+                string? kids    = MapHost.GetClusterChildren("cluster-src", clusterFeature);
+                DdLog($"GetClusterExpansionZoom={expZoom?.ToString() ?? "(null)"} " +
+                      $"leavesCount={CountFeatures(leaves)} childrenCount={CountFeatures(kids)}");
+            }
+        }
+        catch (Exception ex)
+        {
+            DdLog($"cluster test THREW: {ex}");
+        }
+        DdLog("--- RunClusterTestAsync end ---");
+    }
+
+    /// <summary>Returns the first feature with a truthy "cluster" property from a
+    /// FeatureCollection JSON string, serialized back to JSON, or null.</summary>
+    private static string? FirstClusterFeature(string? featureCollectionJson)
+    {
+        if (string.IsNullOrEmpty(featureCollectionJson)) return null;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(featureCollectionJson);
+            if (!doc.RootElement.TryGetProperty("features", out var features)) return null;
+            foreach (var f in features.EnumerateArray())
+            {
+                if (f.TryGetProperty("properties", out var props) &&
+                    props.TryGetProperty("cluster", out var cluster) &&
+                    cluster.ValueKind == System.Text.Json.JsonValueKind.True)
+                    return f.GetRawText();
+            }
+        }
+        catch (System.Text.Json.JsonException) { }
+        return null;
     }
 
     private void AddDdLayer(string layerId, object? circleColor)

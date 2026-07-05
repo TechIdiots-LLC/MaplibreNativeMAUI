@@ -32,15 +32,6 @@
         <ProjectReference Include="..\bindings\MapLibreNative.Maui.csproj" />
     </ItemGroup>
 
-  <!-- Reference to MaciOS Binding project -->
-  <!--<ItemGroup Condition="$(TargetFramework.Contains('ios')) Or $(TargetFramework.Contains('maccatalyst'))">
-    <ProjectReference Include="..\..\macios\MapLibre.MaciOS.Binding\MapLibre.MaciOS.Binding.csproj" />
-  </ItemGroup>-->
-
-  <!-- Reference to Android Binding project -->
-    
- 
-
   <!-- Android -->
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) != 'android'">
     <Compile Remove="**\*.Android.cs" />

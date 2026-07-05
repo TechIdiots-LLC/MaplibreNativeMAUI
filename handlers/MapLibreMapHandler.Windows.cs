@@ -25,6 +25,44 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
         catch { /* ignore */ }
     }
 
+    private static bool _globalHooksInstalled;
+    private static readonly object _hookLock = new();
+
+    // One-time global exception logging so a crash (which the packaged CI build does NOT record in
+    // the Windows event log) writes its full stack to the diag log. Logs only; does not swallow.
+    private void InstallGlobalExceptionHooks()
+    {
+        if (_globalHooksInstalled) return;
+        lock (_hookLock)
+        {
+            if (_globalHooksInstalled) return;
+            _globalHooksInstalled = true;
+
+            void Write(string tag, object? detail)
+            {
+                try { System.IO.File.AppendAllText(_hdiagPath,
+                    $"{DateTime.Now:HH:mm:ss.fff} [{tag}] {detail}\r\n"); }
+                catch { /* ignore */ }
+            }
+
+            try
+            {
+                var app = Microsoft.UI.Xaml.Application.Current;
+                if (app != null)
+                    app.UnhandledException += (_, e) => Write("XAML-UNHANDLED", $"{e.Message}\r\n{e.Exception}");
+            }
+            catch { /* ignore */ }
+
+            AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+                Write("FATAL-APPDOMAIN", e.ExceptionObject);
+            System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, e) =>
+            {
+                Write("UNOBSERVED-TASK", e.Exception);
+                e.SetObserved();
+            };
+        }
+    }
+
     // Input tracking
     private bool   _isDragging;
     private double _lastPointerX;
@@ -36,6 +74,7 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
 
     protected override Microsoft.UI.Xaml.Controls.Grid CreatePlatformView()
     {
+        InstallGlobalExceptionHooks();
         var window = MauiContext?.Services?.GetService<Microsoft.UI.Xaml.Window>();
 
         // GetDpiForWindow returns RasterizationScale (e.g. 1.0, 1.25, 1.5, 2.0).
@@ -190,7 +229,7 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
     public void UpdateMinMaxZoomPreference(double? minZoom, double? maxZoom)
         => _controller.SetMinMaxZoomPreference(minZoom, maxZoom);
 
-    public void UpdateRotateGestureEnabled(bool v)   => _controller.SetRotateGesturesEnabled(v);
+    public void UpdateRotateGesturesEnabled(bool v)   => _controller.SetRotateGesturesEnabled(v);
     public void UpdateScrollGesturesEnabled(bool v)  => _controller.SetScrollGesturesEnabled(v);
     public void UpdateTiltGesturesEnabled(bool v)    => _controller.SetTiltGesturesEnabled(v);
     public void UpdateTrackCameraPosition(bool v)    => _controller.SetTrackCameraPosition(v);

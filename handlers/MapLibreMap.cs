@@ -10,12 +10,12 @@ using Style = MapLibreNative.Maui.Handlers.Maps.Style;
 namespace MapLibreNative.Maui.Handlers;
 
 // All the code in this file is included in all platforms.
-public class MapLibreMap : StackLayout
+public partial class MapLibreMap : StackLayout
 {
     public static readonly BindableProperty StyleUrlProperty = BindableProperty.Create(nameof(StyleUrl), typeof(string), typeof(MapLibreMap));
     public static readonly BindableProperty MinZoomProperty = BindableProperty.Create(nameof(MinZoom), typeof(float), typeof(MapLibreMap));
     public static readonly BindableProperty MaxZoomProperty = BindableProperty.Create(nameof(MaxZoom), typeof(float), typeof(MapLibreMap));
-    public static readonly BindableProperty RotateGestureEnabledProperty = BindableProperty.Create(nameof(RotateGestureEnabled), typeof(bool), typeof(MapLibreMap));
+    public static readonly BindableProperty RotateGesturesEnabledProperty = BindableProperty.Create(nameof(RotateGesturesEnabled), typeof(bool), typeof(MapLibreMap));
     public static readonly BindableProperty ScrollGesturesEnabledProperty = BindableProperty.Create(nameof(ScrollGesturesEnabled), typeof(bool), typeof(MapLibreMap));
     public static readonly BindableProperty TiltGesturesEnabledProperty = BindableProperty.Create(nameof(TiltGesturesEnabled), typeof(bool), typeof(MapLibreMap));
     public static readonly BindableProperty TrackCameraPositionProperty = BindableProperty.Create(nameof(TrackCameraPosition), typeof(bool), typeof(MapLibreMap));
@@ -153,10 +153,10 @@ public class MapLibreMap : StackLayout
         set => SetValue(MaxZoomProperty, value);
     }
     
-    public bool RotateGestureEnabled
+    public bool RotateGesturesEnabled
     {
-        get => (bool)GetValue(RotateGestureEnabledProperty);
-        set => SetValue(RotateGestureEnabledProperty, value);
+        get => (bool)GetValue(RotateGesturesEnabledProperty);
+        set => SetValue(RotateGesturesEnabledProperty, value);
     }
     
     public bool ScrollGesturesEnabled
@@ -291,6 +291,28 @@ public class MapLibreMap : StackLayout
         var controller = handler.Controller;
         var json = JsonSerializer.Serialize(collection);
         controller.AddGeoJsonSource(sourceName, json);
+    }
+
+    /// <summary>Replaces the GeoJSON data of an existing source.</summary>
+    public void SetGeoJsonSource(string sourceName, FeatureCollection collection)
+    {
+        if (Handler is not MapLibreMapHandler handler) return;
+        var json = JsonSerializer.Serialize(collection);
+        handler.Controller.SetGeoJsonSource(sourceName, json);
+    }
+
+    /// <summary>Removes a source previously added to the style. No-op if it does not exist.</summary>
+    public void RemoveSource(string sourceName)
+    {
+        if (Handler is not MapLibreMapHandler handler) return;
+        handler.Controller.RemoveSource(sourceName);
+    }
+
+    /// <summary>Removes a layer previously added to the style. No-op if it does not exist.</summary>
+    public void RemoveLayer(string layerId)
+    {
+        if (Handler is not MapLibreMapHandler handler) return;
+        handler.Controller.RemoveLayer(layerId);
     }
 
     public void AddImageSource(string sourceName, string imageUri, LatLngQuad? coordinates)
@@ -430,7 +452,22 @@ public class MapLibreMap : StackLayout
         var propertyValues = properties.ToDictionary();
         controller.AddHeatmapLayer(layerName, sourceName, propertyValues, minZoom, maxZoom, belowLayerId);
     }
+    // ── Sprite images ───────────────────────────────────────────────────────────
 
+    /// <summary>Register a named sprite image for use with <c>icon-image</c> in SymbolLayers.
+    /// <paramref name="rgba"/> must be <c>width × height × 4</c> bytes of premultiplied RGBA.</summary>
+    public void AddSpriteImage(string imageId, int width, int height, byte[] rgba, float pixelRatio = 1f, bool sdf = false)
+    {
+        if (Handler is not MapLibreMapHandler handler) return;
+        handler.Controller.AddSpriteImage(imageId, width, height, rgba, pixelRatio, sdf);
+    }
+
+    /// <summary>Remove a sprite image previously registered with <see cref="AddSpriteImage"/>.</summary>
+    public void RemoveSpriteImage(string imageId)
+    {
+        if (Handler is not MapLibreMapHandler handler) return;
+        handler.Controller.RemoveSpriteImage(imageId);
+    }
     // ── Feature queries ───────────────────────────────────────────────────────
 
     /// <summary>
@@ -461,6 +498,52 @@ public class MapLibreMap : StackLayout
     {
         if (Handler is not MapLibreMapHandler handler) return (0, 0);
         return handler.Controller.LatLngToScreenPoint(latitude, longitude);
+    }
+
+    // ── Visible region ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// <see langword="true"/> once the map's style has finished loading (the <see cref="StyleLoaded"/>
+    /// event has fired at least once). Declarative overlay elements use this to materialise
+    /// immediately when they are added after the map is already ready.
+    /// </summary>
+    public bool IsStyleLoaded { get; private set; }
+
+    private MapLibreNative.Maui.Geometry.MapSpan? _visibleRegion;
+
+    /// <summary>
+    /// The map region currently visible on screen, as a
+    /// <see cref="MapLibreNative.Maui.Geometry.MapSpan"/>. Refreshed whenever the camera becomes
+    /// idle and <see langword="null"/> until the map has rendered its first frame. Mirrors
+    /// <c>Microsoft.Maui.Controls.Maps.Map.VisibleRegion</c>.
+    /// </summary>
+    public MapLibreNative.Maui.Geometry.MapSpan? VisibleRegion
+    {
+        get => _visibleRegion;
+        private set
+        {
+            if (Equals(_visibleRegion, value)) return;
+            _visibleRegion = value;
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Reads the map's currently visible region on demand. Returns <see langword="null"/> when the
+    /// handler is not connected or the map is not yet ready.
+    /// </summary>
+    public MapLibreNative.Maui.Geometry.MapSpan? GetVisibleRegion()
+    {
+        if (Handler is not MapLibreMapHandler handler) return null;
+        var (latSW, lonSW, latNE, lonNE) = handler.Controller.GetVisibleBounds();
+        if (double.IsNaN(latSW) || double.IsNaN(lonSW) || double.IsNaN(latNE) || double.IsNaN(lonNE))
+            return null;
+        double centerLat = (latSW + latNE) / 2.0;
+        double centerLon = (lonSW + lonNE) / 2.0;
+        double latDegrees = System.Math.Abs(latNE - latSW);
+        double lonDegrees = System.Math.Abs(lonNE - lonSW);
+        return new MapLibreNative.Maui.Geometry.MapSpan(
+            new MapLibreNative.Maui.Geometry.MapCoordinate(centerLat, centerLon), latDegrees, lonDegrees);
     }
 
     // TODO Map parameter may want to return the controller here. 
@@ -494,6 +577,7 @@ public class MapLibreMap : StackLayout
     
     internal void OnStyleLoaded(Style style)
     {
+        IsStyleLoaded = true;
         var args = new StyleLoadedEventArgs
         {
             Style = style
@@ -526,6 +610,7 @@ public class MapLibreMap : StackLayout
 
     internal void OnCameraIdle()
     {
+        VisibleRegion = GetVisibleRegion();
         CameraIdle?.Invoke(this, System.EventArgs.Empty);
         CameraIdleCommand?.Execute(null);
     }

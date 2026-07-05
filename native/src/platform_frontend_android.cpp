@@ -78,9 +78,9 @@ protected:
     }
     // Re-sync mbgl's cached GL state so it re-binds framebuffer/viewport
     // each frame. Mirrors the Apple/Metal backend in this project, the Qt
-    // GL backend and GLFW. Important on Android because the SurfaceView
-    // can be recreated under us (config change, surface destroyed) and
-    // mbgl's cache must not be trusted across context activations.
+    // GL backend and GLFW. Important on Android because the TextureView's
+    // SurfaceTexture can be recreated under us (config change, surface
+    // destroyed) and mbgl's cache must not be trusted across context activations.
     void updateAssumedState() override {
         assumeFramebufferBinding(ImplicitFramebufferBinding);
         assumeViewport(0, 0, size);

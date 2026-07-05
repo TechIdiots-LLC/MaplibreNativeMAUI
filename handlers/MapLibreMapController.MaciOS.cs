@@ -391,7 +391,10 @@ public class MapLibreMapController : IMapLibreMapController
         View.BringSubviewToFront(_navPanel);
         View.BringSubviewToFront(_gpsPanel);
 
+        // Persistent tile/resource cache (mbgl's default is :memory:), shared
+        // with MbglOfflineManager via MbglCache.DefaultPath.
         _map = new MbglMap(_frontend, _runLoop,
+                           cachePath: MbglCache.DefaultPath,
                            pixelRatio: _pixelRatio,
                            observer: OnMapObserverEvent);
         _map.SetSize(w, h);
@@ -809,13 +812,29 @@ public class MapLibreMapController : IMapLibreMapController
     public void AddGeoJsonSource(string sourceName, string source)
     {
         if (!_styleReady || _style == null) return;
-        if (_style.HasSource(sourceName)) return;
-        var s = _style.AddGeoJsonSource(sourceName);
+        // Reuse the existing source if present so a re-add updates it in place
+        // instead of no-op'ing (which left overlay geometry stale).
+        var s = _style.HasSource(sourceName) ? _style.GetSource(sourceName)! : _style.AddGeoJsonSource(sourceName);
+        s.SetGeoJson(source);
+    }
+
+    public void AddGeoJsonSource(string sourceName, string source, string? optionsJson)
+    {
+        if (!_styleReady || _style == null) return;
+        // Options (clustering etc.) only apply at creation; an existing source
+        // keeps its original options and just gets new data.
+        var s = _style.HasSource(sourceName)
+            ? _style.GetSource(sourceName)!
+            : _style.AddGeoJsonSourceOptions(sourceName, optionsJson);
         s.SetGeoJson(source);
     }
 
     public void SetGeoJsonSource(string sourceName, string source)
-        => AddGeoJsonSource(sourceName, source);
+    {
+        if (!_styleReady || _style == null) return;
+        // Update the existing source's data in place (no layer churn).
+        _style.GetSource(sourceName)?.SetGeoJson(source);
+    }
 
     public void SetGeoJsonFeature(string sourceName, string geojsonFeature)
     {
@@ -949,6 +968,18 @@ public class MapLibreMapController : IMapLibreMapController
         _style.RemoveLayer(layerId);
     }
 
+    public void AddSpriteImage(string imageId, int width, int height, byte[] rgba, float pixelRatio = 1f, bool sdf = false)
+    {
+        if (!_styleReady || _style == null) return;
+        _style.AddImage(imageId, width, height, pixelRatio, sdf, rgba);
+    }
+
+    public void RemoveSpriteImage(string imageId)
+    {
+        if (!_styleReady || _style == null) return;
+        _style.RemoveImage(imageId);
+    }
+
     // -- Helpers ---------------------------------------------------------------
 
     private static void ApplyLayerMeta(MbglLayer layer, string? sourceLayer,
@@ -985,6 +1016,30 @@ public class MapLibreMapController : IMapLibreMapController
         double bearing = 0, double pitch = 0, long durationMs = 500)
         => _map?.FlyTo(latitude, longitude, zoom, bearing, pitch, durationMs);
 
+    public void JumpTo(double latitude, double longitude, double zoom,
+        double bearing, double pitch,
+        double padTop, double padLeft, double padBottom, double padRight)
+        => _map?.JumpTo(latitude, longitude, zoom, bearing, pitch,
+                        padTop, padLeft, padBottom, padRight);
+
+    public void EaseTo(double latitude, double longitude, double zoom,
+        double bearing, double pitch,
+        double padTop, double padLeft, double padBottom, double padRight,
+        long durationMs = 300)
+        => _map?.EaseTo(latitude, longitude, zoom, bearing, pitch,
+                        padTop, padLeft, padBottom, padRight, durationMs);
+
+    public void FlyTo(double latitude, double longitude, double zoom,
+        double bearing, double pitch,
+        double padTop, double padLeft, double padBottom, double padRight,
+        long durationMs = 500)
+        => _map?.FlyTo(latitude, longitude, zoom, bearing, pitch,
+                       padTop, padLeft, padBottom, padRight, durationMs);
+
+    public void ScaleBy(double scale, double anchorX = double.NaN, double anchorY = double.NaN,
+        long durationMs = 0)
+        => _map?.ScaleBy(scale, anchorX, anchorY, durationMs);
+
     public void CancelTransitions() => _map?.CancelTransitions();
 
     public double GetZoom()    => _map?.Zoom    ?? 0;
@@ -1013,6 +1068,20 @@ public class MapLibreMapController : IMapLibreMapController
     public string? QueryRenderedFeaturesInBox(double x1, double y1, double x2, double y2,
         string? layerIds = null)
         => _map?.QueryRenderedFeaturesInBox(x1, y1, x2, y2, layerIds);
+
+    public string? QuerySourceFeatures(string sourceId, string? sourceLayerIds = null,
+        string? filterJson = null)
+        => _map?.QuerySourceFeatures(sourceId, sourceLayerIds, filterJson);
+
+    public double? GetClusterExpansionZoom(string sourceId, string clusterFeatureJson)
+        => _map?.GetClusterExpansionZoom(sourceId, clusterFeatureJson);
+
+    public string? GetClusterChildren(string sourceId, string clusterFeatureJson)
+        => _map?.GetClusterChildren(sourceId, clusterFeatureJson);
+
+    public string? GetClusterLeaves(string sourceId, string clusterFeatureJson,
+        uint limit = 10, uint offset = 0)
+        => _map?.GetClusterLeaves(sourceId, clusterFeatureJson, limit, offset);
 
     // ── Viewport bounds ────────────────────────────────────────────────────────
     public (double LatSW, double LonSW, double LatNE, double LonNE) GetVisibleBounds()

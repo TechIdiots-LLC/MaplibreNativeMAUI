@@ -8,7 +8,7 @@ public partial class MapLibreMapHandler
             [nameof(MapLibreMap.StyleUrl)] = MapStyleUrl,
             [nameof(MapLibreMap.MinZoom)] = MapMinZoom,
             [nameof(MapLibreMap.MaxZoom)] = MapMaxZoom,
-            [nameof(MapLibreMap.RotateGestureEnabled)] = MapRotateGestureEnabled,
+            [nameof(MapLibreMap.RotateGesturesEnabled)] = MapRotateGesturesEnabled,
             [nameof(MapLibreMap.ScrollGesturesEnabled)] = MapScrollGesturesEnabled,
             [nameof(MapLibreMap.TiltGesturesEnabled)] = MapTiltGesturesEnabled,
             [nameof(MapLibreMap.TrackCameraPosition)] = MapTrackCameraPosition,
@@ -45,9 +45,9 @@ public partial class MapLibreMapHandler
         handler.UpdateMinMaxZoomPreference(view.MinZoom, view.MaxZoom);
     }
     
-    public static void MapRotateGestureEnabled(MapLibreMapHandler handler, MapLibreMap view)
+    public static void MapRotateGesturesEnabled(MapLibreMapHandler handler, MapLibreMap view)
     {
-        handler.UpdateRotateGestureEnabled(view.RotateGestureEnabled);
+        handler.UpdateRotateGesturesEnabled(view.RotateGesturesEnabled);
     }
     
     public static void MapScrollGesturesEnabled(MapLibreMapHandler handler, MapLibreMap view)

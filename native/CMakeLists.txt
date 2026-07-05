@@ -43,6 +43,7 @@ target_include_directories(mln-cabi PRIVATE
 
 target_sources(mln-cabi PRIVATE
     src/mln_cabi.cpp
+    src/mln_cabi_offline.cpp
 )
 
 # ── Platform-specific frontend ────────────────────────────────────────────────

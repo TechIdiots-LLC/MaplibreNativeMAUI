@@ -19,7 +19,7 @@ namespace MapLibreNative.Maui.Handlers;
 
 /// <summary>
 /// Android IMapLibreMapController backed by mln-cabi.so via EGL + ANativeWindow.
-/// The platform view is a SurfaceView; the C++ EGL frontend manages its own
+/// The platform view is a TextureView; the C++ EGL frontend manages its own
 /// EGL display, config, context, and window surface.
 /// </summary>
 public class MapLibreMapController : IMapLibreMapController
@@ -281,8 +281,8 @@ public class MapLibreMapController : IMapLibreMapController
     private MbglStyle?    _style;
     private bool          _styleReady;
 
-    private readonly SurfaceCallback _surfaceCb;
-    private SurfaceView     _surfaceView      = null!;
+    private TextureView            _textureView    = null!;
+    private Android.Views.Surface? _textureSurface;
     private TextView        _attrView         = null!;  // expanded full text
     private TextView        _attrButton       = null!;  // collapsed ⓘ button
     private bool            _showAttrControl  = true;
@@ -366,14 +366,13 @@ public class MapLibreMapController : IMapLibreMapController
 
         var ctx = Android.App.Application.Context!;
 
-        _surfaceView = new SurfaceView(ctx);
-        _surfaceCb = new SurfaceCallback
+        _textureView = new TextureView(ctx);
+        _textureView.SurfaceTextureListener = new TextureSurfaceListener
         {
-            Created   = OnSurfaceCreated,
-            Changed   = OnSurfaceChanged,
-            Destroyed = _ => DisposeNative(),
+            Available   = OnTextureAvailable,
+            SizeChanged = (_, w, h) => OnTextureSizeChanged(w, h),
+            Destroyed   = _ => DisposeNative(),
         };
-        _surfaceView.Holder!.AddCallback(_surfaceCb);
         SetupGestureDetectors();
 
         // Attribution overlay (bottom-right corner, OSM licence compliance)
@@ -386,7 +385,7 @@ public class MapLibreMapController : IMapLibreMapController
         _attrView.Visibility = ViewStates.Gone;
 
         var container = new FrameLayout(ctx);
-        container.AddView(_surfaceView, new FrameLayout.LayoutParams(
+        container.AddView(_textureView, new FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MatchParent,
             ViewGroup.LayoutParams.MatchParent));
         var attrParams = new FrameLayout.LayoutParams(
@@ -619,23 +618,19 @@ public class MapLibreMapController : IMapLibreMapController
         Apply(_attrButton, _attrCorner, StackOffset(_attrCorner, 2));
     }
 
-    // -- Surface lifecycle -----------------------------------------------------
+    // -- Surface / texture lifecycle ------------------------------------------
 
-    private void OnSurfaceCreated(ISurfaceHolder holder)
+    private void OnTextureAvailable(Android.Graphics.SurfaceTexture surfaceTexture, int width, int height)
     {
-        var surface = holder.Surface!;
-        _nativeWindow = NativeMethods.AndroidAcquireWindow(JNIEnv.Handle, surface.Handle);
-
-        int w = Math.Max(1, _surfaceView.Width);
-        int h = Math.Max(1, _surfaceView.Height);
-        InitMaplibre(w, h);
+        _textureSurface = new Android.Views.Surface(surfaceTexture);
+        _nativeWindow = NativeMethods.AndroidAcquireWindow(JNIEnv.Handle, _textureSurface.Handle);
+        InitMaplibre(Math.Max(1, width), Math.Max(1, height));
     }
 
-    private void OnSurfaceChanged(ISurfaceHolder holder,
-        global::Android.Graphics.Format fmt, int w, int h)
+    private void OnTextureSizeChanged(int width, int height)
     {
-        _frontend?.SetSize(w, h);
-        _map?.SetSize(w, h);
+        _frontend?.SetSize(width, height);
+        _map?.SetSize(width, height);
         _map?.TriggerRepaint();
     }
 
@@ -645,7 +640,10 @@ public class MapLibreMapController : IMapLibreMapController
     {
         _runLoop  = new MbglRunLoop();
         _frontend = new MbglFrontend(_nativeWindow, IntPtr.Zero, w, h, _pixelRatio, OnRender);
+        // Persistent tile/resource cache (mbgl's default is :memory:), shared
+        // with MbglOfflineManager via MbglCache.DefaultPath.
         _map      = new MbglMap(_frontend, _runLoop,
+                                cachePath: MbglCache.DefaultPath,
                                 pixelRatio: _pixelRatio,
                                 observer: OnMapObserverEvent);
         _map.SetSize(w, h);
@@ -1047,13 +1045,29 @@ public class MapLibreMapController : IMapLibreMapController
     public void AddGeoJsonSource(string sourceName, string source)
     {
         if (!_styleReady || _style == null) return;
-        if (_style.HasSource(sourceName)) return;
-        var s = _style.AddGeoJsonSource(sourceName);
+        // Reuse the existing source if present so a re-add updates it in place
+        // instead of no-op'ing (which left overlay geometry stale).
+        var s = _style.HasSource(sourceName) ? _style.GetSource(sourceName)! : _style.AddGeoJsonSource(sourceName);
+        s.SetGeoJson(source);
+    }
+
+    public void AddGeoJsonSource(string sourceName, string source, string? optionsJson)
+    {
+        if (!_styleReady || _style == null) return;
+        // Options (clustering etc.) only apply at creation; an existing source
+        // keeps its original options and just gets new data.
+        var s = _style.HasSource(sourceName)
+            ? _style.GetSource(sourceName)!
+            : _style.AddGeoJsonSourceOptions(sourceName, optionsJson);
         s.SetGeoJson(source);
     }
 
     public void SetGeoJsonSource(string sourceName, string source)
-        => AddGeoJsonSource(sourceName, source);
+    {
+        if (!_styleReady || _style == null) return;
+        // Update the existing source's data in place (no layer churn).
+        _style.GetSource(sourceName)?.SetGeoJson(source);
+    }
 
     public void SetGeoJsonFeature(string sourceName, string geojsonFeature)
     {
@@ -1187,6 +1201,18 @@ public class MapLibreMapController : IMapLibreMapController
         _style.RemoveLayer(layerId);
     }
 
+    public void AddSpriteImage(string imageId, int width, int height, byte[] rgba, float pixelRatio = 1f, bool sdf = false)
+    {
+        if (!_styleReady || _style == null) return;
+        _style.AddImage(imageId, width, height, pixelRatio, sdf, rgba);
+    }
+
+    public void RemoveSpriteImage(string imageId)
+    {
+        if (!_styleReady || _style == null) return;
+        _style.RemoveImage(imageId);
+    }
+
     // -- Helpers ---------------------------------------------------------------
 
     private static void ApplyLayerMeta(MbglLayer layer, string? sourceLayer,
@@ -1223,6 +1249,30 @@ public class MapLibreMapController : IMapLibreMapController
         double bearing = 0, double pitch = 0, long durationMs = 500)
         => _map?.FlyTo(latitude, longitude, zoom, bearing, pitch, durationMs);
 
+    public void JumpTo(double latitude, double longitude, double zoom,
+        double bearing, double pitch,
+        double padTop, double padLeft, double padBottom, double padRight)
+        => _map?.JumpTo(latitude, longitude, zoom, bearing, pitch,
+                        padTop, padLeft, padBottom, padRight);
+
+    public void EaseTo(double latitude, double longitude, double zoom,
+        double bearing, double pitch,
+        double padTop, double padLeft, double padBottom, double padRight,
+        long durationMs = 300)
+        => _map?.EaseTo(latitude, longitude, zoom, bearing, pitch,
+                        padTop, padLeft, padBottom, padRight, durationMs);
+
+    public void FlyTo(double latitude, double longitude, double zoom,
+        double bearing, double pitch,
+        double padTop, double padLeft, double padBottom, double padRight,
+        long durationMs = 500)
+        => _map?.FlyTo(latitude, longitude, zoom, bearing, pitch,
+                       padTop, padLeft, padBottom, padRight, durationMs);
+
+    public void ScaleBy(double scale, double anchorX = double.NaN, double anchorY = double.NaN,
+        long durationMs = 0)
+        => _map?.ScaleBy(scale, anchorX, anchorY, durationMs);
+
     public void CancelTransitions() => _map?.CancelTransitions();
 
     public double GetZoom()    => _map?.Zoom    ?? 0;
@@ -1252,6 +1302,20 @@ public class MapLibreMapController : IMapLibreMapController
         string? layerIds = null)
         => _map?.QueryRenderedFeaturesInBox(x1, y1, x2, y2, layerIds);
 
+    public string? QuerySourceFeatures(string sourceId, string? sourceLayerIds = null,
+        string? filterJson = null)
+        => _map?.QuerySourceFeatures(sourceId, sourceLayerIds, filterJson);
+
+    public double? GetClusterExpansionZoom(string sourceId, string clusterFeatureJson)
+        => _map?.GetClusterExpansionZoom(sourceId, clusterFeatureJson);
+
+    public string? GetClusterChildren(string sourceId, string clusterFeatureJson)
+        => _map?.GetClusterChildren(sourceId, clusterFeatureJson);
+
+    public string? GetClusterLeaves(string sourceId, string clusterFeatureJson,
+        uint limit = 10, uint offset = 0)
+        => _map?.GetClusterLeaves(sourceId, clusterFeatureJson, limit, offset);
+
     // -- Tier 1 – gesture / interactive movement ───────────────────────────────
     public void SetGestureInProgress(bool inProgress) => _map?.SetGestureInProgress(inProgress);
     public void MoveBy(double dx, double dy, long durationMs = 0) => _map?.MoveBy(dx, dy, durationMs);
@@ -1265,6 +1329,9 @@ public class MapLibreMapController : IMapLibreMapController
 
     // -- Tier 1 – bounds read-back ─────────────────────────────────────────────
     public BoundOptions GetBounds() => _map?.GetBounds() ?? default;
+
+    public (double LatSW, double LonSW, double LatNE, double LonNE) GetVisibleBounds()
+        => _map?.LatLngBoundsForCamera() ?? default;
 
     // -- Tier 2 – tile LOD / prefetch ─────────────────────────────────────────
     public void SetPrefetchZoomDelta(int delta) => _map?.SetPrefetchZoomDelta(delta);
@@ -1326,7 +1393,7 @@ public class MapLibreMapController : IMapLibreMapController
         var gl  = new MapGestureListener(this);
         _gestureDetector = new GestureDetector(ctx, gl);
         _scaleDetector   = new ScaleGestureDetector(ctx, new MapScaleListener(this));
-        _surfaceView.SetOnTouchListener(new MapTouchListener(this));
+        _textureView.SetOnTouchListener(new MapTouchListener(this));
     }
 
     private class MapTouchListener : Java.Lang.Object, Android.Views.View.IOnTouchListener
@@ -1374,8 +1441,8 @@ public class MapLibreMapController : IMapLibreMapController
                             if (System.Math.Abs(delta) > 0.15f)
                             {
                                 double rad = delta * System.Math.PI / 180.0;
-                                double cx  = _ctrl._surfaceView.Width  / (2.0 * pr);
-                                double cy  = _ctrl._surfaceView.Height / (2.0 * pr);
+                                double cx  = _ctrl._textureView.Width  / (2.0 * pr);
+                                double cy  = _ctrl._textureView.Height / (2.0 * pr);
                                 const double r = 100.0;
                                 _ctrl._map?.RotateBy(
                                     cx + r, cy,
@@ -1521,26 +1588,32 @@ public class MapLibreMapController : IMapLibreMapController
             NativeMethods.AndroidReleaseWindow(_nativeWindow);
             _nativeWindow = IntPtr.Zero;
         }
+        _textureSurface?.Dispose();
+        _textureSurface = null;
         _styleReady = false;
     }
 }
 
-// -- Surface callback helper ---------------------------------------------------
+// -- TextureView surface listener helper ---------------------------------------
 
-internal sealed class SurfaceCallback : Java.Lang.Object, ISurfaceHolderCallback
+internal sealed class TextureSurfaceListener : Java.Lang.Object, TextureView.ISurfaceTextureListener
 {
-    public Action<ISurfaceHolder>? Created;
-    public Action<ISurfaceHolder, global::Android.Graphics.Format, int, int>? Changed;
-    public Action<ISurfaceHolder>? Destroyed;
+    public Action<Android.Graphics.SurfaceTexture, int, int>? Available;
+    public Action<Android.Graphics.SurfaceTexture, int, int>? SizeChanged;
+    public Action<Android.Graphics.SurfaceTexture>? Destroyed;
 
-    public void SurfaceCreated(ISurfaceHolder holder)
-        => Created?.Invoke(holder);
+    public void OnSurfaceTextureAvailable(Android.Graphics.SurfaceTexture surface, int width, int height)
+        => Available?.Invoke(surface, width, height);
 
-    public void SurfaceChanged(ISurfaceHolder holder,
-        global::Android.Graphics.Format format, int width, int height)
-        => Changed?.Invoke(holder, format, width, height);
+    public void OnSurfaceTextureSizeChanged(Android.Graphics.SurfaceTexture surface, int width, int height)
+        => SizeChanged?.Invoke(surface, width, height);
 
-    public void SurfaceDestroyed(ISurfaceHolder holder)
-        => Destroyed?.Invoke(holder);
+    public bool OnSurfaceTextureDestroyed(Android.Graphics.SurfaceTexture surface)
+    {
+        Destroyed?.Invoke(surface);
+        return true; // release the SurfaceTexture
+    }
+
+    public void OnSurfaceTextureUpdated(Android.Graphics.SurfaceTexture surface) { }
 }
 #endif

@@ -9,7 +9,7 @@
 | `MapLibreNative.Maui` | Core P/Invoke bindings to `mln-cabi.dll` — `MbglMap`, `MbglStyle`, `NativeMethods`, etc. |
 | `MapLibreNative.Maui.Vulkan` | Drop-in replacement for `MapLibreNative.Maui` that ships Vulkan-enabled (Windows/Android) and Metal-enabled (iOS/macCatalyst) native DLLs — same C# API, different renderer |
 | `MapLibreNative.Maui.Handlers` | .NET MAUI `MapLibreMap` view + handlers for Android, iOS, macCatalyst and Windows |
-| `MapLibreNative.Maui.WPF` | WPF `MlnMapHost` — a `HwndHost`-backed control for classic WPF apps |
+| `MapLibreNative.Maui.WPF` | WPF `MlnMapImage` — an in-tree `WriteableBitmap`-backed map control for classic WPF apps |
 
 ## Quick Start — MAUI
 
@@ -17,7 +17,8 @@
 // MauiProgram.cs
 using MapLibreNative.Maui.Handlers;
 
-builder.UseMapLibre();
+builder.ConfigureMauiHandlers(handlers =>
+    handlers.AddHandler(typeof(MapLibreMap), typeof(MapLibreMapHandler)));
 ```
 
 ```xml
@@ -33,7 +34,7 @@ xmlns:maplibre="clr-namespace:MapLibreNative.Maui.Handlers;assembly=MapLibreNati
 <!-- MainWindow.xaml -->
 xmlns:mlwpf="clr-namespace:MapLibreNative.Maui.WPF;assembly=MapLibreNative.Maui.WPF"
 
-<mlwpf:MlnMapHost x:Name="MapHost" StyleUrl="https://demotiles.maplibre.org/style.json" />
+<mlwpf:MlnMapImage x:Name="MapHost" StyleUrl="https://demotiles.maplibre.org/style.json" />
 ```
 
 ## API Reference

@@ -3,7 +3,7 @@
   <PropertyGroup>
     <!--
       WPF control library — no MAUI dependency.
-      Consumed by WPF apps (VistumblerCS and any other classic .NET WPF project)
+      Consumed by classic .NET WPF apps
       that want a MapLibre map backed by the same mln-cabi.dll used by MAUI.
     -->
     <TargetFrameworks>net9.0-windows10.0.19041.0;net10.0-windows10.0.19041.0</TargetFrameworks>
@@ -19,13 +19,14 @@
 
     <!-- NuGet package metadata -->
     <PackageId>MapLibreNative.Maui.WPF</PackageId>
-    <Description>WPF HwndHost control backed by MapLibre Native (mln-cabi). Provides a MapLibre map view for WPF applications without requiring a MAUI dependency. Consumers must also reference MapLibreNative.Maui (pulled in automatically as a dependency).</Description>
-    <PackageTags>maplibre;map;wpf;windows;hwndhhost</PackageTags>
+    <Description>WPF map control (MlnMapImage) backed by MapLibre Native (mln-cabi). Renders the map as an ordinary in-tree WPF Image — no HwndHost, no airspace — for WPF applications without requiring a MAUI dependency. MapLibreNative.Maui is pulled in automatically as a dependency.</Description>
+    <PackageTags>maplibre;map;wpf;windows</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- P/Invoke bindings + native DLL copy rules — shared with the MAUI path. -->
     <ProjectReference Include="..\bindings\MapLibreNative.Maui.csproj" />
   </ItemGroup>
+
 
 </Project>

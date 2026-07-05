@@ -1,83 +1,54 @@
-﻿using MapLibreNative.Maui.Handlers;
+using System.Text.Json;
+using MapLibreNative.Maui.Handlers.EventArgs;
 
 namespace MauiSample;
 
 public partial class MarkersPage : ContentPage
 {
-    private const string SourceId = "landmarks";
-    private const string CircleLayerId = "landmarks-circle";
-    private const string LabelLayerId = "landmarks-label";
-
-    // Five world landmarks as a GeoJSON FeatureCollection of Points.
-    private const string LandmarksGeoJson = """
-        {
-          "type": "FeatureCollection",
-          "features": [
-            { "type": "Feature", "geometry": { "type": "Point", "coordinates": [-0.1246, 51.5007] },  "properties": { "name": "Big Ben" } },
-            { "type": "Feature", "geometry": { "type": "Point", "coordinates": [2.2945, 48.8584] },   "properties": { "name": "Eiffel Tower" } },
-            { "type": "Feature", "geometry": { "type": "Point", "coordinates": [12.4922, 41.8902] },  "properties": { "name": "Colosseum" } },
-            { "type": "Feature", "geometry": { "type": "Point", "coordinates": [-43.2104, -22.9519] },"properties": { "name": "Christ the Redeemer" } },
-            { "type": "Feature", "geometry": { "type": "Point", "coordinates": [139.7673, 35.6836] }, "properties": { "name": "Tokyo Tower" } }
-          ]
-        }
-        """;
-
     private readonly MarkersViewModel _vm = new();
-    private bool _markersAdded = false;
 
     public MarkersPage()
     {
         InitializeComponent();
         BindingContext = _vm;
+        // Pins are now created from the bound ObservableCollection via ItemsSource + ItemTemplate.
     }
 
-    private void OnMapReady(object? sender, EventArgs e)
+    private void OnMapReady(object? sender, MapReadyEventArgs e)
     {
-        _vm.Status = "Map ready";
+        _vm.Status = "Tap a marker to identify it";
     }
 
-    private void OnAddMarkers(object? sender, EventArgs e)
+    private void OnCameraIdle(object? sender, EventArgs e)
     {
-        var ctrl = (Map.Handler as MapLibreMapHandler)?.Controller;
-        if (ctrl == null) { _vm.Status = "Map not ready"; return; }
-        if (_markersAdded) { _vm.Status = "Landmarks already on map"; return; }
+        var region = Map.VisibleRegion;
+        _vm.RegionText = region is null
+            ? "Visible region: —"
+            : $"Visible region: center ({region.Center.Latitude:F3}, {region.Center.Longitude:F3}), " +
+              $"span ±{region.LatitudeDegrees / 2:F3}°, ±{region.LongitudeDegrees / 2:F3}°";
+    }
 
-        ctrl.AddGeoJsonSource(SourceId, LandmarksGeoJson);
+    private void OnMapClick(object? sender, MapClickEventArgs e)
+    {
+        // Query rendered features at the tap; Pins carry their label in the feature properties.
+        var json = Map.QueryRenderedFeaturesInBox(e.ScreenX, e.ScreenY, thresholdPx: 12);
+        var label = ExtractLabel(json);
+        _vm.Status = label != null ? $"Tapped marker: {label}" : "No marker here — tap a pin";
+    }
 
-        ctrl.AddCircleLayer(CircleLayerId, SourceId, null, null, new Dictionary<string, object?>
+    private static string? ExtractLabel(string? geojson)
+    {
+        if (string.IsNullOrEmpty(geojson)) return null;
+        try
         {
-            ["circle-radius"] = 8.0,
-            ["circle-color"] = "#E55E5E",
-            ["circle-stroke-color"] = "#ffffff",
-            ["circle-stroke-width"] = 2.0
-        });
-
-        ctrl.AddSymbolLayer(LabelLayerId, SourceId, null, null, new Dictionary<string, object?>
-        {
-            ["text-field"] = "{name}",
-            ["text-size"] = 12.0,
-            ["text-offset"] = new[] { 0.0, 1.5 },
-            ["text-anchor"] = "top",
-            ["text-color"] = "#333333",
-            ["text-halo-color"] = "#ffffff",
-            ["text-halo-width"] = 1.0
-        });
-
-        _markersAdded = true;
-        _vm.Status = "5 landmarks added";
-    }
-
-    private void OnRemoveMarkers(object? sender, EventArgs e)
-    {
-        var ctrl = (Map.Handler as MapLibreMapHandler)?.Controller;
-        if (ctrl == null) { _vm.Status = "Map not ready"; return; }
-        if (!_markersAdded) { _vm.Status = "No landmarks to remove"; return; }
-
-        ctrl.RemoveLayer(LabelLayerId);
-        ctrl.RemoveLayer(CircleLayerId);
-        ctrl.RemoveSource(SourceId);
-
-        _markersAdded = false;
-        _vm.Status = "Landmarks removed";
+            using var doc = JsonDocument.Parse(geojson);
+            if (!doc.RootElement.TryGetProperty("features", out var features)) return null;
+            foreach (var f in features.EnumerateArray())
+                if (f.TryGetProperty("properties", out var props) &&
+                    props.TryGetProperty("label", out var label))
+                    return label.GetString();
+        }
+        catch { /* not a feature collection / no label */ }
+        return null;
     }
 }

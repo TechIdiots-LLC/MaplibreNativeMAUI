@@ -20,9 +20,17 @@ mln-cabi  (C++ native library — flat C ABI)
        ▼
 MapLibreNative.Maui  (C# typed wrappers: MbglMap, MbglStyle, MbglFrontend …)
        │
-       ▼
-MapLibreNative.Maui.Handlers  (MAUI controls, handlers, sources, layers)
+       ├───────────────────────────────┬───────────────────────────────┐
+       ▼                               ▼                               ▼
+MapLibreNative.Maui.Handlers    MapLibreNative.Maui.WPF        (any consumer of the
+ (MAUI MapLibreMap + handlers,   (WPF MlnMapImage control)      typed C# bindings)
+  sources, layers, overlays;
+  Android/iOS/macOS/Windows)
 ```
+
+Both the MAUI handlers and the WPF control render the map as an **in-tree framework
+visual** (WinUI/WPF `Image` fed by `glReadPixels`, Android `TextureView`, iOS/mac `MTKView`)
+with their on-map controls as ordinary framework children — see [Surface integration](#surface-integration-how-the-rendered-map-reaches-the-ui).
 
 The `mln-cabi` native library is compiled per-platform:
 
@@ -35,6 +43,23 @@ The `mln-cabi` native library is compiled per-platform:
 | Windows | Vulkan | `native-windows-vulkan.yml` |
 
 MapLibre Native is included as a **git submodule** at `dependencies/maplibre-native`.
+
+### Surface integration (how the rendered map reaches the UI)
+
+On the desktop compositors that enforce *airspace* (WPF and WinUI), the native GL surface and the
+map's controls used to float above the framework content (an `HwndHost`/`WS_POPUP` window with the
+controls as separate top-level popups). Every platform now renders the map as an ordinary **in-tree
+framework visual** with its controls as real framework children. See
+[docs/design/in-tree-map-surface.md](docs/design/in-tree-map-surface.md).
+
+| Platform | Map surface | Controls |
+|---|---|---|
+| WPF | `MlnMapImage` — WPF `Image` backed by a `WriteableBitmap` (pixels transferred each frame via `glReadPixels`) | real WPF children |
+| MAUI Windows | WinUI `Image` + `WriteableBitmap` via `glReadPixels` | real XAML children |
+| Android | `TextureView` (an ordinary in-tree `View`) | native subviews |
+| iOS / macCatalyst | `MTKView` | native subviews |
+
+The old airspace-based paths (WPF `HwndHost`/`MlnMapHost`, MAUI Windows `WS_POPUP`) have been removed.
 
 ---
 
@@ -67,7 +92,7 @@ MapLibre Native is included as a **git submodule** at `dependencies/maplibre-nat
 ### Register the handler in MauiProgram.cs
 
 ```csharp
-using Maui.MapLibre.Handlers;
+using MapLibreNative.Maui.Handlers;
 
 public static class MauiProgram
 {
@@ -75,10 +100,10 @@ public static class MauiProgram
     {
         var builder = MauiApp.CreateBuilder();
         builder
-            .UseMaui()
+            .UseMauiApp<App>()
             .ConfigureMauiHandlers(handlers =>
             {
-                handlers.AddMapLibreHandlers();
+                handlers.AddHandler(typeof(MapLibreMap), typeof(MapLibreMapHandler));
             });
         return builder.Build();
     }
@@ -101,7 +126,13 @@ public static class MauiProgram
 | `ScrollGesturesEnabled` | `bool` | Enable pan gesture |
 | `TiltGesturesEnabled` | `bool` | Enable pitch gesture |
 | `ZoomGesturesEnabled` | `bool` | Enable pinch-to-zoom |
-| `CompassEnabled` | `bool` | Show compass |
+| `ShowNavigationControls` | `bool` | Show the zoom / rotate-pitch d-pad overlay (default `true`) |
+| `ShowGpsControl` | `bool` | Show the GPS tracking control overlay (default `true`) |
+| `ShowAttributionControl` | `bool` | Show the attribution overlay (default `true`) |
+| `CustomAttribution` | `string` | Extra attribution text appended after source-derived attributions |
+| `NavigationControlPosition` / `GpsControlPosition` / `AttributionControlPosition` | `MapControlCorner` | Corner each control is anchored to |
+| `ItemsSource` / `ItemTemplate` | — | Data-bound overlay elements, see [Data binding](#data-binding-itemssource) |
+| `VisibleRegion` | `MapSpan?` | Read-only visible region, refreshed on camera idle |
 
 ### Events (as `ICommand` bindable properties)
 
@@ -110,8 +141,10 @@ public static class MauiProgram
 | `MapReadyCommand` | Native map is initialised |
 | `StyleLoadedCommand` | Style has finished loading |
 | `DidBecomeIdleCommand` | Map has finished all pending operations |
+| `CameraMoveStartedCommand` | Camera movement has started (reason `int`) |
 | `CameraMoveCommand` | Camera is moving |
 | `CameraIdleCommand` | Camera has stopped |
+| `CameraTrackingChangedCommand` / `CameraTrackingDismissedCommand` | Location-tracking mode changed / was dismissed |
 | `MapClickCommand` | User taps the map (`LatLng`) |
 | `MapLongClickCommand` | User long-presses the map (`LatLng`) |
 | `UserLocationUpdateCommand` | Device location has changed |
@@ -135,6 +168,26 @@ Declare sources as child elements of `MapLibreMap`, or add them programmatically
 <sources:VectorSource SourceName="roads" TileUrl="https://example.com/tiles.json" />
 ```
 
+### Clustered GeoJSON sources
+
+Pass style-spec GeoJSON source options (clustering etc.) when adding a source
+programmatically:
+
+```csharp
+// Cluster points within 50px, up to zoom 14
+controller.AddGeoJsonSource("aps", featureCollectionJson,
+    "{\"cluster\":true,\"clusterRadius\":50,\"clusterMaxZoom\":14}");
+```
+
+Cluster features carry `cluster: true`, `cluster_id`, and `point_count` properties.
+Drill into a cluster returned by a rendered-features query:
+
+```csharp
+double? zoom  = controller.GetClusterExpansionZoom("aps", clusterFeatureJson);
+string? kids  = controller.GetClusterChildren("aps", clusterFeatureJson);
+string? items = controller.GetClusterLeaves("aps", clusterFeatureJson, limit: 25);
+```
+
 ---
 
 ## Layers
@@ -150,8 +203,9 @@ Declare layers as child elements of `MapLibreMap`. Each layer references a `Sour
 | `RasterLayer` | `raster` |
 | `HeatmapLayer` | `heatmap` |
 | `FillExtrusionLayer` | `fill-extrusion` |
-| `HillshadeLayer` | `hillshade` |
-| `ColorReliefLayer` | `color-relief` |
+
+`hillshade` layers can be added programmatically via `controller.AddHillshadeLayer(...)`;
+`color-relief` (and any other spec layer type) via [`controller.AddLayerJson(...)`](#generic-json-sources-and-layers).
 
 ```xaml
 <layers:FillLayer SourceName="polygons"
@@ -178,6 +232,62 @@ public IDictionary<string, object?> LineProperties => new Dictionary<string, obj
 
 ---
 
+## Overlay elements
+
+For the common "just draw a marker / line / shape here" cases you can use the high-level overlay
+elements instead of wiring sources and layers by hand. They mirror the
+`Microsoft.Maui.Controls.Maps` element model (`Pin`, `Polyline`, `Polygon`, `Circle`) but are
+declared as child elements of `MapLibreMap`. Each element materialises itself as a GeoJSON source
+plus style layer(s) when the style loads, so it renders **inside** the map surface and composites
+correctly on every platform. Changing a property (or mutating a `Geopath` collection) rebuilds it.
+
+| XAML type | Draws | Key properties |
+|---|---|---|
+| `Pin` | SDF symbol marker (icon + optional label) | `Location`, `Label`, `Address`, `TintColor`/`IconColor`; `MarkerClicked` |
+| `Polyline` | Line | `Geopath` (`IList<Location>`), `StrokeColor`, `StrokeWidth` |
+| `Polygon` | Filled area | `Geopath`, `FillColor`, `StrokeColor`, `StrokeWidth` |
+| `Circle` | Circle of a geographic radius | `Center`, `Radius` (`Distance`), `FillColor`, `StrokeColor`, `StrokeWidth` |
+
+```xaml
+xmlns:overlays="clr-namespace:MapLibreNative.Maui.Handlers.Overlays;assembly=MapLibreNative.Maui.Handlers"
+
+<maplibre:MapLibreMap StyleUrl="https://demotiles.maplibre.org/style.json">
+    <overlays:Pin Location="{Binding Home}" Label="Home" TintColor="Crimson" />
+    <overlays:Circle Center="{Binding Home}" Radius="{Binding Range}"
+                     FillColor="#3300A2FF" StrokeColor="#00A2FF" StrokeWidth="2" />
+</maplibre:MapLibreMap>
+```
+
+`Circle.Radius` uses the ported `MapLibreNative.Maui.Geometry.Distance` (e.g. `Distance.FromMeters(500)`),
+and the circle geometry is generated with `GeographyUtils.ToCircumferencePositions`.
+
+`Pin` renders as a `SymbolLayer` backed by an SDF sprite (`mln_marker`), so `IconColor`/`TintColor`
+tinting and text labels work out of the box. `MarkerClicked` is exposed but must be wired from the
+map's click/feature-query pipeline.
+
+### Data binding (`ItemsSource`)
+
+Instead of declaring overlay children statically you can bind a collection to `MapLibreMap.ItemsSource`
+and supply an `ItemTemplate` (or `ItemTemplateSelector`) whose `DataTemplate` produces an overlay
+element. Each item becomes that element's `BindingContext`, mirroring
+`Microsoft.Maui.Controls.Maps.Map`:
+
+```xaml
+<maplibre:MapLibreMap ItemsSource="{Binding Stops}">
+    <maplibre:MapLibreMap.ItemTemplate>
+        <DataTemplate>
+            <overlays:Pin Location="{Binding Coordinate}" Label="{Binding Name}" />
+        </DataTemplate>
+    </maplibre:MapLibreMap.ItemTemplate>
+</maplibre:MapLibreMap>
+```
+
+Collections implementing `INotifyCollectionChanged` (e.g. `ObservableCollection<T>`) sync
+add/remove/replace/reset automatically. The template must create a `MapOverlayElement` (`Pin`,
+`Polyline`, `Polygon`, or `Circle`).
+
+---
+
 ## Camera
 
 Use the controller (obtained from `MapReadyCommand` or `StyleLoadedCommand`) to manipulate the camera:
@@ -192,12 +302,40 @@ controller.EaseTo(51.5, -0.1, zoom: 14, bearing: 0, pitch: 45, durationMs: 800);
 // Animated fly-to
 controller.FlyTo(51.5, -0.1, zoom: 14, bearing: 0, pitch: 0, durationMs: 1500);
 
-// Fit bounds with padding
-controller.SetBounds(latSw: 51.4, lonSw: -0.2, latNe: 51.6, lonNe: 0.0);
+// Constrain the camera to a bounding box (optionally with zoom/pitch limits)
+controller.SetCameraTargetBounds(new LatLngBounds(
+    ne: new LatLng(51.6, 0.0), sw: new LatLng(51.4, -0.2)));
+
+// Fit a region into view (MapSpan overloads of JumpTo / EaseTo / FlyTo)
+controller.EaseTo(MapSpan.FromCenterAndRadius(
+    new MapCoordinate(51.5, -0.1), Distance.FromKilometers(5)));
 
 // Coordinate conversion
-var (x, y) = controller.PixelForLatLng(51.5, -0.1);
-var (lat, lon) = controller.LatLngForPixel(x, y);
+var (x, y) = controller.LatLngToScreenPoint(51.5, -0.1);
+LatLng ll  = controller.ScreenPointToLatLng(x, y);
+
+// Edge padding: centre the target in the *unobscured* part of the viewport
+// (padding order: top, left, bottom, right, in screen pixels). Useful when a
+// panel or overlay covers part of the map. Pass double.NaN for zoom / bearing /
+// pitch to keep the current value.
+controller.EaseTo(51.5, -0.1, zoom: 14, bearing: 0, pitch: 0,
+                  padTop: 0, padLeft: 300, padBottom: 0, padRight: 0);
+
+// Anchored zoom: multiply the map scale (2.0 = one zoom level in),
+// optionally about a screen point
+controller.ScaleBy(2.0, anchorX: x, anchorY: y, durationMs: 250);
+```
+
+The map also exposes the currently visible region for read-back. `MapLibreMap.VisibleRegion`
+(a `MapSpan?`) is refreshed whenever the camera becomes idle and raises `PropertyChanged` for data
+binding; `GetVisibleRegion()` reads it on demand:
+
+```csharp
+if (map.VisibleRegion is { } region)
+{
+    var center = region.Center;                 // MapCoordinate
+    var span = (region.LatitudeDegrees, region.LongitudeDegrees);
+}
 ```
 
 ---
@@ -210,6 +348,12 @@ string? geojson = controller.QueryRenderedFeaturesAtPoint(x, y, layerIds: "my-la
 
 // Query features in a bounding box
 string? geojson = controller.QueryRenderedFeaturesInBox(x1, y1, x2, y2);
+
+// Query all features in a source's *data*, regardless of visibility
+// (sourceLayerIds is required for vector sources, ignored for GeoJSON;
+//  filterJson is an optional style-spec filter expression)
+string? all = controller.QuerySourceFeatures("my-source",
+    sourceLayerIds: null, filterJson: "[\"==\",[\"get\",\"type\"],\"wifi\"]");
 ```
 
 The return value is a GeoJSON `FeatureCollection` string, or `null` if the renderer is not ready.
@@ -260,6 +404,75 @@ controller.ReduceMemoryUse();
 // Write renderer diagnostics to the log
 controller.DumpDebugLogs();
 ```
+
+---
+
+## Offline Maps
+
+### Persistent cache
+
+Every map surface uses a persistent tile/resource cache database by default
+(`MbglCache.DefaultPath` — `{LocalApplicationData}/MapLibreNative.Maui/{processName}/cache.db`),
+so tiles survive app restarts.
+
+### Offline mode
+
+MapLibre's network access can be toggled process-wide. When offline, all network
+requests are suspended and only cached resources are served; going back online
+resumes queued requests.
+
+```csharp
+using MapLibreNative.Maui;
+
+MbglNetwork.Online = false;  // force offline — serve from cache only
+MbglNetwork.Online = true;   // resume network access
+```
+
+### Offline regions
+
+`MbglOfflineManager` downloads complete regions (style + tiles + glyphs) for
+offline use. It shares the map's cache database by default, so downloaded
+regions are rendered by the map automatically:
+
+```csharp
+using MapLibreNative.Maui;
+
+using var offline = new MbglOfflineManager();   // uses MbglCache.DefaultPath
+
+// Progress/error events arrive on MapLibre's database thread — marshal to
+// your UI thread before touching UI. The observer's Complete flag is the
+// authoritative completion signal.
+offline.RegionProgress += p => Console.WriteLine(
+    $"region {p.RegionId}: {p.CompletedResources}/{p.RequiredResources} complete={p.Complete}");
+offline.RegionError    += e => Console.WriteLine($"region {e.RegionId}: {e.Message}");
+
+// Create a region (style URL + bounds + zoom range) and start downloading
+var region = await offline.CreateRegionAsync(
+    "https://demotiles.maplibre.org/style.json",
+    latSw: 51.4, lonSw: -0.3, latNe: 51.6, lonNe: 0.0,
+    minZoom: 0, maxZoom: 12,
+    metadata: Encoding.UTF8.GetBytes("{\"name\":\"London\"}"));
+offline.ObserveRegion(region.Id);
+offline.SetDownloadState(region.Id, active: true);
+
+// Inspect / manage
+var regions = await offline.ListRegionsAsync();
+var status  = await offline.GetRegionStatusAsync(region.Id);
+byte[]? meta = offline.GetRegionMetadata(region.Id);
+await offline.DeleteRegionAsync(region.Id);
+
+// Side-load a prebuilt cache database
+var merged = await offline.MergeDatabaseAsync(@"C:\data\prepared-regions.db");
+
+// Ambient cache maintenance
+await offline.SetMaximumAmbientCacheSizeAsync(100UL * 1024 * 1024);
+await offline.ClearAmbientCacheAsync();
+await offline.PackDatabaseAsync();
+```
+
+A geometry overload (`CreateRegionAsync(styleUrl, geometryGeoJson, …)`) downloads
+tiles covering an arbitrary GeoJSON geometry instead of a bounding box. See the
+MAUI sample's **Offline** tab for a working download → offline-toggle demo.
 
 ---
 
@@ -325,20 +538,25 @@ The `MbglDebugOptions` enum in `MapLibreNative.Maui` names the individual bits (
 
 ## WPF Usage
 
-For WPF apps (not MAUI), use `MlnMapHost` from `MapLibreNative.Maui.WPF`:
+For classic WPF apps (not MAUI), use `MlnMapImage` from `MapLibreNative.Maui.WPF`:
 
 ```xml
 xmlns:mlwpf="clr-namespace:MapLibreNative.Maui.WPF;assembly=MapLibreNative.Maui.WPF"
 
-<mlwpf:MlnMapHost x:Name="MapHost"
-                  StyleUrl="https://demotiles.maplibre.org/style.json"
-                  ShowNavigationControls="True"
-                  MapReady="MapHost_MapReady"
-                  StyleLoaded="MapHost_StyleLoaded"
-                  CameraIdle="MapHost_CameraIdle" />
+<mlwpf:MlnMapImage x:Name="MapHost"
+                   StyleUrl="https://demotiles.maplibre.org/style.json"
+                   ShowNavigationControls="True"
+                   MapReady="MapHost_MapReady"
+                   StyleLoaded="MapHost_StyleLoaded"
+                   CameraIdle="MapHost_CameraIdle" />
 ```
 
-`MlnMapHost` is a `HwndHost` that owns a child HWND rendered with OpenGL (WGL). It supports the same camera, source, layer, and query operations as the MAUI handler. See `sample/WpfExample` for a full working example.
+`MlnMapImage` renders MapLibre into a WPF `Image` backed by a `WriteableBitmap` (pixels transferred
+each frame via `glReadPixels`), so the map is an ordinary WPF visual and its nav / GPS / attribution
+controls are real WPF children — no `HwndHost`, no floating `Popup`s, correct z-order/clipping, and
+input via normal WPF events. It supports the same camera, source, layer, and query operations as the
+MAUI handler. See `sample/WpfExample` for a full working example, and
+[docs/design/in-tree-map-surface.md](docs/design/in-tree-map-surface.md) for the design.
 
 ---
 
@@ -391,3 +609,4 @@ This project is **BSD 2-Clause** licensed — see [LICENSE](/LICENSE).
 | [MapLibre Native](https://github.com/maplibre/maplibre-native) | BSD 2-Clause | Linked natively via `mln-cabi` |
 | [maplibre-native-ffi](https://github.com/maplibre/maplibre-native-ffi) | BSD 2-Clause | Reference only — no code included; project structure and C ABI conventions (typed handles, status codes, log callback) informed the design of `mln-cabi` |
 | Original [maplibre-maui](https://github.com/btrounson/maplibre-maui) by Benjamin Trounson | MIT | Portions adapted |
+| [.NET MAUI](https://github.com/dotnet/maui) (`src/Core/maps`) | MIT | Map primitives in `bindings/Geometry` (`MapSpan`, `Distance`, `GeographyUtils`, `MapType`) adapted from the official MAUI maps source; its handler + property/command mapper pattern also informed the design of `MapLibreNative.Maui.Handlers` |

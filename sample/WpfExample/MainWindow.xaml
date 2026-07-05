@@ -32,6 +32,16 @@
 
             <Separator Margin="4,0" />
 
+            <Label Content="Pins:" VerticalAlignment="Center" />
+            <Button x:Name="BtnAddPins" Content="Add City Pins"
+                    Click="BtnAddPins_Click" Margin="2,0" Padding="6,2"
+                    ToolTip="Bind an ObservableCollection&lt;MlnMapMarker&gt; to MlnMapImage.ItemsSource" />
+            <Button x:Name="BtnClearPins" Content="Clear Pins"
+                    Click="BtnClearPins_Click" Margin="2,0" Padding="6,2"
+                    ToolTip="Clear the bound marker collection (updates the map live)" />
+
+            <Separator Margin="4,0" />
+
             <Button x:Name="BtnDataDrivenTest" Content="Run Data-Driven Circle Test"
                     Click="BtnDataDrivenTest_Click" Margin="2,0" Padding="6,2"
                     ToolTip="Adds runtime circle layers using literal, property-function (stops), case-expression and match-expression circle-color, then logs how many features render for each — see %TEMP%\maplibre_datadriven_test.log" />
@@ -80,25 +90,21 @@
 
         <!-- ── Map ── -->
         <!--
-            MlnMapHost is an HwndHost — it owns a child HWND backed by OpenGL.
-            StyleUrl, ShowNavigationControls and events are set here; everything
-            else (pan, zoom, double-tap) is handled internally by the control.
-
-            The *ControlPosition properties anchor each overlay to a corner
-            (TopLeft/TopRight/BottomLeft/BottomRight). Controls sharing a corner
-            stack automatically — here navigation and GPS both sit top-right, so
-            the GPS panel stacks below the navigation panel.
+            MlnMapImage renders the map into a WriteableBitmap shown by an ordinary
+            WPF Image element.  No airspace: WPF content draws over the map normally.
+            Nav / GPS / attribution controls are real XAML children stacked inside
+            the Grid at the corners specified by the *ControlPosition properties.
         -->
-        <mlwpf:MlnMapHost x:Name="MapHost"
-                           StyleUrl="https://demotiles.maplibre.org/style.json"
-                           ShowNavigationControls="True"
-                           ShowGpsControl="True"
-                           NavigationControlPosition="TopRight"
-                           GpsControlPosition="TopRight"
-                           AttributionControlPosition="BottomLeft"
-                           MapReady="MapHost_MapReady"
-                           StyleLoaded="MapHost_StyleLoaded"
-                           CameraIdle="MapHost_CameraIdle" />
+        <mlwpf:MlnMapImage x:Name="MapHost"
+                            StyleUrl="https://demotiles.maplibre.org/style.json"
+                            ShowNavigationControls="True"
+                            ShowGpsControl="True"
+                            NavigationControlPosition="TopRight"
+                            GpsControlPosition="TopRight"
+                            AttributionControlPosition="BottomLeft"
+                            MapReady="MapHost_MapReady"
+                            StyleLoaded="MapHost_StyleLoaded"
+                            CameraIdle="MapHost_CameraIdle" />
     </DockPanel>
 
 </Window>
