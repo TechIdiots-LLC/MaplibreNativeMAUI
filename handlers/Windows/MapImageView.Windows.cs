@@ -104,6 +104,7 @@ public sealed class MapImageView : IDisposable
         View.PointerPressed       += OnPointerPressed;
         View.PointerMoved         += OnPointerMoved;
         View.PointerReleased      += OnPointerReleased;
+        View.PointerCanceled      += OnPointerCanceled;
         View.PointerWheelChanged  += OnPointerWheel;
         View.Tapped               += OnTapped;
         View.DoubleTapped         += OnDoubleTapped;
@@ -250,6 +251,13 @@ public sealed class MapImageView : IDisposable
         _map.OnPanEnd();
         _map.TriggerRepaint();
         _renderNeedsUpdate = true;
+    }
+
+    private void OnPointerCanceled(object sender, WUXI.PointerRoutedEventArgs e)
+    {
+        if (_map == null || !_isDragging) return;
+        _isDragging = false;
+        _map.OnPanEnd();
     }
 
     private void OnPointerWheel(object sender, WUXI.PointerRoutedEventArgs e)

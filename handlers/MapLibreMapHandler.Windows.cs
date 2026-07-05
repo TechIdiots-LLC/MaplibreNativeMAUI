@@ -63,11 +63,6 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
         }
     }
 
-    // Input tracking
-    private bool   _isDragging;
-    private double _lastPointerX;
-    private double _lastPointerY;
-
     public IMapLibreMapController Controller => _controller;
 
     public MapLibreMapHandler() : base(PropertyMapper) { }
@@ -110,8 +105,12 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
         if (_hostWindow != null)
             _hostWindow.SizeChanged += OnHostWindowSizeChanged;
 
+        // Pointer input is handled entirely by MapImageView on the map surface itself
+        // (with an OriginalSource guard so overlay buttons don't drive the map).
+        // Do NOT wire pointer events on the outer Grid here: the map surface marks its
+        // events Handled, so handler-level events would fire only for presses on the
+        // nav/GPS/attribution overlays — panning the map "through" those buttons.
         var view = _controller.View;
-        AttachInputEvents(view);
         HDiag("CreatePlatformView (handler connected)");
         return view;
     }
@@ -143,79 +142,6 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
                     _controller?.RefreshPosition();
                 }
             });
-    }
-
-    // ── Input events ──────────────────────────────────────────────────────────
-
-    private void AttachInputEvents(Microsoft.UI.Xaml.Controls.Grid view)
-    {
-        view.PointerWheelChanged += OnPointerWheelChanged;
-        view.PointerPressed      += OnPointerPressed;
-        view.PointerMoved        += OnPointerMoved;
-        view.PointerReleased     += OnPointerReleased;
-        view.PointerCanceled     += OnPointerCanceled;
-        view.DoubleTapped        += OnDoubleTapped;
-        // Pinch-to-zoom is handled at the Win32 level via WM_GESTURE in the
-        // popup HWND's WndProc.  Do NOT use XAML ManipulationDelta — even
-        // Scale-only mode triggers an arithmetic overflow in WinUI 3's internal
-        // manipulation tracker on precision touchpads
-        // (microsoft/microsoft-ui-xaml#8084).
-    }
-
-    private void OnPointerWheelChanged(object sender, PointerRoutedEventArgs e)
-    {
-        var pt    = e.GetCurrentPoint((UIElement)sender);
-        double delta = pt.Properties.MouseWheelDelta / 120.0; // positive = zoom in
-        double cx = pt.Position.X;
-        double cy = pt.Position.Y;
-        _controller.OnPointerWheelChanged(delta, cx, cy);
-        e.Handled = true;
-    }
-
-    private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
-    {
-        var el = (UIElement)sender;
-        el.CapturePointer(e.Pointer);
-        var pt = e.GetCurrentPoint(el);
-        _lastPointerX = pt.Position.X;
-        _lastPointerY = pt.Position.Y;
-        _isDragging   = true;
-        _controller.OnPointerPressed(pt.Position.X, pt.Position.Y);
-        e.Handled = true;
-    }
-
-    private void OnPointerMoved(object sender, PointerRoutedEventArgs e)
-    {
-        if (!_isDragging) return;
-        var pt = e.GetCurrentPoint((UIElement)sender);
-        double dx = pt.Position.X - _lastPointerX;
-        double dy = pt.Position.Y - _lastPointerY;
-        _lastPointerX = pt.Position.X;
-        _lastPointerY = pt.Position.Y;
-        _controller.OnPointerMoved(dx, dy);
-        e.Handled = true;
-    }
-
-    private void OnPointerReleased(object sender, PointerRoutedEventArgs e)
-    {
-        if (!_isDragging) return;
-        ((UIElement)sender).ReleasePointerCapture(e.Pointer);
-        _isDragging = false;
-        _controller.OnPointerReleased();
-        e.Handled = true;
-    }
-
-    private void OnPointerCanceled(object sender, PointerRoutedEventArgs e)
-    {
-        _isDragging = false;
-        _controller.OnPointerReleased();
-    }
-
-    private void OnDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
-    {
-        var pos = e.GetPosition((UIElement)sender);
-        _controller.OnDoubleTapped(pos.X, pos.Y);
-        e.Handled = true;
     }
 
     // ── PropertyMapper update methods ─────────────────────────────────────────
@@ -267,14 +193,6 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
             _hostWindow.SizeChanged -= OnHostWindowSizeChanged;
             _hostWindow = null;
         }
-
-        // Unhook input events so they can't fire after the controller is gone.
-        platformView.PointerWheelChanged -= OnPointerWheelChanged;
-        platformView.PointerPressed      -= OnPointerPressed;
-        platformView.PointerMoved        -= OnPointerMoved;
-        platformView.PointerReleased     -= OnPointerReleased;
-        platformView.PointerCanceled     -= OnPointerCanceled;
-        platformView.DoubleTapped        -= OnDoubleTapped;
 
         base.DisconnectHandler(platformView);
     }

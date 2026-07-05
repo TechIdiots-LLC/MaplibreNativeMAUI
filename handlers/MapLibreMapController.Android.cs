@@ -429,6 +429,9 @@ public class MapLibreMapController : IMapLibreMapController
 
         _navPanel = new LinearLayout(ctx) { Orientation = Orientation.Vertical };
         _navPanel.SetBackgroundColor(Android.Graphics.Color.Argb(230, 255, 255, 255));
+        // Consume touches the child buttons don't claim (dpad corner cells, dividers);
+        // otherwise they fall through to the map TextureView and pan the map.
+        _navPanel.Clickable = true;
 
         // Round rotate/pitch d-pad on top.
         var dpad = BuildDpad(ctx, btn, d);
@@ -534,6 +537,8 @@ public class MapLibreMapController : IMapLibreMapController
 
         _gpsPanel = new LinearLayout(ctx) { Orientation = Orientation.Vertical };
         _gpsPanel.SetBackgroundColor(Android.Graphics.Color.Argb(230, 255, 255, 255));
+        // Consume touches not claimed by the buttons so they don't pan the map below.
+        _gpsPanel.Clickable = true;
 
         _gpsTrackingIcon = MakeOverlayButton(ctx, "\u25CB", btn); // ○
         _gpsTrackingIcon.Click += (_, _) => CycleGpsMode();
