@@ -5,6 +5,9 @@
 - _...Add new stuff here..._
 
 ### 🐞 Bug fixes
+
+## 4.1.1
+### 🐞 Bug fixes
 - **WPF: attribution not updated when sources are added after style load** — `MlnMapImage` only refreshed its attribution overlay on `onDidFinishLoadingStyle`, so sources added dynamically after the style was ready (e.g. via `AddVectorSourceUrl`) never contributed their TileJSON attribution strings. Fixed by also refreshing attribution in response to `onSourceChanged`, which fires when a source's TileJSON metadata finishes loading.
 
 ## 4.1.0
