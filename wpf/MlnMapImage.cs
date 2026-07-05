@@ -206,6 +206,15 @@ public partial class MlnMapImage : Grid
     public MlnMapImage()
     {
         Background = Brushes.Transparent; // ensure hit-testing over the whole map
+
+        // Shield the control's own UI (nav d-pad, GPS, attribution) from host-app
+        // implicit styles. An app-level <Style TargetType="TextBlock"> with e.g.
+        // Margin="5,2" otherwise leaks into these elements — the d-pad arrows live
+        // in ~10px grid cells, so an inherited 5px side margin collapses them to
+        // zero width and they disappear. An empty implicit style registered here
+        // is resolved first for every TextBlock in this subtree.
+        Resources.Add(typeof(TextBlock), new Style(typeof(TextBlock)));
+
         // GL renders bottom-left origin; WPF WriteableBitmap is top-left → flip vertically.
         _image.RenderTransformOrigin = new Point(0.5, 0.5);
         _image.RenderTransform = new ScaleTransform(1, -1);
