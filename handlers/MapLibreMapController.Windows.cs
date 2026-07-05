@@ -115,6 +115,19 @@ public class MapLibreMapController : IMapLibreMapController
 
     private void InitMapView()
     {
+        CreateMapView();
+        CreateOverlays();
+        // On a Shell tab switch WinUI only unloads/reloads the platform view — the
+        // handler is NOT disconnected. Release the native map (GPU surface, mbgl
+        // objects) while hidden, and rebuild it when the view re-enters the tree.
+        // The rebuilt view reloads the style, which re-fires StyleLoaded so
+        // declarative overlay elements re-materialise into the fresh style.
+        View.Unloaded += (_, _) => DisposeNative();
+        View.Loaded   += (_, _) => { if (_mapView == null) CreateMapView(); };
+    }
+
+    private void CreateMapView()
+    {
         _mapView = new WinUI.MapImageView
         {
             StyleUrl = string.IsNullOrEmpty(_styleString)
@@ -125,11 +138,20 @@ public class MapLibreMapController : IMapLibreMapController
         // fields so all existing camera/source/layer operations work unchanged.
         _mapView.MapReady += (_, _) =>
         {
+            if (_mapView == null) return;
             _map = _mapView.Map;
+            // Rebuild after a tab switch: restore the camera saved at teardown
+            // before the app's MapReady handlers run (so they can still override).
+            if (_savedCamera is { } cam)
+            {
+                _savedCamera = null;
+                _map?.JumpTo(cam.Lat, cam.Lon, cam.Zoom, cam.Bearing, cam.Pitch);
+            }
             OnMapReadyReceived?.Invoke(new Map(null));
         };
         _mapView.StyleLoaded += (_, _) =>
         {
+            if (_mapView == null) return;
             _style = _mapView.Style;
             _styleReady = true;
             RefreshAttributionText();   // build attribution from the new style's sources
@@ -143,9 +165,8 @@ public class MapLibreMapController : IMapLibreMapController
         _mapView.CameraIdle    += (_, _) => { RefreshGpsControl(); OnCameraIdleReceived?.Invoke(); };
         _mapView.MapClicked    += (_, e) => OnMapClickReceived?.Invoke(new LatLng(e.Lat, e.Lon), e.X, e.Y);
 
-        View.Children.Add(_mapView.View);
-        CreateOverlays();
-        View.Unloaded += (_, _) => DisposeNative();
+        // Below the nav / GPS / attribution overlay panels (which persist across rebuilds).
+        View.Children.Insert(0, _mapView.View);
     }
 
     // ── XAML overlays (nav / GPS / attribution) ────────────────────────────────
@@ -436,6 +457,17 @@ public class MapLibreMapController : IMapLibreMapController
         // Reuse the existing source if present so a re-add updates it in place
         // instead of no-op'ing (which left overlay geometry stale).
         var s = _style.HasSource(sourceName) ? _style.GetSource(sourceName)! : _style.AddGeoJsonSource(sourceName);
+        s.SetGeoJson(source);
+    }
+
+    public void AddGeoJsonSource(string sourceName, string source, string? optionsJson)
+    {
+        if (!_styleReady || _style == null) return;
+        // Options (clustering etc.) only apply at creation; an existing source
+        // keeps its original options and just gets new data.
+        var s = _style.HasSource(sourceName)
+            ? _style.GetSource(sourceName)!
+            : _style.AddGeoJsonSourceOptions(sourceName, optionsJson);
         s.SetGeoJson(source);
     }
 
@@ -888,8 +920,19 @@ public class MapLibreMapController : IMapLibreMapController
     /// </summary>
     public void Shutdown() => DisposeNative();
 
+    /// <summary>Camera saved when the native map is torn down on tab-away, restored
+    /// when the map view is rebuilt on tab re-entry.</summary>
+    private (double Lat, double Lon, double Zoom, double Bearing, double Pitch)? _savedCamera;
+
     private void DisposeNative()
     {
+        if (_mapView?.Map is { } m)
+        {
+            var (lat, lon) = m.Center;
+            _savedCamera = (lat, lon, m.Zoom, m.Bearing, m.Pitch);
+        }
+        _styleReady = false;
+        if (_mapView != null) View.Children.Remove(_mapView.View);
         _mapView?.Dispose();
         _mapView = null;
         _map = null;
@@ -909,6 +952,30 @@ public class MapLibreMapController : IMapLibreMapController
     public void FlyTo(double latitude, double longitude, double zoom,
         double bearing = 0, double pitch = 0, long durationMs = 500)
         => _map?.FlyTo(latitude, longitude, zoom, bearing, pitch, durationMs);
+
+    public void JumpTo(double latitude, double longitude, double zoom,
+        double bearing, double pitch,
+        double padTop, double padLeft, double padBottom, double padRight)
+        => _map?.JumpTo(latitude, longitude, zoom, bearing, pitch,
+                        padTop, padLeft, padBottom, padRight);
+
+    public void EaseTo(double latitude, double longitude, double zoom,
+        double bearing, double pitch,
+        double padTop, double padLeft, double padBottom, double padRight,
+        long durationMs = 300)
+        => _map?.EaseTo(latitude, longitude, zoom, bearing, pitch,
+                        padTop, padLeft, padBottom, padRight, durationMs);
+
+    public void FlyTo(double latitude, double longitude, double zoom,
+        double bearing, double pitch,
+        double padTop, double padLeft, double padBottom, double padRight,
+        long durationMs = 500)
+        => _map?.FlyTo(latitude, longitude, zoom, bearing, pitch,
+                       padTop, padLeft, padBottom, padRight, durationMs);
+
+    public void ScaleBy(double scale, double anchorX = double.NaN, double anchorY = double.NaN,
+        long durationMs = 0)
+        => _map?.ScaleBy(scale, anchorX, anchorY, durationMs);
 
     public void CancelTransitions() => _map?.CancelTransitions();
 
@@ -938,6 +1005,20 @@ public class MapLibreMapController : IMapLibreMapController
     public string? QueryRenderedFeaturesInBox(double x1, double y1, double x2, double y2,
         string? layerIds = null)
         => _map?.QueryRenderedFeaturesInBox(x1, y1, x2, y2, layerIds);
+
+    public string? QuerySourceFeatures(string sourceId, string? sourceLayerIds = null,
+        string? filterJson = null)
+        => _map?.QuerySourceFeatures(sourceId, sourceLayerIds, filterJson);
+
+    public double? GetClusterExpansionZoom(string sourceId, string clusterFeatureJson)
+        => _map?.GetClusterExpansionZoom(sourceId, clusterFeatureJson);
+
+    public string? GetClusterChildren(string sourceId, string clusterFeatureJson)
+        => _map?.GetClusterChildren(sourceId, clusterFeatureJson);
+
+    public string? GetClusterLeaves(string sourceId, string clusterFeatureJson,
+        uint limit = 10, uint offset = 0)
+        => _map?.GetClusterLeaves(sourceId, clusterFeatureJson, limit, offset);
 
     // ── Viewport bounds ────────────────────────────────────────────────────────
     public (double LatSW, double LonSW, double LatNE, double LonNE) GetVisibleBounds()

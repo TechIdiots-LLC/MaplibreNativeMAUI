@@ -1048,6 +1048,17 @@ public class MapLibreMapController : IMapLibreMapController
         s.SetGeoJson(source);
     }
 
+    public void AddGeoJsonSource(string sourceName, string source, string? optionsJson)
+    {
+        if (!_styleReady || _style == null) return;
+        // Options (clustering etc.) only apply at creation; an existing source
+        // keeps its original options and just gets new data.
+        var s = _style.HasSource(sourceName)
+            ? _style.GetSource(sourceName)!
+            : _style.AddGeoJsonSourceOptions(sourceName, optionsJson);
+        s.SetGeoJson(source);
+    }
+
     public void SetGeoJsonSource(string sourceName, string source)
     {
         if (!_styleReady || _style == null) return;
@@ -1235,6 +1246,30 @@ public class MapLibreMapController : IMapLibreMapController
         double bearing = 0, double pitch = 0, long durationMs = 500)
         => _map?.FlyTo(latitude, longitude, zoom, bearing, pitch, durationMs);
 
+    public void JumpTo(double latitude, double longitude, double zoom,
+        double bearing, double pitch,
+        double padTop, double padLeft, double padBottom, double padRight)
+        => _map?.JumpTo(latitude, longitude, zoom, bearing, pitch,
+                        padTop, padLeft, padBottom, padRight);
+
+    public void EaseTo(double latitude, double longitude, double zoom,
+        double bearing, double pitch,
+        double padTop, double padLeft, double padBottom, double padRight,
+        long durationMs = 300)
+        => _map?.EaseTo(latitude, longitude, zoom, bearing, pitch,
+                        padTop, padLeft, padBottom, padRight, durationMs);
+
+    public void FlyTo(double latitude, double longitude, double zoom,
+        double bearing, double pitch,
+        double padTop, double padLeft, double padBottom, double padRight,
+        long durationMs = 500)
+        => _map?.FlyTo(latitude, longitude, zoom, bearing, pitch,
+                       padTop, padLeft, padBottom, padRight, durationMs);
+
+    public void ScaleBy(double scale, double anchorX = double.NaN, double anchorY = double.NaN,
+        long durationMs = 0)
+        => _map?.ScaleBy(scale, anchorX, anchorY, durationMs);
+
     public void CancelTransitions() => _map?.CancelTransitions();
 
     public double GetZoom()    => _map?.Zoom    ?? 0;
@@ -1263,6 +1298,20 @@ public class MapLibreMapController : IMapLibreMapController
     public string? QueryRenderedFeaturesInBox(double x1, double y1, double x2, double y2,
         string? layerIds = null)
         => _map?.QueryRenderedFeaturesInBox(x1, y1, x2, y2, layerIds);
+
+    public string? QuerySourceFeatures(string sourceId, string? sourceLayerIds = null,
+        string? filterJson = null)
+        => _map?.QuerySourceFeatures(sourceId, sourceLayerIds, filterJson);
+
+    public double? GetClusterExpansionZoom(string sourceId, string clusterFeatureJson)
+        => _map?.GetClusterExpansionZoom(sourceId, clusterFeatureJson);
+
+    public string? GetClusterChildren(string sourceId, string clusterFeatureJson)
+        => _map?.GetClusterChildren(sourceId, clusterFeatureJson);
+
+    public string? GetClusterLeaves(string sourceId, string clusterFeatureJson,
+        uint limit = 10, uint offset = 0)
+        => _map?.GetClusterLeaves(sourceId, clusterFeatureJson, limit, offset);
 
     // -- Tier 1 – gesture / interactive movement ───────────────────────────────
     public void SetGestureInProgress(bool inProgress) => _map?.SetGestureInProgress(inProgress);

@@ -116,6 +116,16 @@ public static partial class NativeMethods
     [LibraryImport(Lib, EntryPoint = "mbgl_install_log_callback")]
     public static partial MbglStatus InstallLogCallback(LogFn? fn, IntPtr userdata);
 
+    // ── Network status ────────────────────────────────────────────────────────
+    /// <summary>Toggle the process-global network state. Pass 0 to force offline
+    /// mode (serve only cached resources), 1 to restore online mode.</summary>
+    [LibraryImport(Lib, EntryPoint = "mbgl_network_status_set")]
+    public static partial MbglStatus NetworkStatusSet(int online);
+
+    /// <summary>Returns 1 if the network is in online mode, 0 if offline.</summary>
+    [LibraryImport(Lib, EntryPoint = "mbgl_network_status_get")]
+    public static partial int NetworkStatusGet();
+
     // ── RunLoop ───────────────────────────────────────────────────────────────
     [LibraryImport(Lib, EntryPoint = "mbgl_runloop_create")]
     public static partial IntPtr RunLoopCreate();
@@ -157,6 +167,21 @@ public static partial class NativeMethods
         IntPtr rl,
         string? cachePath,
         string? assetPath,
+        float   pixelRatio,
+        MapObserverFn? observer,
+        IntPtr  observerUserdata);
+
+    /// <summary>Extended map factory: adds an API key and a maximum disk-cache size
+    /// (bytes; 0 = MapLibre default) on top of <see cref="MapCreate"/>.</summary>
+    [LibraryImport(Lib, EntryPoint = "mbgl_map_create2",
+        StringMarshalling = StringMarshalling.Utf8)]
+    public static partial IntPtr MapCreate2(
+        IntPtr fe,
+        IntPtr rl,
+        string? cachePath,
+        string? assetPath,
+        string? apiKey,
+        ulong   maxCacheSizeBytes,
         float   pixelRatio,
         MapObserverFn? observer,
         IntPtr  observerUserdata);
@@ -242,6 +267,34 @@ public static partial class NativeMethods
         double latSw, double lonSw, double latNe, double lonNe,
         double minZoom, double maxZoom, double minPitch, double maxPitch);
 
+    // ── Map – camera with edge padding ────────────────────────────────────────
+    [LibraryImport(Lib, EntryPoint = "mbgl_map_jump_to_padded")]
+    public static partial MbglStatus MapJumpToPadded(IntPtr map,
+        double lat, double lon, double zoom, double bearing, double pitch,
+        double padTop, double padLeft, double padBottom, double padRight);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_map_ease_to_padded")]
+    public static partial MbglStatus MapEaseToPadded(IntPtr map,
+        double lat, double lon, double zoom, double bearing, double pitch,
+        double padTop, double padLeft, double padBottom, double padRight,
+        long durationMs);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_map_fly_to_padded")]
+    public static partial MbglStatus MapFlyToPadded(IntPtr map,
+        double lat, double lon, double zoom, double bearing, double pitch,
+        double padTop, double padLeft, double padBottom, double padRight,
+        long durationMs);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_map_get_camera")]
+    public static partial MbglStatus MapGetCamera(IntPtr map,
+        double padTop, double padLeft, double padBottom, double padRight,
+        out double outLat, out double outLon,
+        out double outZoom, out double outBearing, out double outPitch);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_map_scale_by")]
+    public static partial MbglStatus MapScaleBy(IntPtr map,
+        double scale, double anchorX, double anchorY, long durationMs);
+
     [LibraryImport(Lib, EntryPoint = "mbgl_map_camera_for_bounds")]
     public static partial MbglStatus MapCameraForBounds(IntPtr map,
         double latSw, double lonSw, double latNe, double lonNe,
@@ -271,6 +324,17 @@ public static partial class NativeMethods
     public static partial IntPtr MapQueryRenderedFeaturesInBox(IntPtr map,
         double x1, double y1, double x2, double y2, string? layerIds);
 
+    [LibraryImport(Lib, EntryPoint = "mbgl_map_query_source_features",
+        StringMarshalling = StringMarshalling.Utf8)]
+    public static partial IntPtr MapQuerySourceFeatures(IntPtr map,
+        string sourceId, string? sourceLayerIds, string? filterJson);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_map_query_feature_extensions",
+        StringMarshalling = StringMarshalling.Utf8)]
+    public static partial IntPtr MapQueryFeatureExtensions(IntPtr map,
+        string sourceId, string featureJson, string extension, string extensionField,
+        string? argsJson);
+
     [LibraryImport(Lib, EntryPoint = "mbgl_free_string")]
     public static partial void FreeString(IntPtr str);
 
@@ -286,6 +350,10 @@ public static partial class NativeMethods
     [LibraryImport(Lib, EntryPoint = "mbgl_style_add_geojson_source_url",
         StringMarshalling = StringMarshalling.Utf8)]
     public static partial IntPtr StyleAddGeoJsonSourceUrl(IntPtr style, string sourceId, string url);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_style_add_geojson_source_options",
+        StringMarshalling = StringMarshalling.Utf8)]
+    public static partial IntPtr StyleAddGeoJsonSourceOptions(IntPtr style, string sourceId, string? optionsJson);
 
     [LibraryImport(Lib, EntryPoint = "mbgl_geojson_source_set_data",
         StringMarshalling = StringMarshalling.Utf8)]
@@ -421,6 +489,18 @@ public static partial class NativeMethods
     // ── Map – gesture / interactive movement (Tier 1) ─────────────────────────
     [LibraryImport(Lib, EntryPoint = "mbgl_map_set_gesture_in_progress")]
     public static partial MbglStatus MapSetGestureInProgress(IntPtr map, int inProgress);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_map_is_gesture_in_progress")]
+    public static partial int MapIsGestureInProgress(IntPtr map);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_map_is_rotating")]
+    public static partial int MapIsRotating(IntPtr map);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_map_is_scaling")]
+    public static partial int MapIsScaling(IntPtr map);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_map_is_panning")]
+    public static partial int MapIsPanning(IntPtr map);
 
     [LibraryImport(Lib, EntryPoint = "mbgl_map_move_by")]
     public static partial MbglStatus MapMoveBy(IntPtr map, double dx, double dy, long durationMs);

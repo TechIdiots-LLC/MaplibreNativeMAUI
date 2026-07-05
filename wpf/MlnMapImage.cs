@@ -310,6 +310,77 @@ public partial class MlnMapImage : Grid
         _renderNeedsUpdate = true;
     }
 
+    public void JumpTo(double latitude, double longitude, double zoom,
+        double bearing = 0, double pitch = 0)
+    {
+        if (_map == null) return;
+        _map.JumpTo(latitude, longitude, zoom, bearing, pitch);
+        _renderNeedsUpdate = true;
+    }
+
+    public void EaseTo(double latitude, double longitude, double zoom,
+        double bearing = 0, double pitch = 0, long durationMs = 300)
+    {
+        if (_map == null) return;
+        _map.EaseTo(latitude, longitude, zoom, bearing, pitch, durationMs);
+        _renderNeedsUpdate = true;
+    }
+
+    public void FlyTo(double latitude, double longitude, double zoom,
+        double bearing = 0, double pitch = 0, long durationMs = 500)
+    {
+        if (_map == null) return;
+        _map.FlyTo(latitude, longitude, zoom, bearing, pitch, durationMs);
+        _renderNeedsUpdate = true;
+    }
+
+    // Camera – edge padding overloads. Padding (screen px, top/left/bottom/right)
+    // centres the target in the unobscured part of the viewport — use when a
+    // panel or overlay covers part of the map. Pass double.NaN for zoom /
+    // bearing / pitch to keep the current value.
+
+    public void JumpTo(double latitude, double longitude, double zoom,
+        double bearing, double pitch,
+        double padTop, double padLeft, double padBottom, double padRight)
+    {
+        if (_map == null) return;
+        _map.JumpTo(latitude, longitude, zoom, bearing, pitch,
+                    padTop, padLeft, padBottom, padRight);
+        _renderNeedsUpdate = true;
+    }
+
+    public void EaseTo(double latitude, double longitude, double zoom,
+        double bearing, double pitch,
+        double padTop, double padLeft, double padBottom, double padRight,
+        long durationMs = 300)
+    {
+        if (_map == null) return;
+        _map.EaseTo(latitude, longitude, zoom, bearing, pitch,
+                    padTop, padLeft, padBottom, padRight, durationMs);
+        _renderNeedsUpdate = true;
+    }
+
+    public void FlyTo(double latitude, double longitude, double zoom,
+        double bearing, double pitch,
+        double padTop, double padLeft, double padBottom, double padRight,
+        long durationMs = 500)
+    {
+        if (_map == null) return;
+        _map.FlyTo(latitude, longitude, zoom, bearing, pitch,
+                   padTop, padLeft, padBottom, padRight, durationMs);
+        _renderNeedsUpdate = true;
+    }
+
+    /// <summary>Multiply the map scale by <paramref name="scale"/> (2.0 = one zoom
+    /// level in), optionally about a screen anchor point (NaN = viewport centre).</summary>
+    public void ScaleBy(double scale, double anchorX = double.NaN, double anchorY = double.NaN,
+        long durationMs = 0)
+    {
+        if (_map == null) return;
+        _map.ScaleBy(scale, anchorX, anchorY, durationMs);
+        _renderNeedsUpdate = true;
+    }
+
     public void ZoomIn()
     {
         if (_map == null) return;
@@ -356,6 +427,23 @@ public partial class MlnMapImage : Grid
     {
         if (_style == null) return;
         MbglSource src = _style.HasSource(sourceId) ? _style.GetSource(sourceId)! : _style.AddGeoJsonSource(sourceId);
+        src.SetGeoJson(geojson);
+        _renderNeedsUpdate = true;
+    }
+
+    /// <summary>
+    /// Add a GeoJSON source with style-spec options (clustering etc.).
+    /// <paramref name="optionsJson"/> is a JSON object of GeoJSON source options,
+    /// e.g. <c>{"cluster":true,"clusterRadius":50,"clusterMaxZoom":14}</c>.
+    /// Options only apply at creation; an existing source keeps its original
+    /// options and just gets new data.
+    /// </summary>
+    public void AddGeoJsonSource(string sourceId, string geojson, string? optionsJson)
+    {
+        if (_style == null) return;
+        MbglSource src = _style.HasSource(sourceId)
+            ? _style.GetSource(sourceId)!
+            : _style.AddGeoJsonSourceOptions(sourceId, optionsJson);
         src.SetGeoJson(geojson);
         _renderNeedsUpdate = true;
     }
@@ -459,6 +547,32 @@ public partial class MlnMapImage : Grid
         return _map.QueryRenderedFeaturesInBox(
             cx - thresholdPx, cy - thresholdPx, cx + thresholdPx, cy + thresholdPx, filter);
     }
+
+    /// <summary>
+    /// Query all features in a source's data, regardless of visibility.
+    /// Returns a GeoJSON FeatureCollection string, or null if the renderer is not ready.
+    /// </summary>
+    /// <param name="sourceLayerIds">Comma-separated source-layer names — required for
+    /// vector sources, ignored for GeoJSON sources.</param>
+    /// <param name="filterJson">Optional style-spec filter expression JSON.</param>
+    public string? QuerySourceFeatures(string sourceId, string? sourceLayerIds = null,
+        string? filterJson = null)
+        => _map?.QuerySourceFeatures(sourceId, sourceLayerIds, filterJson);
+
+    /// <summary>Zoom level at which the given cluster (a Feature from a rendered-features
+    /// query on a clustered GeoJSON source) expands into children, or null.</summary>
+    public double? GetClusterExpansionZoom(string sourceId, string clusterFeatureJson)
+        => _map?.GetClusterExpansionZoom(sourceId, clusterFeatureJson);
+
+    /// <summary>Direct children of a cluster as a GeoJSON FeatureCollection string, or null.</summary>
+    public string? GetClusterChildren(string sourceId, string clusterFeatureJson)
+        => _map?.GetClusterChildren(sourceId, clusterFeatureJson);
+
+    /// <summary>Up to <paramref name="limit"/> leaf features of a cluster (from
+    /// <paramref name="offset"/>) as a GeoJSON FeatureCollection string, or null.</summary>
+    public string? GetClusterLeaves(string sourceId, string clusterFeatureJson,
+        uint limit = 10, uint offset = 0)
+        => _map?.GetClusterLeaves(sourceId, clusterFeatureJson, limit, offset);
 
     /// <summary>Wraps a pre-serialised JSON string so layer properties forward it verbatim (e.g. expressions).</summary>
     public record RawJson(string Json);

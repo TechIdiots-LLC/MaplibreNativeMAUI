@@ -2,10 +2,18 @@
 
 ## master
 ### ✨ Features and improvements
-- _...Add new stuff here..._
+- **GeoJSON source options / clustering** — New `mbgl_style_add_geojson_source_options` C ABI function, `MbglStyle.AddGeoJsonSourceOptions(sourceId, optionsJson)`, and an `AddGeoJsonSource(sourceName, source, optionsJson)` overload on `IMapLibreMapController` (all platforms) and WPF `MlnMapImage`. Accepts the style-spec GeoJSON source options (`cluster`, `clusterRadius`, `clusterMaxZoom`, `clusterMinPoints`, `clusterProperties`, `maxzoom`, `buffer`, `tolerance`, `lineMetrics`), enabling point clustering for typed (non-JSON-spec) sources.
+- **Cluster expansion queries** — New `mbgl_map_query_feature_extensions` C ABI function plus `QueryFeatureExtensions` (on `MbglMap`) and convenience helpers `GetClusterExpansionZoom`, `GetClusterChildren`, and `GetClusterLeaves` (on `MbglMap`, `IMapLibreMapController`, and `MlnMapImage`) for drilling into supercluster clusters (tap-to-expand, list cluster members). Exercised end-to-end by the WPF sample's `--autotest` harness.
+- **Source-feature queries** — New `mbgl_map_query_source_features` C ABI function and `QuerySourceFeatures(sourceId, sourceLayerIds, filterJson)` on `MbglMap`, `IMapLibreMapController`, and `MlnMapImage`: query all features in a source's data (with optional style-spec filter), independent of what is currently rendered.
+- **Camera edge padding** — New `mbgl_map_jump_to_padded` / `mbgl_map_ease_to_padded` / `mbgl_map_fly_to_padded` / `mbgl_map_get_camera` C ABI functions and matching padded `JumpTo`/`EaseTo`/`FlyTo` overloads on `MbglMap`, `IMapLibreMapController`, and `MlnMapImage` (plus `MbglMap.GetCamera`). Padding (top/left/bottom/right, screen px) centres the target in the unobscured part of the viewport — useful when panels overlap the map. `NaN` zoom/bearing/pitch means "keep current value" in the padded variants. `MlnMapImage` also gains plain full-camera `JumpTo`/`EaseTo`/`FlyTo`.
+- **`ScaleBy`** — New `mbgl_map_scale_by` C ABI function and `ScaleBy(scale, anchorX, anchorY, durationMs)` on `MbglMap`, `IMapLibreMapController`, and `MlnMapImage` for anchored zoom (2.0 = one zoom level in).
+- **Offline mode toggle** — New `mbgl_network_status_set` / `mbgl_network_status_get` C ABI functions and static `MbglNetwork.Online` property: force MapLibre offline (serve only cached resources) and back online at runtime.
+- **API key + cache size at map creation** — New `mbgl_map_create2` C ABI function; `MbglMap`'s constructor gains optional `apiKey` and `maxCacheSizeBytes` parameters (`ResourceOptions::withApiKey` / `withMaximumCacheSize`).
+- **Transform state read-back** — New `mbgl_map_is_gesture_in_progress` / `mbgl_map_is_rotating` / `mbgl_map_is_scaling` / `mbgl_map_is_panning` C ABI functions and matching `MbglMap` properties.
 
 ### 🐞 Bug fixes
-- _...Add new stuff here..._
+- **MAUI Windows: map dead after switching Shell tabs away and back** — On a tab switch WinUI only unloads the platform view (the handler is never disconnected), and the controller destroyed the native map on `Unloaded` with nothing recreating it on re-entry: the map stopped rendering and the nav/GPS controls, overlay elements, and programmatic updates (e.g. changing a `Circle`'s `Radius`) all went dead. The Windows controller now rebuilds the native map view when its platform view is re-loaded, restores the camera saved at teardown, and reloads the style — which re-fires `StyleLoaded` so declarative overlay elements re-materialise.
+- **Style source/layer ID lists were newline-ambiguous** — `mbgl_style_get_source_ids` / `mbgl_style_get_layer_ids` returned newline-joined strings, which is ambiguous because MapLibre IDs may contain any character including `\n`. They now return a JSON array; `MbglStyle.GetSourceIds()` / `GetLayerIds()` parse it (public C# API unchanged).
 
 ## 4.0.0
 ### ⚠️ Breaking changes

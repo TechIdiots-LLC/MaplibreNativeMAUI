@@ -397,7 +397,104 @@ public partial class MainWindow : Window
         }
 
         DdLog("--- RunDataDrivenCircleTestAsync end ---");
+        await RunClusterTestAsync();
         StatusText.Text = $"Data-driven circle test complete — see {_autoTestLogPath}";
+    }
+
+    /// <summary>
+    /// Exercises the clustered-GeoJSON pipeline added in cabi 2.1.0:
+    /// AddGeoJsonSource with options (cluster=true), QuerySourceFeatures,
+    /// and the supercluster extension queries (expansion-zoom / leaves).
+    /// </summary>
+    private async Task RunClusterTestAsync()
+    {
+        DdLog("--- RunClusterTestAsync start ---");
+        try
+        {
+            // Six points in two tight groups ~0.02° apart; at zoom 3 each group
+            // collapses into one cluster.
+            const string clusterGeoJson = """
+            { "type": "FeatureCollection", "features": [
+              { "type": "Feature", "properties": {}, "geometry": { "type": "Point", "coordinates": [-10.00, 10.00] } },
+              { "type": "Feature", "properties": {}, "geometry": { "type": "Point", "coordinates": [-10.01, 10.01] } },
+              { "type": "Feature", "properties": {}, "geometry": { "type": "Point", "coordinates": [-10.02, 10.02] } },
+              { "type": "Feature", "properties": {}, "geometry": { "type": "Point", "coordinates": [ 10.00, 10.00] } },
+              { "type": "Feature", "properties": {}, "geometry": { "type": "Point", "coordinates": [ 10.01, 10.01] } },
+              { "type": "Feature", "properties": {}, "geometry": { "type": "Point", "coordinates": [ 10.02, 10.02] } }
+            ] }
+            """;
+
+            MapHost.AddGeoJsonSource("cluster-src", clusterGeoJson,
+                """{"cluster":true,"clusterRadius":50,"clusterMaxZoom":14}""");
+            DdLog("AddGeoJsonSource(cluster-src, cluster=true, radius=50, maxZoom=14)");
+
+            MapHost.AddCircleLayer(
+                layerName:    "cluster-circles",
+                sourceName:   "cluster-src",
+                belowLayerId: null,
+                sourceLayer:  null,
+                properties: new Dictionary<string, object?>
+                {
+                    ["circle-radius"]  = 12.0,
+                    ["circle-color"]   = "#ff8800",
+                    ["circle-opacity"] = 0.8,
+                });
+
+            MapHost.CenterOn(10.0, 0.0, zoom: 3);
+            await Task.Delay(2000); // let cluster tiles build and render
+
+            // Rendered query should see 2 clusters (one per group) with cluster
+            // properties (cluster=true, point_count=3, cluster_id).
+            double cx = MapHost.ActualWidth / 2, cy = MapHost.ActualHeight / 2;
+            double threshold = Math.Max(MapHost.ActualWidth, MapHost.ActualHeight);
+            string? rendered = MapHost.QueryRenderedFeaturesInBox(cx, cy, threshold, new[] { "cluster-circles" });
+            DdLog($"cluster rendered query: featureCount={CountFeatures(rendered)} json={Truncate(rendered, 600)}");
+
+            // QuerySourceFeatures on a clustered source returns the cluster tiles too.
+            string? src = MapHost.QuerySourceFeatures("cluster-src");
+            DdLog($"QuerySourceFeatures(cluster-src): featureCount={CountFeatures(src)}");
+
+            // Take the first cluster feature and drill in.
+            string? clusterFeature = FirstClusterFeature(rendered);
+            if (clusterFeature is null)
+            {
+                DdLog("cluster test: NO cluster feature found in rendered query (FAIL)");
+            }
+            else
+            {
+                double? expZoom = MapHost.GetClusterExpansionZoom("cluster-src", clusterFeature);
+                string? leaves  = MapHost.GetClusterLeaves("cluster-src", clusterFeature, limit: 10);
+                string? kids    = MapHost.GetClusterChildren("cluster-src", clusterFeature);
+                DdLog($"GetClusterExpansionZoom={expZoom?.ToString() ?? "(null)"} " +
+                      $"leavesCount={CountFeatures(leaves)} childrenCount={CountFeatures(kids)}");
+            }
+        }
+        catch (Exception ex)
+        {
+            DdLog($"cluster test THREW: {ex}");
+        }
+        DdLog("--- RunClusterTestAsync end ---");
+    }
+
+    /// <summary>Returns the first feature with a truthy "cluster" property from a
+    /// FeatureCollection JSON string, serialized back to JSON, or null.</summary>
+    private static string? FirstClusterFeature(string? featureCollectionJson)
+    {
+        if (string.IsNullOrEmpty(featureCollectionJson)) return null;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(featureCollectionJson);
+            if (!doc.RootElement.TryGetProperty("features", out var features)) return null;
+            foreach (var f in features.EnumerateArray())
+            {
+                if (f.TryGetProperty("properties", out var props) &&
+                    props.TryGetProperty("cluster", out var cluster) &&
+                    cluster.ValueKind == System.Text.Json.JsonValueKind.True)
+                    return f.GetRawText();
+            }
+        }
+        catch (System.Text.Json.JsonException) { }
+        return null;
     }
 
     private void AddDdLayer(string layerId, object? circleColor)

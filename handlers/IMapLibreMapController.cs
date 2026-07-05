@@ -37,6 +37,14 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
     // Sources
     public void AddGeoJsonSource(string sourceName, string source);
 
+    /// <summary>
+    /// Add a GeoJSON source with style-spec options (clustering etc.).
+    /// <paramref name="optionsJson"/> is a JSON object of GeoJSON source options —
+    /// the style-spec keys minus <c>type</c>/<c>data</c>, e.g.
+    /// <c>{"cluster":true,"clusterRadius":50,"clusterMaxZoom":14}</c>.
+    /// </summary>
+    public void AddGeoJsonSource(string sourceName, string source, string? optionsJson);
+
     public void AddRasterSource(string sourceName, string? tileUrl, string[]? tileUrlTemplates, int tileSize,
         int minZoom, int maxZoom);
 
@@ -150,6 +158,29 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
     public void FlyTo(MapLibreNative.Maui.Geometry.MapSpan span, double bearing = 0, double pitch = 0, long durationMs = 500)
         => FlyTo(span.Center.Latitude, span.Center.Longitude, span.ToZoomLevel(), bearing, pitch, durationMs);
 
+    // Camera – edge padding overloads. Padding (screen px, top/left/bottom/right)
+    // centres the target in the unobscured part of the viewport — use when a
+    // panel or overlay covers part of the map. Pass double.NaN for zoom /
+    // bearing / pitch to keep the current value.
+    public void JumpTo(double latitude, double longitude, double zoom,
+        double bearing, double pitch,
+        double padTop, double padLeft, double padBottom, double padRight);
+
+    public void EaseTo(double latitude, double longitude, double zoom,
+        double bearing, double pitch,
+        double padTop, double padLeft, double padBottom, double padRight,
+        long durationMs = 300);
+
+    public void FlyTo(double latitude, double longitude, double zoom,
+        double bearing, double pitch,
+        double padTop, double padLeft, double padBottom, double padRight,
+        long durationMs = 500);
+
+    /// <summary>Multiply the map scale by <paramref name="scale"/> (2.0 = one zoom
+    /// level in), optionally about a screen anchor point (NaN = viewport centre).</summary>
+    public void ScaleBy(double scale, double anchorX = double.NaN, double anchorY = double.NaN,
+        long durationMs = 0);
+
     // Camera – constraints
     public void SetCameraTargetBounds(LatLngBounds bounds,
         double minZoom = double.NaN, double maxZoom = double.NaN,
@@ -169,6 +200,27 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
     public string? QueryRenderedFeaturesAtPoint(double x, double y, string? layerIds = null);
     public string? QueryRenderedFeaturesInBox(double x1, double y1, double x2, double y2,
         string? layerIds = null);
+
+    /// <summary>
+    /// Query all features in a source's data, regardless of visibility.
+    /// Returns a GeoJSON FeatureCollection string, or null if the renderer is not ready.
+    /// </summary>
+    /// <param name="sourceLayerIds">Comma-separated source-layer names — required for
+    /// vector sources, ignored for GeoJSON sources.</param>
+    /// <param name="filterJson">Optional style-spec filter expression JSON.</param>
+    public string? QuerySourceFeatures(string sourceId, string? sourceLayerIds = null,
+        string? filterJson = null);
+
+    // ── Cluster queries (clustered GeoJSON sources) ───────────────────────────
+    /// <summary>Zoom level at which the given cluster (a Feature from a rendered-features
+    /// query on a clustered source) expands into children, or null.</summary>
+    public double? GetClusterExpansionZoom(string sourceId, string clusterFeatureJson);
+    /// <summary>Direct children of a cluster as a GeoJSON FeatureCollection string, or null.</summary>
+    public string? GetClusterChildren(string sourceId, string clusterFeatureJson);
+    /// <summary>Up to <paramref name="limit"/> leaf features of a cluster (from
+    /// <paramref name="offset"/>) as a GeoJSON FeatureCollection string, or null.</summary>
+    public string? GetClusterLeaves(string sourceId, string clusterFeatureJson,
+        uint limit = 10, uint offset = 0);
 
     // Map state
     void CancelTransitions();

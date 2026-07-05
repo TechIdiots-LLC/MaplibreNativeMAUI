@@ -126,6 +126,14 @@ typedef int (*mbgl_log_fn)(mbgl_log_level_t level,
 MLN_CABI_API mbgl_status_t mbgl_install_log_callback(mbgl_log_fn fn,
                                                         void*        userdata) MLN_CABI_NOEXCEPT;
 
+/* ── Network status ────────────────────────────────────────────────────────── */
+/** Toggle the process-global network state.  Pass 0 to force offline mode:
+ *  all network requests are suspended and only cached / offline resources are
+ *  served.  Pass 1 to restore online mode (queued requests resume). */
+MLN_CABI_API mbgl_status_t mbgl_network_status_set(int online) MLN_CABI_NOEXCEPT;
+/** Returns 1 if the network is in online mode, 0 if offline. */
+MLN_CABI_API int           mbgl_network_status_get(void) MLN_CABI_NOEXCEPT;
+
 /* ── RunLoop ───────────────────────────────────────────────────────────────── */
 MLN_CABI_API mbgl_runloop_t* mbgl_runloop_create(void) MLN_CABI_NOEXCEPT;
 MLN_CABI_API mbgl_status_t   mbgl_runloop_destroy(mbgl_runloop_t* rl) MLN_CABI_NOEXCEPT;
@@ -151,6 +159,20 @@ MLN_CABI_API mbgl_map_t*     mbgl_map_create(
     mbgl_runloop_t*       rl,
     const char*           cache_path,
     const char*           asset_path,
+    float                 pixel_ratio,
+    mbgl_map_observer_fn  observer,
+    void*                 observer_userdata) MLN_CABI_NOEXCEPT;
+/** Extended map factory.  Identical to mbgl_map_create plus resource options:
+ *  @param api_key              API key appended to tile-server requests, or NULL.
+ *  @param max_cache_size_bytes Maximum size of the on-disk cache database in
+ *                              bytes, or 0 for the MapLibre default (~50 MB). */
+MLN_CABI_API mbgl_map_t*     mbgl_map_create2(
+    mbgl_frontend_t*      fe,
+    mbgl_runloop_t*       rl,
+    const char*           cache_path,
+    const char*           asset_path,
+    const char*           api_key,
+    uint64_t              max_cache_size_bytes,
     float                 pixel_ratio,
     mbgl_map_observer_fn  observer,
     void*                 observer_userdata) MLN_CABI_NOEXCEPT;
@@ -187,6 +209,14 @@ MLN_CABI_API mbgl_status_t   mbgl_map_set_debug_options(mbgl_map_t* map, int opt
 /** Inform the map that a user gesture is in progress (suppresses animated
  *  camera snap-back during panning).  Call with 1 on touch-down, 0 on touch-up. */
 MLN_CABI_API mbgl_status_t   mbgl_map_set_gesture_in_progress(mbgl_map_t* map, int in_progress) MLN_CABI_NOEXCEPT;
+/** Returns 1 while a gesture is flagged in progress via mbgl_map_set_gesture_in_progress. */
+MLN_CABI_API int             mbgl_map_is_gesture_in_progress(mbgl_map_t* map) MLN_CABI_NOEXCEPT;
+/** Returns 1 while a rotate transition/animation is running. */
+MLN_CABI_API int             mbgl_map_is_rotating(mbgl_map_t* map) MLN_CABI_NOEXCEPT;
+/** Returns 1 while a zoom/scale transition/animation is running. */
+MLN_CABI_API int             mbgl_map_is_scaling(mbgl_map_t* map) MLN_CABI_NOEXCEPT;
+/** Returns 1 while a pan transition/animation is running. */
+MLN_CABI_API int             mbgl_map_is_panning(mbgl_map_t* map) MLN_CABI_NOEXCEPT;
 /** Translate the viewport by (dx, dy) screen pixels, optionally animated. */
 MLN_CABI_API mbgl_status_t   mbgl_map_move_by(mbgl_map_t* map, double dx, double dy,
                                                 int64_t duration_ms) MLN_CABI_NOEXCEPT;
@@ -252,9 +282,10 @@ MLN_CABI_API mbgl_status_t   mbgl_map_latlngs_for_pixels(mbgl_map_t* map,
 /** Get style metadata.  Returned strings must be freed with mbgl_free_string(). */
 MLN_CABI_API char*           mbgl_style_get_url(mbgl_style_t* st) MLN_CABI_NOEXCEPT;
 MLN_CABI_API char*           mbgl_style_get_name(mbgl_style_t* st) MLN_CABI_NOEXCEPT;
-/** Returns a newline-separated list of source IDs; caller frees with mbgl_free_string(). */
+/** Returns a JSON array of source IDs (IDs may contain any character, so a
+ *  delimiter-joined string would be ambiguous); caller frees with mbgl_free_string(). */
 MLN_CABI_API char*           mbgl_style_get_source_ids(mbgl_style_t* st) MLN_CABI_NOEXCEPT;
-/** Returns a newline-separated list of layer IDs in draw order; caller frees. */
+/** Returns a JSON array of layer IDs in draw order; caller frees. */
 MLN_CABI_API char*           mbgl_style_get_layer_ids(mbgl_style_t* st) MLN_CABI_NOEXCEPT;
 /** Get a layer handle by ID (returns NULL if not found). */
 MLN_CABI_API mbgl_layer_t*   mbgl_style_get_layer(mbgl_style_t* st, const char* layer_id) MLN_CABI_NOEXCEPT;
@@ -286,6 +317,46 @@ MLN_CABI_API mbgl_status_t   mbgl_map_on_pinch(mbgl_map_t* map, double scale_fac
 MLN_CABI_API mbgl_status_t   mbgl_map_fly_to(mbgl_map_t* map, double lat, double lon,
                                                double zoom, double bearing, double pitch,
                                                int64_t duration_ms) MLN_CABI_NOEXCEPT;
+
+/* ── Map – camera with edge padding ────────────────────────────────────────────
+ * Padded variants of the camera movement functions.  Padding (in screen pixels,
+ * order top/left/bottom/right) shifts the camera's effective centre so the
+ * target appears centred in the *unobscured* part of the viewport — use when
+ * panels or overlays cover part of the map.  Pass NaN for zoom, bearing, or
+ * pitch to leave that field unchanged. */
+MLN_CABI_API mbgl_status_t   mbgl_map_jump_to_padded(mbgl_map_t* map,
+                                                       double lat, double lon,
+                                                       double zoom, double bearing, double pitch,
+                                                       double pad_top, double pad_left,
+                                                       double pad_bottom, double pad_right) MLN_CABI_NOEXCEPT;
+MLN_CABI_API mbgl_status_t   mbgl_map_ease_to_padded(mbgl_map_t* map,
+                                                       double lat, double lon,
+                                                       double zoom, double bearing, double pitch,
+                                                       double pad_top, double pad_left,
+                                                       double pad_bottom, double pad_right,
+                                                       int64_t duration_ms) MLN_CABI_NOEXCEPT;
+MLN_CABI_API mbgl_status_t   mbgl_map_fly_to_padded(mbgl_map_t* map,
+                                                      double lat, double lon,
+                                                      double zoom, double bearing, double pitch,
+                                                      double pad_top, double pad_left,
+                                                      double pad_bottom, double pad_right,
+                                                      int64_t duration_ms) MLN_CABI_NOEXCEPT;
+/** Read the full camera state in one call, optionally offset by edge padding.
+ *  Pass 0 for all pads to read the raw camera.  Pass NULL for outputs you
+ *  don't need. */
+MLN_CABI_API mbgl_status_t   mbgl_map_get_camera(mbgl_map_t* map,
+                                                   double pad_top, double pad_left,
+                                                   double pad_bottom, double pad_right,
+                                                   double* out_lat, double* out_lon,
+                                                   double* out_zoom,
+                                                   double* out_bearing,
+                                                   double* out_pitch) MLN_CABI_NOEXCEPT;
+/** Multiply the map scale by @p scale (2.0 = one zoom level in), optionally
+ *  about a screen anchor point.  Pass NaN for anchor_x/anchor_y to scale about
+ *  the viewport centre. */
+MLN_CABI_API mbgl_status_t   mbgl_map_scale_by(mbgl_map_t* map, double scale,
+                                                 double anchor_x, double anchor_y,
+                                                 int64_t duration_ms) MLN_CABI_NOEXCEPT;
 
 /** Set geographic camera bounds and optional zoom/pitch limits.
  *  Pass NaN for any field to leave it unset (e.g. no lat/lng constraint). */
@@ -361,6 +432,31 @@ MLN_CABI_API char*           mbgl_map_query_rendered_features_in_box(mbgl_map_t*
                                                                         double x1, double y1,
                                                                         double x2, double y2,
                                                                         const char* layer_ids) MLN_CABI_NOEXCEPT;
+/** Query all features in a source's data, regardless of visibility.
+ *  Returns a JSON FeatureCollection string; caller must free with mbgl_free_string().
+ *  @param source_layer_ids  Comma-separated source-layer names (required for
+ *                           vector sources, ignored for GeoJSON sources), or NULL.
+ *  @param filter_json       Style-spec filter expression JSON, or NULL for all. */
+MLN_CABI_API char*           mbgl_map_query_source_features(mbgl_map_t* map,
+                                                              const char* source_id,
+                                                              const char* source_layer_ids,
+                                                              const char* filter_json) MLN_CABI_NOEXCEPT;
+/** Query a feature extension — used for GeoJSON cluster expansion.
+ *  Returns a JSON string (a FeatureCollection for "children"/"leaves", a bare
+ *  value for "expansion-zoom"), or NULL on error; caller frees with
+ *  mbgl_free_string().
+ *  @param feature_json     The cluster feature (GeoJSON Feature) returned by a
+ *                          rendered-features query.
+ *  @param extension        Extension name — "supercluster" for cluster sources.
+ *  @param extension_field  "children", "leaves", or "expansion-zoom".
+ *  @param args_json        Optional JSON object of arguments (e.g.
+ *                          {"limit":10,"offset":0} for "leaves"), or NULL. */
+MLN_CABI_API char*           mbgl_map_query_feature_extensions(mbgl_map_t* map,
+                                                                 const char* source_id,
+                                                                 const char* feature_json,
+                                                                 const char* extension,
+                                                                 const char* extension_field,
+                                                                 const char* args_json) MLN_CABI_NOEXCEPT;
 /** Free a string returned by any mbgl query function. */
 MLN_CABI_API void            mbgl_free_string(char* str) MLN_CABI_NOEXCEPT;
 
@@ -370,6 +466,16 @@ MLN_CABI_API mbgl_style_t*   mbgl_map_get_style(mbgl_map_t* map) MLN_CABI_NOEXCE
 /* ── Sources ───────────────────────────────────────────────────────────────── */
 MLN_CABI_API mbgl_source_t*  mbgl_style_add_geojson_source(mbgl_style_t* st, const char* source_id) MLN_CABI_NOEXCEPT;
 MLN_CABI_API mbgl_source_t*  mbgl_style_add_geojson_source_url(mbgl_style_t* st, const char* source_id, const char* url) MLN_CABI_NOEXCEPT;
+/** Add a GeoJSON source with style-spec options (clustering etc.).
+ *  @param options_json  JSON object of GeoJSON source options — the style-spec
+ *                       keys minus "type"/"data": "cluster", "clusterRadius",
+ *                       "clusterMaxZoom", "clusterMinPoints", "clusterProperties",
+ *                       "maxzoom", "buffer", "tolerance", "lineMetrics".
+ *                       Pass NULL or "{}" for defaults.
+ *  Set data afterwards with mbgl_geojson_source_set_data / _set_url. */
+MLN_CABI_API mbgl_source_t*  mbgl_style_add_geojson_source_options(mbgl_style_t* st,
+                                                                     const char* source_id,
+                                                                     const char* options_json) MLN_CABI_NOEXCEPT;
 MLN_CABI_API mbgl_status_t   mbgl_geojson_source_set_data(mbgl_source_t* src, const char* geojson) MLN_CABI_NOEXCEPT;
 MLN_CABI_API mbgl_status_t   mbgl_geojson_source_set_url(mbgl_source_t* src, const char* url) MLN_CABI_NOEXCEPT;
 MLN_CABI_API mbgl_source_t*  mbgl_style_add_vector_source(mbgl_style_t* st, const char* source_id, const char* url) MLN_CABI_NOEXCEPT;

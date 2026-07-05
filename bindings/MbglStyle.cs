@@ -28,6 +28,17 @@ public sealed class MbglStyle
     public MbglSource AddGeoJsonSourceUrl(string sourceId, string url)
         => new(NativeMethods.StyleAddGeoJsonSourceUrl(Handle, sourceId, url));
 
+    /// <summary>
+    /// Add a GeoJSON source with style-spec options (clustering etc.).
+    /// <paramref name="optionsJson"/> is a JSON object of GeoJSON source options —
+    /// the style-spec keys minus <c>type</c>/<c>data</c>: <c>cluster</c>,
+    /// <c>clusterRadius</c>, <c>clusterMaxZoom</c>, <c>clusterMinPoints</c>,
+    /// <c>clusterProperties</c>, <c>maxzoom</c>, <c>buffer</c>, <c>tolerance</c>,
+    /// <c>lineMetrics</c>. Set data afterwards with <see cref="MbglSource.SetGeoJson"/>.
+    /// </summary>
+    public MbglSource AddGeoJsonSourceOptions(string sourceId, string? optionsJson)
+        => new(NativeMethods.StyleAddGeoJsonSourceOptions(Handle, sourceId, optionsJson));
+
     public MbglSource AddVectorSource(string sourceId, string url)
         => new(NativeMethods.StyleAddVectorSource(Handle, sourceId, url));
 
@@ -101,14 +112,9 @@ public sealed class MbglStyle
     /// </summary>
     public IReadOnlyList<string> GetSourceAttributions()
     {
-        var idsPtr = NativeMethods.StyleGetSourceIds(Handle);
-        if (idsPtr == IntPtr.Zero) return [];
-        var raw = Marshal.PtrToStringUTF8(idsPtr) ?? string.Empty;
-        NativeMethods.FreeString(idsPtr);
-
         var seen  = new HashSet<string>(StringComparer.Ordinal);
         var result = new List<string>();
-        foreach (var id in raw.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        foreach (var id in GetSourceIds())
         {
             var srcPtr  = NativeMethods.StyleGetSource(Handle, id);
             if (srcPtr == IntPtr.Zero) continue;
@@ -218,25 +224,32 @@ public sealed class MbglStyle
         return result;
     }
 
-    /// <summary>Returns an array of all source IDs currently in the style.</summary>
-    public string[] GetSourceIds()
+    // The native side returns ID lists as JSON arrays: IDs may contain any
+    // character (including newlines), so a delimiter-joined string would be
+    // ambiguous.
+    private static string[] ParseIdArray(IntPtr ptr)
     {
-        var ptr = NativeMethods.StyleGetSourceIds(Handle);
         if (ptr == IntPtr.Zero) return [];
         var raw = Marshal.PtrToStringUTF8(ptr) ?? string.Empty;
         NativeMethods.FreeString(ptr);
-        return raw.Length == 0 ? [] : raw.Split('\n');
+        if (raw.Length == 0) return [];
+        try
+        {
+            return JsonSerializer.Deserialize<string[]>(raw) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
     }
+
+    /// <summary>Returns an array of all source IDs currently in the style.</summary>
+    public string[] GetSourceIds()
+        => ParseIdArray(NativeMethods.StyleGetSourceIds(Handle));
 
     /// <summary>Returns an array of all layer IDs in draw order.</summary>
     public string[] GetLayerIds()
-    {
-        var ptr = NativeMethods.StyleGetLayerIds(Handle);
-        if (ptr == IntPtr.Zero) return [];
-        var raw = Marshal.PtrToStringUTF8(ptr) ?? string.Empty;
-        NativeMethods.FreeString(ptr);
-        return raw.Length == 0 ? [] : raw.Split('\n');
-    }
+        => ParseIdArray(NativeMethods.StyleGetLayerIds(Handle));
 
     /// <summary>Gets a layer handle by ID, or <c>null</c> if not found.</summary>
     public MbglLayer? GetLayer(string layerId)

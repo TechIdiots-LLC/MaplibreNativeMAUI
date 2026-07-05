@@ -168,6 +168,26 @@ Declare sources as child elements of `MapLibreMap`, or add them programmatically
 <sources:VectorSource SourceName="roads" TileUrl="https://example.com/tiles.json" />
 ```
 
+### Clustered GeoJSON sources
+
+Pass style-spec GeoJSON source options (clustering etc.) when adding a source
+programmatically:
+
+```csharp
+// Cluster points within 50px, up to zoom 14
+controller.AddGeoJsonSource("aps", featureCollectionJson,
+    "{\"cluster\":true,\"clusterRadius\":50,\"clusterMaxZoom\":14}");
+```
+
+Cluster features carry `cluster: true`, `cluster_id`, and `point_count` properties.
+Drill into a cluster returned by a rendered-features query:
+
+```csharp
+double? zoom  = controller.GetClusterExpansionZoom("aps", clusterFeatureJson);
+string? kids  = controller.GetClusterChildren("aps", clusterFeatureJson);
+string? items = controller.GetClusterLeaves("aps", clusterFeatureJson, limit: 25);
+```
+
 ---
 
 ## Layers
@@ -293,6 +313,17 @@ controller.EaseTo(MapSpan.FromCenterAndRadius(
 // Coordinate conversion
 var (x, y) = controller.LatLngToScreenPoint(51.5, -0.1);
 LatLng ll  = controller.ScreenPointToLatLng(x, y);
+
+// Edge padding: centre the target in the *unobscured* part of the viewport
+// (padding order: top, left, bottom, right, in screen pixels). Useful when a
+// panel or overlay covers part of the map. Pass double.NaN for zoom / bearing /
+// pitch to keep the current value.
+controller.EaseTo(51.5, -0.1, zoom: 14, bearing: 0, pitch: 0,
+                  padTop: 0, padLeft: 300, padBottom: 0, padRight: 0);
+
+// Anchored zoom: multiply the map scale (2.0 = one zoom level in),
+// optionally about a screen point
+controller.ScaleBy(2.0, anchorX: x, anchorY: y, durationMs: 250);
 ```
 
 The map also exposes the currently visible region for read-back. `MapLibreMap.VisibleRegion`
@@ -317,6 +348,12 @@ string? geojson = controller.QueryRenderedFeaturesAtPoint(x, y, layerIds: "my-la
 
 // Query features in a bounding box
 string? geojson = controller.QueryRenderedFeaturesInBox(x1, y1, x2, y2);
+
+// Query all features in a source's *data*, regardless of visibility
+// (sourceLayerIds is required for vector sources, ignored for GeoJSON;
+//  filterJson is an optional style-spec filter expression)
+string? all = controller.QuerySourceFeatures("my-source",
+    sourceLayerIds: null, filterJson: "[\"==\",[\"get\",\"type\"],\"wifi\"]");
 ```
 
 The return value is a GeoJSON `FeatureCollection` string, or `null` if the renderer is not ready.
@@ -366,6 +403,21 @@ controller.ReduceMemoryUse();
 
 // Write renderer diagnostics to the log
 controller.DumpDebugLogs();
+```
+
+---
+
+## Offline Mode
+
+MapLibre's network access can be toggled process-wide. When offline, all network
+requests are suspended and only cached resources are served; going back online
+resumes queued requests.
+
+```csharp
+using MapLibreNative.Maui;
+
+MbglNetwork.Online = false;  // force offline — serve from cache only
+MbglNetwork.Online = true;   // resume network access
 ```
 
 ---
