@@ -207,6 +207,10 @@ jobs:
           name: nuget-packages
           path: local-feed
 
+      - name: Copy WPF NuGet to local feed
+        shell: bash
+        run: cp artifacts/*.nupkg local-feed/
+
       - name: Add local NuGet feed
         run: dotnet nuget add source "${{ github.workspace }}\local-feed" --name local-release
 
