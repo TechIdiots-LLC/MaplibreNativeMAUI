@@ -6,6 +6,10 @@
 
 ### 🐞 Bug fixes
 
+## 4.1.2
+### 🐞 Bug fixes
+- **MAUI Windows: double-clicking the nav/GPS/d-pad overlay buttons leaked through to the map** — On WinUI the second click of a fast double-click is raised as `DoubleTapped` (not a second `Tapped`), so the overlay buttons, which only handled `Tapped`, dropped every second press and let the unhandled `DoubleTapped` bubble past the button — zooming/panning the map "behind" it. Fixed by also handling `DoubleTapped` on the zoom (+/−) buttons, GPS buttons, and rotate/pitch d-pad arrows (running the same action and marking the event handled), and swallowing `DoubleTapped` on the attribution chip.
+
 ## 4.1.1
 ### 🐞 Bug fixes
 - **WPF: attribution not updated when sources are added after style load** — `MlnMapImage` only refreshed its attribution overlay on `onDidFinishLoadingStyle`, so sources added dynamically after the style was ready (e.g. via `AddVectorSourceUrl`) never contributed their TileJSON attribution strings. Fixed by also refreshing attribution in response to `onSourceChanged`, which fires when a source's TileJSON metadata finishes loading.
