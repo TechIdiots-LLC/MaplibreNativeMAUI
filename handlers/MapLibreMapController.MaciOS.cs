@@ -433,9 +433,13 @@ public class MapLibreMapController : IMapLibreMapController
                     if (_pendingLocInd.HasValue) ApplyPendingLocationIndicator();
                     OnStyleLoadedReceived?.Invoke(new Style(null));
                     break;
+                case "onSourceChanged":
+                    // Always refresh: fires when a source's TileJSON metadata loads, including
+                    // sources added dynamically after the style is already loaded.
+                    RefreshAttribution();
+                    break;
                 case "onDidBecomeIdle":
-                    // TileJSON sources may finish loading after onDidFinishLoadingStyle;
-                    // only retry while we still have no content.
+                    // Fallback: retry attribution if onSourceChanged fired before the string was ready.
                     if (!_attrLoaded) RefreshAttribution();
                     OnDidBecomeIdleReceived?.Invoke();
                     break;
