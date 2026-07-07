@@ -232,6 +232,9 @@ public class MapLibreMapController : IMapLibreMapController
             if (_attrCollapsed) ExpandAttribution(); else CollapseAttribution();
             e.Handled = true;
         };
+        // Swallow DoubleTapped so a fast double-click on the attribution chip doesn't leak
+        // its second press (raised as DoubleTapped) through to the map behind it.
+        _attrBorder.DoubleTapped += (_, e) => e.Handled = true;
         View.Children.Add(_attrBorder);
 
         RefreshGpsControl();
@@ -255,7 +258,11 @@ public class MapLibreMapController : IMapLibreMapController
                 VerticalAlignment = WUX.VerticalAlignment.Center,
             },
         };
-        b.Tapped += (_, e) => { onClick(); e.Handled = true; };
+        // WinUI raises the *second* click of a rapid double-click as DoubleTapped (not a
+        // second Tapped). Without this, a double-click on a GPS button would drop every
+        // second press and let the unhandled DoubleTapped bubble past the button.
+        b.Tapped       += (_, e) => { onClick(); e.Handled = true; };
+        b.DoubleTapped += (_, e) => { onClick(); e.Handled = true; };
         return b;
     }
 
@@ -283,7 +290,11 @@ public class MapLibreMapController : IMapLibreMapController
         };
         b.PointerEntered += (_, _) => b.Background = new WUXM.SolidColorBrush(Rgb(0xF0, 0xF0, 0xF0));
         b.PointerExited  += (_, _) => b.Background = new WUXM.SolidColorBrush(Microsoft.UI.Colors.White);
-        b.Tapped += (_, e) => { onClick(); e.Handled = true; };
+        // Handle DoubleTapped too: WinUI delivers the second click of a fast double-click as
+        // DoubleTapped rather than a second Tapped, so clicking +/- twice quickly would only
+        // zoom once and let the unhandled event bubble through to the map behind the button.
+        b.Tapped       += (_, e) => { onClick(); e.Handled = true; };
+        b.DoubleTapped += (_, e) => { onClick(); e.Handled = true; };
         return b;
     }
 
@@ -361,7 +372,10 @@ public class MapLibreMapController : IMapLibreMapController
         }
         btn.PointerEntered += (_, _) => btn.Background = new WUXM.SolidColorBrush(Windows.UI.Color.FromArgb(30, 0, 0, 0));
         btn.PointerExited  += (_, _) => btn.Background = new WUXM.SolidColorBrush(Microsoft.UI.Colors.Transparent);
-        btn.Tapped += (_, e) => { onClick(); e.Handled = true; };
+        // Consume DoubleTapped as well — WinUI sends the second click of a double-click here,
+        // not to Tapped; otherwise it bubbles past the arrow to the map.
+        btn.Tapped       += (_, e) => { onClick(); e.Handled = true; };
+        btn.DoubleTapped += (_, e) => { onClick(); e.Handled = true; };
         return btn;
     }
 
