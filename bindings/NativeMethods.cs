@@ -136,7 +136,25 @@ public static partial class NativeMethods
     [LibraryImport(Lib, EntryPoint = "mbgl_runloop_run_once")]
     public static partial MbglStatus RunLoopRunOnce(IntPtr rl);
 
+    // ── Render backend ────────────────────────────────────────────────────────
+    /// <summary>Returns the renderer this native build uses: "opengl", "vulkan", or "metal".</summary>
+    [LibraryImport(Lib, EntryPoint = "mbgl_get_render_backend")]
+    [return: MarshalAs(UnmanagedType.LPUTF8Str)]
+    public static partial string GetRenderBackend();
+
     // ── Frontend ──────────────────────────────────────────────────────────────
+    /// <summary>Backend-agnostic frontend factory (surface_handle meaning depends on backend).</summary>
+    [LibraryImport(Lib, EntryPoint = "mbgl_frontend_create")]
+    public static partial IntPtr FrontendCreate(
+        IntPtr surfaceHandle,
+        IntPtr glContext,
+        int    widthPx,
+        int    heightPx,
+        float  pixelRatio,
+        RenderFn renderCallback,
+        IntPtr   renderUserdata);
+
+    /// <summary>Deprecated alias for <see cref="FrontendCreate"/>.</summary>
     [LibraryImport(Lib, EntryPoint = "mbgl_frontend_create_gl")]
     public static partial IntPtr FrontendCreateGl(
         IntPtr surfaceHandle,
@@ -146,6 +164,10 @@ public static partial class NativeMethods
         float  pixelRatio,
         RenderFn renderCallback,
         IntPtr   renderUserdata);
+
+    /// <summary>Copies the last rendered frame as premultiplied RGBA into outBuf (offscreen/Vulkan).</summary>
+    [LibraryImport(Lib, EntryPoint = "mbgl_frontend_read_pixels")]
+    public static partial MbglStatus FrontendReadPixels(IntPtr fe, IntPtr outBuf, nuint bufLen);
 
     [LibraryImport(Lib, EntryPoint = "mbgl_frontend_destroy")]
     public static partial MbglStatus FrontendDestroy(IntPtr fe);

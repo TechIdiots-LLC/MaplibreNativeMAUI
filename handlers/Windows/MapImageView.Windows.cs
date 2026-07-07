@@ -79,6 +79,11 @@ public sealed class MapImageView : IDisposable
     private int   _width = 1, _height = 1;
     private float _dpi = 1f;
     private bool  _renderNeedsUpdate = true, _rendering, _isDragging, _disposed;
+
+    // Vulkan builds render offscreen (headless) and read pixels back through the
+    // frontend; OpenGL builds render into a WGL FBO and read back via glReadPixels.
+    private static readonly bool _vulkan = MbglFrontend.RenderBackend == MbglRenderBackend.Vulkan;
+    private bool _started;
     private Windows.Foundation.Point _lastPos;
 
     private static int _diagCounter;
@@ -95,6 +100,9 @@ public sealed class MapImageView : IDisposable
     public MapImageView()
     {
         View.Children.Add(_mapImage);
+        // The GL FBO has a bottom-left origin so the GL path flips vertically (ScaleY = -1,
+        // set on _mapImage). The Vulkan headless read-back is already top-down, so undo the flip.
+        if (_vulkan && _mapImage.RenderTransform is WUXM.ScaleTransform st) st.ScaleY = 1;
         // Nav / GPS / attribution controls are added by MapLibreMapController.Windows.
 
         View.Loaded        += (_, _) => Start();
@@ -117,21 +125,30 @@ public sealed class MapImageView : IDisposable
         // Once disposed (controller teardown on tab switch), a stale View.Loaded must NOT
         // resurrect this instance: the owning controller has already nulled its _mapView, so
         // re-firing MapReady would dereference null. The new tab visit builds a fresh MapImageView.
-        if (_disposed || _interop != null) return;
+        if (_disposed || _started) return;
+        _started = true;
 
         _dpi    = (float)View.XamlRoot.RasterizationScale;
         _width  = Math.Max(1, (int)(View.ActualWidth  * _dpi));
         _height = Math.Max(1, (int)(View.ActualHeight * _dpi));
-        MDiag($"Start dpi={_dpi} size={_width}x{_height} actual={View.ActualWidth}x{View.ActualHeight} style={StyleUrl}");
+        MDiag($"Start backend={(_vulkan ? "vulkan" : "opengl")} dpi={_dpi} size={_width}x{_height} actual={View.ActualWidth}x{View.ActualHeight} style={StyleUrl}");
 
-        _interop = new HiddenWglContext();
-        _interop.Initialize();
-        _interop.Resize(_width, _height);
+        if (!_vulkan)
+        {
+            // OpenGL: off-screen WGL context we glReadPixels from each frame.
+            _interop = new HiddenWglContext();
+            _interop.Initialize();
+            _interop.Resize(_width, _height);
+        }
         CreateBitmap(_width, _height);
 
         _runLoop  = _sharedRunLoop ??= new MbglRunLoop();
-        _frontend = new MbglFrontend(_interop.Hdc, _interop.GlContext, _width, _height, _dpi,
-            () => _renderNeedsUpdate = true);
+        // Vulkan renders headless (no surface handle); OpenGL needs the WGL HDC + context.
+        _frontend = _vulkan
+            ? new MbglFrontend(IntPtr.Zero, IntPtr.Zero, _width, _height, _dpi,
+                () => _renderNeedsUpdate = true)
+            : new MbglFrontend(_interop!.Hdc, _interop.GlContext, _width, _height, _dpi,
+                () => _renderNeedsUpdate = true);
         // Persistent tile/resource cache (mbgl's default is :memory:). Shares
         // MbglCache.DefaultPath with MbglOfflineManager so offline regions
         // downloaded by the manager are served to the map.
@@ -159,14 +176,14 @@ public sealed class MapImageView : IDisposable
 
     private void Resize(int dipWidth, int dipHeight)
     {
-        if (_interop == null || _frontend == null || _map == null) return;
+        if (_frontend == null || _map == null) return;
         float scale = (float)(View.XamlRoot?.RasterizationScale ?? _dpi);
         int w = Math.Max(1, (int)(dipWidth  * scale));
         int h = Math.Max(1, (int)(dipHeight * scale));
         if (w == _width && h == _height) return;
         _width = w; _height = h; _dpi = scale;
 
-        _interop.Resize(w, h);
+        _interop?.Resize(w, h);   // OpenGL only; null on Vulkan
         CreateBitmap(w, h);
         _frontend.SetSize(w, h);
         _map.SetSize(w, h);
@@ -176,20 +193,30 @@ public sealed class MapImageView : IDisposable
     private void OnRendering(object? sender, object e)
     {
         _runLoop?.RunOnce();
-        if (!_renderNeedsUpdate || _interop == null || _frontend == null || _bitmap == null)
+        if (!_renderNeedsUpdate || _frontend == null || _bitmap == null)
             return;
         _renderNeedsUpdate = false;
-
-        _interop.MakeCurrent();
-        glViewport(0, 0, _width, _height);
-        try { _frontend.Render(); } catch { return; }
 
         // Write pixels directly into the WriteableBitmap's backing store via IBufferByteAccess.
         // NOTE: a plain (IBufferByteAccess)(object) cast throws InvalidCastException under CsWinRT
         // (WinUI 3) — the projected IBuffer must be QueryInterface'd via WinRT's .As<T>().
         var ibb = _bitmap.PixelBuffer.As<IBufferByteAccess>();
         ibb.Buffer(out IntPtr ptr);
-        _interop.ReadPixels(ptr);
+
+        if (_vulkan)
+        {
+            // Headless Vulkan: render off-screen, then copy the frame back into the bitmap.
+            try { _frontend.Render(); } catch { return; }
+            _frontend.ReadPixels(ptr, (nuint)((long)_width * _height * 4));
+        }
+        else
+        {
+            if (_interop == null) return;
+            _interop.MakeCurrent();
+            glViewport(0, 0, _width, _height);
+            try { _frontend.Render(); } catch { return; }
+            _interop.ReadPixels(ptr);
+        }
         _bitmap.Invalidate();
     }
 
