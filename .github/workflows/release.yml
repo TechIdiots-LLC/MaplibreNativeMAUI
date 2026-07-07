@@ -76,6 +76,12 @@ jobs:
     if: needs.version-check.outputs.published == 'false'
     uses: ./.github/workflows/native-android-vulkan.yml
 
+  build-apple-vulkan:
+    name: Build Apple Vulkan native
+    needs: version-check
+    if: needs.version-check.outputs.published == 'false'
+    uses: ./.github/workflows/native-apple-vulkan.yml
+
   # ── NuGet packaging ───────────────────────────────────────────────────────
   pack:
     name: Pack NuGet
@@ -385,7 +391,7 @@ jobs:
   pack-vulkan:
     name: Pack Vulkan NuGet
     runs-on: macos-latest
-    needs: [version-check, build-windows-vulkan, build-android-vulkan, build-apple]
+    needs: [version-check, build-windows-vulkan, build-android-vulkan, build-apple-vulkan]
     if: needs.version-check.outputs.published == 'false'
 
     steps:
@@ -399,28 +405,12 @@ jobs:
             9.0.x
             10.0.x
 
-      - name: Download MLN native artifacts (Windows + Android)
+      # Vulkan native artifacts for every platform share the native-mln-*-vulkan
+      # naming (Windows/Android/Apple), so one pattern collects them all.
+      - name: Download MLN Vulkan native artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: native-mln-*
-          path: mln-artifacts
-
-      - name: Download Apple native artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: native-ios-arm64
-          path: mln-artifacts
-
-      - name: Download Apple iOS simulator native artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: native-iossimulator-arm64
-          path: mln-artifacts
-
-      - name: Download Apple macCatalyst native artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: native-maccatalyst
           path: mln-artifacts
 
       - name: Arrange native libs for Vulkan bindings project
@@ -430,13 +420,13 @@ jobs:
           mkdir -p $N/android-arm64 $N/android-x64
           mkdir -p $N/ios-arm64 $N/iossimulator-arm64 $N/maccatalyst
 
-          find mln-artifacts/native-mln-windows-x64-vulkan   -name "mln-cabi.dll"   -exec cp {} $N/win-x64/       \; 2>/dev/null || true
-          find mln-artifacts/native-mln-windows-arm64-vulkan -name "mln-cabi.dll"   -exec cp {} $N/win-arm64/     \; 2>/dev/null || true
-          find mln-artifacts/native-mln-android-arm64-v8a    -name "libmln-cabi.so" -exec cp {} $N/android-arm64/ \; 2>/dev/null || true
-          find mln-artifacts/native-mln-android-x86_64       -name "libmln-cabi.so" -exec cp {} $N/android-x64/   \; 2>/dev/null || true
-          find mln-artifacts/native-ios-arm64               -name "libmln-cabi.a"  -exec cp {} $N/ios-arm64/     \; 2>/dev/null || true
-          find mln-artifacts/native-iossimulator-arm64      -name "libmln-cabi.a"  -exec cp {} $N/iossimulator-arm64/ \; 2>/dev/null || true
-          find mln-artifacts/native-maccatalyst              -name "libmln-cabi.a"  -exec cp {} $N/maccatalyst/   \; 2>/dev/null || true
+          find mln-artifacts/native-mln-windows-x64-vulkan       -name "mln-cabi.dll"   -exec cp {} $N/win-x64/       \; 2>/dev/null || true
+          find mln-artifacts/native-mln-windows-arm64-vulkan     -name "mln-cabi.dll"   -exec cp {} $N/win-arm64/     \; 2>/dev/null || true
+          find mln-artifacts/native-mln-android-arm64-v8a        -name "libmln-cabi.so" -exec cp {} $N/android-arm64/ \; 2>/dev/null || true
+          find mln-artifacts/native-mln-android-x86_64           -name "libmln-cabi.so" -exec cp {} $N/android-x64/   \; 2>/dev/null || true
+          find mln-artifacts/native-mln-ios-arm64-vulkan          -name "libmln-cabi.a"  -exec cp {} $N/ios-arm64/     \; 2>/dev/null || true
+          find mln-artifacts/native-mln-iossimulator-arm64-vulkan -name "libmln-cabi.a"  -exec cp {} $N/iossimulator-arm64/ \; 2>/dev/null || true
+          find mln-artifacts/native-mln-maccatalyst-vulkan        -name "libmln-cabi.a"  -exec cp {} $N/maccatalyst/   \; 2>/dev/null || true
 
           echo "Vulkan native libs arranged:"
           find $N -type f

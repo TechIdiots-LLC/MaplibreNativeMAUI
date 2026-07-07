@@ -1,0 +1,149 @@
+name: Native Apple Vulkan (MoltenVK)
+
+on:
+  workflow_call:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: iOS arm64 Vulkan
+            cmake-system: iOS
+            cmake-sysroot: iphoneos
+            cmake-archs: arm64
+            extra-flags: ""
+            artifact: native-mln-ios-arm64-vulkan
+
+          - name: iOS Simulator arm64 Vulkan
+            cmake-system: iOS
+            cmake-sysroot: iphonesimulator
+            cmake-archs: arm64
+            extra-flags: ""
+            artifact: native-mln-iossimulator-arm64-vulkan
+
+          - name: macCatalyst arm64+x64 Vulkan
+            cmake-system: Darwin
+            cmake-sysroot: macosx
+            cmake-archs: "x86_64;arm64"
+            extra-flags: -DCMAKE_XCODE_ATTRIBUTE_SUPPORTS_MACCATALYST=YES -DCMAKE_XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET=15.0 -DMLN_WITH_GLFW=OFF
+            artifact: native-mln-maccatalyst-vulkan
+
+    steps:
+      - name: Enable Git long paths
+        run: git config --global core.longpaths true
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Vulkan headers + VMA are vendored by maplibre-native, so compilation needs
+      # no external SDK. But platform/macos/macos.cmake calls find_package(Vulkan
+      # REQUIRED); the SDK (which bundles MoltenVK) satisfies that. mln-cabi is a
+      # static archive here, so MoltenVK itself is linked later, by the app.
+      - name: Install Vulkan SDK (MoltenVK)
+        uses: humbletim/setup-vulkan-sdk@v1.2.1
+        with:
+          vulkan-query-version: latest
+          vulkan-components: MoltenVK, Vulkan-Headers, Vulkan-Loader
+          vulkan-use-cache: true
+
+      - name: Patch darwin.cmake for macCatalyst
+        if: ${{ matrix.artifact == 'native-mln-maccatalyst-vulkan' }}
+        run: |
+          echo 'target_link_libraries(mbgl-core PRIVATE mbgl-vendor-filesystem)' \
+            >> dependencies/maplibre-native/platform/darwin/darwin.cmake
+
+      - name: Configure CMake
+        if: ${{ matrix.artifact != 'native-mln-maccatalyst-vulkan' }}
+        run: |
+          cmake -B build -G Xcode \
+            -DCMAKE_SYSTEM_NAME=${{ matrix.cmake-system }} \
+            -DCMAKE_OSX_ARCHITECTURES="${{ matrix.cmake-archs }}" \
+            -DCMAKE_OSX_SYSROOT=${{ matrix.cmake-sysroot }} \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
+            ${{ matrix.extra-flags }} \
+            -DMLN_WITH_METAL=OFF \
+            -DMLN_WITH_VULKAN=ON
+
+      - name: Configure and build macCatalyst (macabi)
+        if: ${{ matrix.artifact == 'native-mln-maccatalyst-vulkan' }}
+        run: |
+          SYSROOT=$(xcrun --sdk macosx --show-sdk-path)
+          IOSUPPORT_FWKS="$SYSROOT/System/iOSSupport/System/Library/Frameworks"
+          IOSUPPORT_INC="$SYSROOT/System/iOSSupport/usr/include"
+          CLANG=$(xcrun -f clang)
+          CLANGXX=$(xcrun -f clang++)
+          for ARCH in x86_64 arm64; do
+            TRIPLE="${ARCH}-apple-ios15.0-macabi"
+            EXTRA_FLAGS="-iframework $IOSUPPORT_FWKS -I$IOSUPPORT_INC -Wno-overriding-t-option"
+            cmake -B "build-${ARCH}" \
+              -G Ninja \
+              -DCMAKE_SYSTEM_NAME=Darwin \
+              -DCMAKE_OSX_SYSROOT=macosx \
+              -DCMAKE_OSX_ARCHITECTURES="" \
+              -DCMAKE_OSX_DEPLOYMENT_TARGET="" \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_C_COMPILER="$CLANG" \
+              -DCMAKE_CXX_COMPILER="$CLANGXX" \
+              -DCMAKE_OBJC_COMPILER="$CLANG" \
+              -DCMAKE_OBJCXX_COMPILER="$CLANGXX" \
+              "-DCMAKE_C_COMPILER_TARGET=${TRIPLE}" \
+              "-DCMAKE_CXX_COMPILER_TARGET=${TRIPLE}" \
+              "-DCMAKE_OBJC_COMPILER_TARGET=${TRIPLE}" \
+              "-DCMAKE_OBJCXX_COMPILER_TARGET=${TRIPLE}" \
+              "-DCMAKE_C_FLAGS=${EXTRA_FLAGS}" \
+              "-DCMAKE_CXX_FLAGS=${EXTRA_FLAGS}" \
+              "-DCMAKE_OBJC_FLAGS=${EXTRA_FLAGS}" \
+              "-DCMAKE_OBJCXX_FLAGS=${EXTRA_FLAGS}" \
+              -DMLN_WITH_GLFW=OFF \
+              -DMLN_WITH_METAL=OFF \
+              -DMLN_WITH_VULKAN=ON
+            cmake --build "build-${ARCH}" --target mln-cabi --config Release --parallel
+            CABI=$(find "build-${ARCH}" -name "libmln-cabi.a" | head -1)
+            ALL_LIBS=$(find "build-${ARCH}" -name "*.a" -type f | sort)
+            # shellcheck disable=SC2086
+            libtool -static -o "${CABI}.merged" ${ALL_LIBS}
+            mv "${CABI}.merged" "$CABI"
+          done
+          X86=$(find build-x86_64 -name "libmln-cabi.a" | head -1)
+          ARM=$(find build-arm64 -name "libmln-cabi.a" | head -1)
+          mkdir -p build
+          lipo -create "$X86" "$ARM" -output build/libmln-cabi.a
+          echo "Universal macCatalyst binary:"
+          lipo -info build/libmln-cabi.a
+
+      - name: Build mln-cabi
+        if: ${{ matrix.artifact != 'native-mln-maccatalyst-vulkan' }}
+        run: cmake --build build --target mln-cabi --config Release
+
+      - name: Merge into self-contained archive
+        if: ${{ matrix.artifact != 'native-mln-maccatalyst-vulkan' }}
+        run: |
+          CABI=$(find build -name "libmln-cabi.a" | head -1)
+          echo "Target archive: $CABI"
+          ALL_LIBS=$(find build -name "*.a" -type f | sort)
+          # shellcheck disable=SC2086
+          libtool -static -o "${CABI}.merged" ${ALL_LIBS}
+          mv "${CABI}.merged" "$CABI"
+          echo "Merged object count: $(ar -t "$CABI" | wc -l)"
+
+      - name: Locate built library
+        id: find-lib
+        run: |
+          LIB=$(find build -name "libmln-cabi.a" | head -1)
+          echo "path=$LIB" >> "$GITHUB_OUTPUT"
+          echo "Found: $LIB"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ steps.find-lib.outputs.path }}
+          retention-days: 7
