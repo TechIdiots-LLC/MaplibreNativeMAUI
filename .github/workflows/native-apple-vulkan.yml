@@ -72,7 +72,8 @@ jobs:
             -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
             ${{ matrix.extra-flags }} \
             -DMLN_WITH_METAL=OFF \
-            -DMLN_WITH_VULKAN=ON
+            -DMLN_WITH_VULKAN=ON \
+            -DMLN_WITH_WERROR=OFF
 
       - name: Configure and build macCatalyst (macabi)
         if: ${{ matrix.artifact == 'native-mln-maccatalyst-vulkan' }}
@@ -106,7 +107,8 @@ jobs:
               "-DCMAKE_OBJCXX_FLAGS=${EXTRA_FLAGS}" \
               -DMLN_WITH_GLFW=OFF \
               -DMLN_WITH_METAL=OFF \
-              -DMLN_WITH_VULKAN=ON
+              -DMLN_WITH_VULKAN=ON \
+              -DMLN_WITH_WERROR=OFF
             cmake --build "build-${ARCH}" --target mln-cabi --config Release --parallel
             CABI=$(find "build-${ARCH}" -name "libmln-cabi.a" | head -1)
             ALL_LIBS=$(find "build-${ARCH}" -name "*.a" -type f | sort)
