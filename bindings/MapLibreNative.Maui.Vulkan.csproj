@@ -64,6 +64,36 @@
       <Pack>true</Pack>
       <PackagePath>runtimes/win-arm64/native</PackagePath>
     </None>
+
+    <!--
+      iOS XCFramework – pack every file inside the bundle so the directory
+      structure is preserved under buildTransitive/native/ios/libmln-cabi.xcframework/.
+      The .targets file at buildTransitive/ references this path.
+    -->
+    <None Include="$(_MlnNativeDir)ios\libmln-cabi.xcframework\**"
+          Condition="Exists('$(_MlnNativeDir)ios\libmln-cabi.xcframework')">
+      <Pack>true</Pack>
+      <PackagePath>buildTransitive/native/ios/libmln-cabi.xcframework/%(RecursiveDir)%(Filename)%(Extension)</PackagePath>
+    </None>
+
+    <!-- macCatalyst static library -->
+    <None Include="$(_MlnNativeDir)maccatalyst\libmln-cabi.a"
+          Condition="Exists('$(_MlnNativeDir)maccatalyst\libmln-cabi.a')">
+      <Pack>true</Pack>
+      <PackagePath>buildTransitive/native/maccatalyst</PackagePath>
+    </None>
+
+    <!--
+      Single MSBuild .targets file placed in buildTransitive/ (no TFM subfolder).
+      Named <PackageId>.targets so NuGet auto-imports it for consumers. Mirrors
+      MapLibreNative.Maui.targets — see that file / the base package for rationale
+      (buildTransitive so imports flow to transitive consumers; no TFM subfolder to
+      avoid NU1012; TFM conditions inside the targets select ios vs maccatalyst).
+    -->
+    <None Include="$(MSBuildThisFileDirectory)buildTransitive\MapLibreNative.Maui.Vulkan.targets">
+      <Pack>true</Pack>
+      <PackagePath>buildTransitive</PackagePath>
+    </None>
   </ItemGroup>
 
   <!-- Windows: copy the DLL next to the output for local development / testing. -->
@@ -88,8 +118,15 @@
 
   <!-- iOS: static library linked into the app binary by Xcode. -->
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">
+    <!-- Prefer XCFramework: bundles both device (ios-arm64) and simulator (iossimulator-arm64) slices. -->
+    <NativeReference Include="$(_MlnNativeDir)ios\libmln-cabi.xcframework"
+                     Condition="Exists('$(_MlnNativeDir)ios\libmln-cabi.xcframework')">
+      <Kind>Static</Kind>
+      <ForceLoad>True</ForceLoad>
+    </NativeReference>
+    <!-- Fallback for local dev builds that only have the device .a (no XCFramework). -->
     <NativeReference Include="$(_MlnNativeDir)ios-arm64\libmln-cabi.a"
-                     Condition="Exists('$(_MlnNativeDir)ios-arm64\libmln-cabi.a')">
+                     Condition="Exists('$(_MlnNativeDir)ios-arm64\libmln-cabi.a') And !Exists('$(_MlnNativeDir)ios\libmln-cabi.xcframework')">
       <Kind>Static</Kind>
       <ForceLoad>True</ForceLoad>
     </NativeReference>

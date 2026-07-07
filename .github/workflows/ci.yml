@@ -439,6 +439,22 @@ jobs:
           echo "Vulkan native libs arranged:"
           find $N -type f
 
+      - name: Create iOS XCFramework
+        run: |
+          N=bindings/native-vulkan
+          mkdir -p $N/ios
+          XCFW_ARGS=""
+          [ -f $N/ios-arm64/libmln-cabi.a ]          && XCFW_ARGS="$XCFW_ARGS -library $N/ios-arm64/libmln-cabi.a"
+          [ -f $N/iossimulator-arm64/libmln-cabi.a ] && XCFW_ARGS="$XCFW_ARGS -library $N/iossimulator-arm64/libmln-cabi.a"
+          if [ -n "$XCFW_ARGS" ]; then
+            xcodebuild -create-xcframework \
+              $XCFW_ARGS \
+              -output $N/ios/libmln-cabi.xcframework
+            echo "XCFramework created at $N/ios/libmln-cabi.xcframework"
+          else
+            echo "No iOS libraries found; skipping XCFramework creation."
+          fi
+
       - name: Restore workloads
         run: dotnet workload restore maplibre-maui.sln
 
@@ -449,6 +465,26 @@ jobs:
             -p:Version=${{ needs.version.outputs.version }} \
             -p:_MlnNativeDir=$(pwd)/bindings/native-vulkan/ \
             -o artifacts/
+
+      - name: Verify Vulkan package ships Apple native (parity with base)
+        run: |
+          PKG=$(ls artifacts/MapLibreNative.Maui.Vulkan.*.nupkg | head -1)
+          echo "Inspecting $PKG"
+          CONTENTS=$(unzip -Z1 "$PKG")
+          echo "$CONTENTS"
+          fail=0
+          for entry in \
+            "buildTransitive/MapLibreNative.Maui.Vulkan.targets" \
+            "buildTransitive/native/maccatalyst/libmln-cabi.a" \
+            "buildTransitive/native/ios/libmln-cabi.xcframework/Info.plist"; do
+            if echo "$CONTENTS" | grep -q "$entry"; then
+              echo "OK  $entry"
+            else
+              echo "MISSING  $entry"
+              fail=1
+            fi
+          done
+          exit $fail
 
       - name: Upload NuGet Vulkan artifact
         uses: actions/upload-artifact@v4
