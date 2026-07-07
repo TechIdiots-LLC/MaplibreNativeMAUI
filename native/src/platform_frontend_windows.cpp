@@ -163,18 +163,93 @@ PlatformFrontend* createPlatformFrontend(
     );
 }
 
-#else  // non-OpenGL build (e.g. Vulkan) — stub until a Vulkan frontend is implemented
+#else  // Vulkan build — offscreen (headless) render + CPU read-back into the in-tree bitmap
 
-#include <stdexcept>
+#include "null_map_observer.hpp"
+
+#include <mbgl/vulkan/headless_backend.hpp>
+#include <mbgl/renderer/renderer.hpp>
+#include <mbgl/renderer/update_parameters.hpp>
+#include <mbgl/gfx/backend_scope.hpp>
+#include <mbgl/util/image.hpp>
+
+#include <cstring>
+#include <memory>
+#include <mutex>
+
+/* Offscreen Vulkan frontend. There is no HWND / window surface: the map renders
+ * into a headless color texture and the managed layer pulls the pixels back via
+ * mbgl_frontend_read_pixels() and blits them into the WriteableBitmap. Same
+ * airspace-free, in-tree model as the WGL path (which reads back GL-side). */
+class VulkanOffscreenFrontend : public PlatformFrontend {
+public:
+    VulkanOffscreenFrontend(mbgl::Size sz, float pixelRatio, mbgl_render_fn cb, void* ud)
+        : _size(sz)
+        , _backend(sz, mbgl::gfx::Renderable::SwapBehaviour::NoFlush, mbgl::gfx::ContextMode::Unique)
+        , _renderer(std::make_unique<mbgl::Renderer>(_backend, pixelRatio))
+        , _renderCb(cb), _renderUd(ud)
+    {}
+
+    ~VulkanOffscreenFrontend() override {
+        mbgl::gfx::BackendScope guard(_backend, mbgl::gfx::BackendScope::ScopeType::Implicit);
+        _renderer.reset();
+    }
+
+    /* RendererFrontend */
+    void reset() override { _renderer.reset(); }
+    void setObserver(mbgl::RendererObserver& obs) override { _renderer->setObserver(&obs); }
+    void update(std::shared_ptr<mbgl::UpdateParameters> params) override {
+        { std::unique_lock<std::mutex> lock(_mutex); _updateParams = std::move(params); }
+        if (_renderCb) _renderCb(_renderUd);
+    }
+    const mbgl::TaggedScheduler& getThreadPool() const override {
+        return const_cast<mbgl::vulkan::HeadlessBackend&>(_backend).getThreadPool();
+    }
+
+    /* PlatformFrontend */
+    void render() override {
+        std::shared_ptr<mbgl::UpdateParameters> params;
+        { std::unique_lock<std::mutex> lock(_mutex); params = std::move(_updateParams); }
+        if (!params) return;
+        mbgl::gfx::BackendScope guard(_backend, mbgl::gfx::BackendScope::ScopeType::Implicit);
+        _renderer->render(params);
+    }
+
+    void setSize(mbgl::Size sz) override { _size = sz; _backend.setSize(sz); }
+    mbgl::Size getSize() const override { return _size; }
+    mbgl::MapObserver& getObserver() override { return _nullObserver; }
+    mbgl::Renderer* getRenderer() override { return _renderer.get(); }
+
+    bool readPixels(uint8_t* out, size_t len) override {
+        const size_t need = static_cast<size_t>(_size.width) * _size.height * 4u;
+        if (!out || len < need) return false;
+        mbgl::PremultipliedImage img;
+        {
+            mbgl::gfx::BackendScope guard(_backend, mbgl::gfx::BackendScope::ScopeType::Implicit);
+            img = _backend.readStillImage();
+        }
+        if (img.bytes() < need) return false;
+        std::memcpy(out, img.data.get(), need);
+        return true;
+    }
+
+private:
+    mbgl::Size                               _size;
+    mbgl::vulkan::HeadlessBackend            _backend;
+    std::unique_ptr<mbgl::Renderer>          _renderer;
+    mbgl_render_fn                           _renderCb;
+    void*                                    _renderUd;
+    std::shared_ptr<mbgl::UpdateParameters>  _updateParams;
+    std::mutex                               _mutex;
+    NullMapObserver                          _nullObserver;
+};
 
 PlatformFrontend* createPlatformFrontend(
     void* /*surface_handle*/, void* /*gl_context*/,
-    mbgl::Size /*sz*/, float /*pixelRatio*/,
-    mbgl_render_fn /*renderCb*/, void* /*renderUd*/)
+    mbgl::Size sz, float pixelRatio,
+    mbgl_render_fn renderCb, void* renderUd)
 {
-    throw std::runtime_error(
-        "Windows Vulkan frontend is not yet implemented. "
-        "This build was compiled without MLN_RENDER_BACKEND_OPENGL.");
+    return new VulkanOffscreenFrontend(sz, pixelRatio, renderCb, renderUd);
 }
 
 #endif  // MLN_RENDER_BACKEND_OPENGL

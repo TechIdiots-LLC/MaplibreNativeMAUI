@@ -51,6 +51,12 @@ if(WIN32)
     target_sources(mln-cabi PRIVATE src/platform_frontend_windows.cpp)
     target_compile_options(mln-cabi PRIVATE /wd4267)
     target_include_directories(mln-cabi PRIVATE "${MAPLIBRE_NATIVE_DIR}/src")
+    # Vulkan build: the offscreen frontend reuses mbgl::vulkan::HeadlessBackend,
+    # whose header lives in platform/default/include (added to mbgl-core by
+    # platform/windows/windows.cmake).
+    if(MLN_WITH_VULKAN)
+        target_include_directories(mln-cabi PRIVATE "${MAPLIBRE_NATIVE_DIR}/platform/default/include")
+    endif()
 elseif(ANDROID)
     target_sources(mln-cabi PRIVATE src/platform_frontend_android.cpp)
     target_link_libraries(mln-cabi PRIVATE EGL android log)
