@@ -43,15 +43,17 @@ jobs:
         with:
           submodules: recursive
 
-      # Vulkan headers + VMA are vendored by maplibre-native, so compilation needs
-      # no external SDK. But platform/macos/macos.cmake calls find_package(Vulkan
-      # REQUIRED); the SDK (which bundles MoltenVK) satisfies that. mln-cabi is a
-      # static archive here, so MoltenVK itself is linked later, by the app.
-      - name: Install Vulkan SDK (MoltenVK)
+      # Vulkan headers + VMA are vendored by maplibre-native, and mln-cabi is a static
+      # archive that uses Vulkan's dynamic dispatch loader — so no Vulkan library is
+      # linked at build time (MoltenVK links later, in the app). The only build-time
+      # need is satisfying platform/macos/macos.cmake's find_package(Vulkan REQUIRED)
+      # on the macCatalyst leg, which the Vulkan-Loader component covers. (MoltenVK is
+      # not a component this action can build.)
+      - name: Install Vulkan SDK (headers + loader)
         uses: humbletim/setup-vulkan-sdk@v1.2.1
         with:
           vulkan-query-version: latest
-          vulkan-components: MoltenVK, Vulkan-Headers, Vulkan-Loader
+          vulkan-components: Vulkan-Headers, Vulkan-Loader
           vulkan-use-cache: true
 
       - name: Patch darwin.cmake for macCatalyst
