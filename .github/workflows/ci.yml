@@ -288,6 +288,7 @@ jobs:
         shell: bash
         run: |
           DLL=$(find vulkan-native -name mln-cabi.dll | head -1)
+          PDB=$(find vulkan-native -name mln-cabi.pdb | head -1)
           if [ -z "$DLL" ]; then echo "Vulkan mln-cabi.dll not found"; exit 1; fi
           echo "Overlaying Vulkan native: $DLL"
           for app in ConsoleExample WpfExample MauiSample; do
@@ -295,6 +296,7 @@ jobs:
             # The RID publish flattens runtimes/win-x64/native/ to the app root; replace
             # both locations if present so whichever the loader picks is the Vulkan build.
             cp "$DLL" "publish/${app}-vulkan-win-x64/mln-cabi.dll"
+            [ -n "$PDB" ] && cp "$PDB" "publish/${app}-vulkan-win-x64/mln-cabi.pdb"
             find "publish/${app}-vulkan-win-x64" -path "*runtimes/win-x64/native/mln-cabi.dll" \
               -exec cp "$DLL" {} \;
           done
