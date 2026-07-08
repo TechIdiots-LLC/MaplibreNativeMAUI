@@ -176,6 +176,7 @@ PlatformFrontend* createPlatformFrontend(
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <vector>
 
 /* Offscreen Vulkan frontend. There is no HWND / window surface: the map renders
  * into a headless color texture and the managed layer pulls the pixels back via
@@ -211,8 +212,17 @@ public:
         std::shared_ptr<mbgl::UpdateParameters> params;
         { std::unique_lock<std::mutex> lock(_mutex); params = std::move(_updateParams); }
         if (!params) return;
-        mbgl::gfx::BackendScope guard(_backend, mbgl::gfx::BackendScope::ScopeType::Implicit);
+        // Default (Explicit) scope: the headless backend's activate() creates its impl
+        // and validates the Vulkan context — Implicit would skip that. Read the frame
+        // back inside the SAME scope, while the just-rendered image + context are still
+        // live; reading it in a separate scope tears frame resources down first and
+        // corrupts the heap. readStillImage() waits for the frame and copies the image.
+        mbgl::gfx::BackendScope guard(_backend);
         _renderer->render(params);
+        try {
+            mbgl::PremultipliedImage img = _backend.readStillImage();
+            _lastImage.assign(img.data.get(), img.data.get() + img.bytes());
+        } catch (...) { /* keep the previous frame's pixels */ }
     }
 
     void setSize(mbgl::Size sz) override { _size = sz; _backend.setSize(sz); }
@@ -222,14 +232,8 @@ public:
 
     bool readPixels(uint8_t* out, size_t len) override {
         const size_t need = static_cast<size_t>(_size.width) * _size.height * 4u;
-        if (!out || len < need) return false;
-        mbgl::PremultipliedImage img;
-        {
-            mbgl::gfx::BackendScope guard(_backend, mbgl::gfx::BackendScope::ScopeType::Implicit);
-            img = _backend.readStillImage();
-        }
-        if (img.bytes() < need) return false;
-        std::memcpy(out, img.data.get(), need);
+        if (!out || len < need || _lastImage.size() < need) return false;
+        std::memcpy(out, _lastImage.data(), need);
         return true;
     }
 
@@ -237,6 +241,7 @@ private:
     mbgl::Size                               _size;
     mbgl::vulkan::HeadlessBackend            _backend;
     std::unique_ptr<mbgl::Renderer>          _renderer;
+    std::vector<uint8_t>                     _lastImage;   // most recent frame, RGBA
     mbgl_render_fn                           _renderCb;
     void*                                    _renderUd;
     std::shared_ptr<mbgl::UpdateParameters>  _updateParams;
