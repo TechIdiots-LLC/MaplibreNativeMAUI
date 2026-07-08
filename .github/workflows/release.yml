@@ -276,19 +276,22 @@ jobs:
             -p:UseLocalPackages=true \
             -o publish/MauiSample-win-x64
 
-      # Vulkan variant: the managed layer is backend-agnostic, so the same published
-      # app runs on Vulkan simply by swapping in the Vulkan-built mln-cabi.dll — at
-      # runtime MapImageView detects the "vulkan" backend and uses the offscreen path.
-      - name: Publish MauiSample (Vulkan, win-x64)
+      # Vulkan variants: the managed layer is backend-agnostic, so each published app
+      # runs on Vulkan simply by swapping in the Vulkan-built mln-cabi.dll — at runtime
+      # the renderers (MapImageView, MlnMapImage, ConsoleExample) detect the "vulkan"
+      # backend and use the offscreen read-back path.
+      - name: Create Vulkan sample variants (win-x64)
         shell: bash
         run: |
-          cp -r publish/MauiSample-win-x64 publish/MauiSample-vulkan-win-x64
           DLL=$(find vulkan-native -name mln-cabi.dll | head -1)
           if [ -z "$DLL" ]; then echo "Vulkan mln-cabi.dll not found"; exit 1; fi
           echo "Overlaying Vulkan native: $DLL"
-          cp "$DLL" publish/MauiSample-vulkan-win-x64/mln-cabi.dll
-          find publish/MauiSample-vulkan-win-x64 -path "*runtimes/win-x64/native/mln-cabi.dll" \
-            -exec cp "$DLL" {} \;
+          for app in ConsoleExample WpfExample MauiSample; do
+            cp -r "publish/${app}-win-x64" "publish/${app}-vulkan-win-x64"
+            cp "$DLL" "publish/${app}-vulkan-win-x64/mln-cabi.dll"
+            find "publish/${app}-vulkan-win-x64" -path "*runtimes/win-x64/native/mln-cabi.dll" \
+              -exec cp "$DLL" {} \;
+          done
 
       - name: Publish MauiSample (win-arm64)
         shell: bash
@@ -309,7 +312,7 @@ jobs:
             'ConsoleExample-win-x64','ConsoleExample-win-arm64',
             'WpfExample-win-x64','WpfExample-win-arm64',
             'MauiSample-win-x64','MauiSample-win-arm64',
-            'MauiSample-vulkan-win-x64'
+            'ConsoleExample-vulkan-win-x64','WpfExample-vulkan-win-x64','MauiSample-vulkan-win-x64'
           ) | ForEach-Object {
             Compress-Archive -Path "publish/$_/*" -DestinationPath "samples/$_.zip"
           }

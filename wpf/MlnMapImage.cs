@@ -196,6 +196,9 @@ public partial class MlnMapImage : Grid
     private DispatcherTimer? _renderTimer;
 
     private bool _initialized, _renderNeedsUpdate = true, _styleReady;
+    // Vulkan builds render off-screen (headless) and read pixels back through the
+    // frontend; OpenGL builds render into a WGL FBO and read back via glReadPixels.
+    private static readonly bool _vulkan = MbglFrontend.RenderBackend == MbglRenderBackend.Vulkan;
     private float _dpi = 1f;
     private int _physW = 1, _physH = 1;
 
@@ -215,9 +218,10 @@ public partial class MlnMapImage : Grid
         // is resolved first for every TextBlock in this subtree.
         Resources.Add(typeof(TextBlock), new Style(typeof(TextBlock)));
 
-        // GL renders bottom-left origin; WPF WriteableBitmap is top-left → flip vertically.
+        // GL renders bottom-left origin so it flips vertically; the Vulkan headless
+        // read-back is already top-down, so no flip there.
         _image.RenderTransformOrigin = new Point(0.5, 0.5);
-        _image.RenderTransform = new ScaleTransform(1, -1);
+        _image.RenderTransform = new ScaleTransform(1, _vulkan ? 1 : -1);
         Children.Add(_image);
 
         BuildNavOverlay();
@@ -243,14 +247,22 @@ public partial class MlnMapImage : Grid
         _physW = Math.Max(1, (int)Math.Round(ActualWidth * _dpi));
         _physH = Math.Max(1, (int)Math.Round(ActualHeight * _dpi));
 
-        _interop = new HiddenWglContext();
-        _interop.Initialize();
-        _interop.Resize(_physW, _physH);
+        if (!_vulkan)
+        {
+            // OpenGL: off-screen WGL context we glReadPixels from each frame.
+            _interop = new HiddenWglContext();
+            _interop.Initialize();
+            _interop.Resize(_physW, _physH);
+        }
         CreateBitmap(_physW, _physH);
 
         _runLoop = new MbglRunLoop();
-        _frontend = new MbglFrontend(_interop.Hdc, _interop.GlContext, _physW, _physH, _dpi,
-            () => _renderNeedsUpdate = true);
+        // Vulkan renders headless (no surface handle); OpenGL needs the WGL HDC + context.
+        _frontend = _vulkan
+            ? new MbglFrontend(IntPtr.Zero, IntPtr.Zero, _physW, _physH, _dpi,
+                () => _renderNeedsUpdate = true)
+            : new MbglFrontend(_interop!.Hdc, _interop.GlContext, _physW, _physH, _dpi,
+                () => _renderNeedsUpdate = true);
         // Persistent tile/resource cache (mbgl's default is :memory:), shared
         // with MbglOfflineManager via MbglCache.DefaultPath.
         _map = new MbglMap(_frontend, _runLoop, cachePath: MbglCache.DefaultPath,
@@ -274,15 +286,14 @@ public partial class MlnMapImage : Grid
 
     private void UpdateSize()
     {
-        if (!_initialized || _interop == null || _map == null || _frontend == null) return;
+        if (!_initialized || _map == null || _frontend == null) return;
         if (ActualWidth < 1 || ActualHeight < 1) return;
         _dpi = (float)GetDpiScale();
         int w = Math.Max(1, (int)Math.Round(ActualWidth * _dpi));
         int h = Math.Max(1, (int)Math.Round(ActualHeight * _dpi));
         if (w == _physW && h == _physH) return;
         _physW = w; _physH = h;
-        _interop.MakeCurrent();
-        _interop.Resize(w, h);
+        if (_interop != null) { _interop.MakeCurrent(); _interop.Resize(w, h); }  // OpenGL only
         CreateBitmap(w, h);
         _frontend.SetSize(w, h);
         _map.SetSize(w, h);
@@ -299,18 +310,31 @@ public partial class MlnMapImage : Grid
     private void OnRenderTick(object? sender, EventArgs e)
     {
         _runLoop?.RunOnce();
-        if (!_renderNeedsUpdate || _interop == null || _frontend == null || _bitmap == null) return;
+        if (!_renderNeedsUpdate || _frontend == null || _bitmap == null) return;
         _renderNeedsUpdate = false;
 
-        _interop.MakeCurrent();
-        glViewport(0, 0, _interop.Width, _interop.Height);
-        try { _frontend.Render(); } catch { return; /* swallow per-frame render faults */ }
+        if (_vulkan)
+        {
+            // Headless Vulkan: render off-screen, then copy the frame into the bitmap.
+            try { _frontend.Render(); } catch { return; /* swallow per-frame render faults */ }
+            _bitmap.Lock();
+            _frontend.ReadPixels(_bitmap.BackBuffer, (nuint)((long)_physW * _physH * 4));
+            _bitmap.AddDirtyRect(new Int32Rect(0, 0, _physW, _physH));
+            _bitmap.Unlock();
+        }
+        else
+        {
+            if (_interop == null) return;
+            _interop.MakeCurrent();
+            glViewport(0, 0, _interop.Width, _interop.Height);
+            try { _frontend.Render(); } catch { return; /* swallow per-frame render faults */ }
 
-        // Read pixels (GL bottom-left → WPF top-left; _image has ScaleTransform(1,-1) to compensate).
-        _bitmap.Lock();
-        _interop.ReadPixels(_bitmap.BackBuffer);
-        _bitmap.AddDirtyRect(new Int32Rect(0, 0, _physW, _physH));
-        _bitmap.Unlock();
+            // Read pixels (GL bottom-left → WPF top-left; _image has ScaleTransform(1,-1) to compensate).
+            _bitmap.Lock();
+            _interop.ReadPixels(_bitmap.BackBuffer);
+            _bitmap.AddDirtyRect(new Int32Rect(0, 0, _physW, _physH));
+            _bitmap.Unlock();
+        }
     }
 
     // ── Camera API ────────────────────────────────────────────────────────────
