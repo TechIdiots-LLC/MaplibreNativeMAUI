@@ -45,10 +45,18 @@ public:
         _display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
         eglInitialize(_display, nullptr, nullptr);
 
+        // mbgl-core's fill layer renderer relies on the stencil buffer for
+        // polygon tessellation and tile-boundary clipping (matching the
+        // depth/stencil pixel format explicitly requested on Windows in
+        // HiddenWglContext.Windows.cs). Without EGL_STENCIL_SIZE/EGL_DEPTH_SIZE
+        // here, eglChooseConfig can hand back a config with zero stencil bits,
+        // which shows up as a checkerboard pattern in fills and as seams/gaps
+        // between tiles.
         const EGLint attribs[] = {
             EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
             EGL_SURFACE_TYPE,    EGL_WINDOW_BIT,
             EGL_BLUE_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_RED_SIZE, 8,
+            EGL_DEPTH_SIZE, 24, EGL_STENCIL_SIZE, 8,
             EGL_NONE
         };
         EGLint numConfigs;
