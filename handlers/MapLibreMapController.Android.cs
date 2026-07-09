@@ -399,6 +399,23 @@ public class MapLibreMapController : IMapLibreMapController
             SizeChanged = (_, w, h) => OnTextureSizeChanged(w, h),
             Destroyed   = _ => DisposeNative(),
         };
+        // A tab that isn't the currently-visible one (e.g. a ViewPager2 page
+        // that's been detached from the window) never gets an
+        // onSurfaceTextureSizeChanged callback for a rotation that happens
+        // while it's hidden — Android only relays layout size changes to
+        // attached views. Re-check and reapply the current size whenever this
+        // view re-attaches, or switching back to that tab shows the stale
+        // pre-rotation frame stretched into the new (correctly laid-out) bounds.
+        //
+        // OnViewAttachedToWindow can fire *before* the layout pass that follows
+        // reattachment finishes, so Width/Height read right there can still be
+        // the stale pre-reattachment values. Re-check on a few subsequent
+        // animation frames instead of just once, so whichever frame the layout
+        // actually lands on still gets picked up.
+        _textureView.AddOnAttachStateChangeListener(new TextureAttachStateListener
+        {
+            Attached = () => RecheckSizeOverNextFrames(8),
+        });
         SetupGestureDetectors();
 
         // Attribution overlay (bottom-right corner, OSM licence compliance)
@@ -671,9 +688,33 @@ public class MapLibreMapController : IMapLibreMapController
 
     private void OnTextureSizeChanged(int width, int height)
     {
+        // A rotation/layout transition (e.g. an adjacent ViewPager2 tab being
+        // pre-laid-out before it's actually shown) can momentarily report a
+        // zero/near-zero dimension here. Feeding that straight to the native
+        // map/renderer leaves it in a degenerate state (NaN camera math, a
+        // zero-area EGL viewport) that a later valid-size call doesn't
+        // recover from — the map just stays blank from then on.
+        width  = Math.Max(1, width);
+        height = Math.Max(1, height);
         _frontend?.SetSize(width, height);
         _map?.SetSize(width, height);
         _map?.TriggerRepaint();
+    }
+
+    /// <summary>
+    /// Re-applies the TextureView's current size on each of the next
+    /// <paramref name="framesLeft"/> animation frames. Used after the view
+    /// re-attaches to a window (e.g. switching back to a tab that was hidden
+    /// during a rotation) — the layout pass that produces the view's true
+    /// post-reattachment size can land on any of the next few frames, not
+    /// necessarily the one OnViewAttachedToWindow fires on.
+    /// </summary>
+    private void RecheckSizeOverNextFrames(int framesLeft)
+    {
+        if (framesLeft <= 0 || _map == null) return;
+        if (_textureView.Width > 0 && _textureView.Height > 0)
+            OnTextureSizeChanged(_textureView.Width, _textureView.Height);
+        _textureView.PostOnAnimation(new Java.Lang.Runnable(() => RecheckSizeOverNextFrames(framesLeft - 1)));
     }
 
     // -- MapLibre init ---------------------------------------------------------
@@ -1824,5 +1865,13 @@ internal sealed class TextureSurfaceListener : Java.Lang.Object, TextureView.ISu
     }
 
     public void OnSurfaceTextureUpdated(Android.Graphics.SurfaceTexture surface) { }
+}
+
+internal sealed class TextureAttachStateListener : Java.Lang.Object, Android.Views.View.IOnAttachStateChangeListener
+{
+    public Action? Attached;
+
+    public void OnViewAttachedToWindow(Android.Views.View attachedView) => Attached?.Invoke();
+    public void OnViewDetachedFromWindow(Android.Views.View detachedView) { }
 }
 #endif

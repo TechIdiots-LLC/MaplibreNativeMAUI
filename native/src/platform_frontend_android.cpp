@@ -14,6 +14,7 @@
 #ifdef MLN_RENDER_BACKEND_OPENGL
 
 #include <EGL/egl.h>
+#include <GLES2/gl2.h>
 #include <mbgl/gl/renderable_resource.hpp>
 #include <mbgl/gl/renderer_backend.hpp>
 #include <mbgl/renderer/renderer.hpp>
@@ -41,6 +42,7 @@ public:
     EGLBackend(ANativeWindow* window, mbgl::Size sz)
         : mbgl::gfx::Renderable(sz, std::make_unique<EGLRenderableResource>(*this))
         , mbgl::gl::RendererBackend(mbgl::gfx::ContextMode::Unique)
+        , _window(window)
     {
         _display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
         eglInitialize(_display, nullptr, nullptr);
@@ -73,7 +75,30 @@ public:
         eglTerminate(_display);
     }
 
-    void setSize(mbgl::Size sz) { this->size = sz; }
+    // Resizing the EGL window surface in place doesn't reliably take on
+    // Android across every creation/rotation ordering: eglCreateWindowSurface()
+    // can bind to whatever buffer geometry the ANativeWindow had at creation
+    // time, and ANativeWindow_setBuffersGeometry() alone isn't always enough
+    // to bring an *existing* EGL surface's actual dimensions in sync — some
+    // paths still leave content confined to (and misaligned within) the
+    // surface's original shape after a resize. Destroying and recreating the
+    // EGL surface whenever the size actually changes sidesteps the ambiguity
+    // entirely: the new surface is always created fresh against the
+    // just-resized native window, so there's no stale surface state to fall
+    // out of sync with what mbgl-core thinks the size is. The shared
+    // `_context` is simply rebound to the new surface on the next activate().
+    void setSize(mbgl::Size sz) {
+        if (sz.width == this->size.width && sz.height == this->size.height) return;
+        this->size = sz;
+        if (_window) {
+            ANativeWindow_setBuffersGeometry(_window,
+                static_cast<int32_t>(sz.width), static_cast<int32_t>(sz.height), 0);
+        }
+        if (_surface != EGL_NO_SURFACE) {
+            eglDestroySurface(_display, _surface);
+        }
+        _surface = eglCreateWindowSurface(_display, _config, _window, nullptr);
+    }
     mbgl::gfx::Renderable& getDefaultRenderable() override { return *this; }
 
     void swapBuffers() { eglSwapBuffers(_display, _surface); }
@@ -89,12 +114,27 @@ protected:
     // GL backend and GLFW. Important on Android because the TextureView's
     // SurfaceTexture can be recreated under us (config change, surface
     // destroyed) and mbgl's cache must not be trusted across context activations.
+    //
+    // assumeViewport() only updates mbgl-core's *cached* notion of the
+    // current viewport (Context::viewport.setCurrentValue) — it does not
+    // call glViewport() itself. glViewport is GL *context* state, not
+    // surface state, so it does not reset when the EGL surface is resized or
+    // recreated while the same context stays current: the real hardware
+    // viewport stays frozen at whatever it was last explicitly set to. Once
+    // that happens, mbgl-core's cache and the real GL state silently
+    // disagree, and every later "no-op" viewport (cache already matches the
+    // requested value) skips the real call forever — content keeps getting
+    // rasterized into the *old* viewport rectangle regardless of how large
+    // the actual framebuffer now is. Issuing the real glViewport() call here
+    // keeps the assumption honest.
     void updateAssumedState() override {
         assumeFramebufferBinding(ImplicitFramebufferBinding);
+        glViewport(0, 0, static_cast<GLsizei>(size.width), static_cast<GLsizei>(size.height));
         assumeViewport(0, 0, size);
     }
 
 private:
+    ANativeWindow* _window  = nullptr;
     EGLDisplay _display = EGL_NO_DISPLAY;
     EGLConfig  _config  = nullptr;
     EGLContext _context = EGL_NO_CONTEXT;
