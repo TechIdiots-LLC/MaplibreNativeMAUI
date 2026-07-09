@@ -5,6 +5,11 @@
 - _...Add new stuff here..._
 
 ### 🐞 Bug fixes
+- _...Add new stuff here..._
+
+## 4.1.3
+### 🐞 Bug fixes
+- **Runtime vector-source layers now relayout via the upstream source-layer fix instead of a local workaround** — `mbgl::style::Layer::setSourceLayer()` (and `setSourceID()`) now call `observer->onLayerChanged()` upstream ([maplibre/maplibre-native#4372](https://github.com/maplibre/maplibre-native/pull/4372)), so a circle/symbol/etc. layer whose `source-layer` is set via `SetSourceLayer` *after* it is added to the style correctly triggers a relayout of already-loaded tiles. The `dependencies/maplibre-native` submodule is bumped to include that fix, and the visibility-toggle workaround previously carried in `mbgl_layer_set_source_layer` (`native/src/mln_cabi.cpp`) has been removed. Runtime behaviour is unchanged — the workaround is simply no longer needed. See the 4.1.0-era source-layer bug fix below for the original symptom.
 
 ## 4.1.2
 ### 🐞 Bug fixes
