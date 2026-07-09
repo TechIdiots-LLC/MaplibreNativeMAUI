@@ -7,45 +7,50 @@
              x:Class="MauiSample.OfflinePage"
              Title="Offline">
 
-    <Grid RowDefinitions="*, Auto">
+    <!-- Single continuous scroll: map at the top (bounded height set in
+         code-behind) with controls flowing directly beneath. Dragging the map
+         pans it; dragging the controls scrolls the page. -->
+    <ScrollView>
+        <VerticalStackLayout Spacing="0">
 
-        <!--
-            Offline regions demo. The map and MbglOfflineManager share the same
-            cache database (MbglCache.DefaultPath), so a downloaded region is
-            served to the map even with the network forced offline.
-        -->
-        <maplibre:MapLibreMap
-            Grid.Row="0"
-            x:Name="Map"
-            StyleUrl="https://demotiles.maplibre.org/style.json" />
+            <!--
+                Offline regions demo. The map and MbglOfflineManager share the same
+                cache database (MbglCache.DefaultPath), so a downloaded region is
+                served to the map even with the network forced offline.
+            -->
+            <maplibre:MapLibreMap
+                x:Name="Map"
+                HeightRequest="400"
+                StyleUrl="https://demotiles.maplibre.org/style.json" />
 
-        <VerticalStackLayout Grid.Row="1" Spacing="8" Padding="12">
+            <VerticalStackLayout Spacing="8" Padding="12">
 
-            <Label FontAttributes="Bold" Text="Offline Regions Demo" FontSize="16" />
-            <Label TextColor="Gray" FontSize="12" Text=
-                "Download the visible region, then toggle offline — the map keeps working from the cache." />
+                <Label FontAttributes="Bold" Text="Offline Regions Demo" FontSize="16" />
+                <Label TextColor="Gray" FontSize="12" Text=
+                    "Download the visible region, then toggle offline — the map keeps working from the cache." />
 
-            <HorizontalStackLayout Spacing="8">
-                <Button Text="⬇  Download visible region"
-                        Clicked="OnDownloadRegion"
-                        BackgroundColor="#1E88E5" TextColor="White"
-                        Padding="12,6" />
-                <Button Text="☰  List"
-                        Clicked="OnListRegions"
-                        Padding="12,6" />
-                <Button Text="🗑  Delete all"
-                        Clicked="OnDeleteAll"
-                        BackgroundColor="#E53935" TextColor="White"
-                        Padding="12,6" />
-                <Button x:Name="OfflineToggle"
-                        Text="Go offline"
-                        Clicked="OnToggleOffline"
-                        Padding="12,6" />
-            </HorizontalStackLayout>
+                <HorizontalStackLayout Spacing="8">
+                    <Button Text="⬇  Download visible region"
+                            Clicked="OnDownloadRegion"
+                            BackgroundColor="#1E88E5" TextColor="White"
+                            Padding="12,6" />
+                    <Button Text="☰  List"
+                            Clicked="OnListRegions"
+                            Padding="12,6" />
+                    <Button Text="🗑  Delete all"
+                            Clicked="OnDeleteAll"
+                            BackgroundColor="#E53935" TextColor="White"
+                            Padding="12,6" />
+                    <Button x:Name="OfflineToggle"
+                            Text="Go offline"
+                            Clicked="OnToggleOffline"
+                            Padding="12,6" />
+                </HorizontalStackLayout>
 
-            <Label Text="{Binding Status}" FontSize="12" TextColor="Gray" />
+                <Label Text="{Binding Status}" FontSize="12" TextColor="Gray" />
 
+            </VerticalStackLayout>
         </VerticalStackLayout>
+    </ScrollView>
 
-    </Grid>
 </ContentPage>

@@ -7,26 +7,31 @@
              x:Class="MauiSample.GeoJsonLayersPage"
              Title="GeoJSON Layers">
 
-    <Grid RowDefinitions="*, Auto">
+    <!-- Single continuous scroll: map at the top (bounded height set in
+         code-behind) with controls flowing directly beneath. Dragging the map
+         pans it; dragging the controls scrolls the page. -->
+    <ScrollView>
+        <VerticalStackLayout Spacing="0">
 
-        <maplibre:MapLibreMap
-            Grid.Row="0"
-            x:Name="Map"
-            StyleUrl="{Binding StyleUrl}" />
+            <maplibre:MapLibreMap
+                x:Name="Map"
+                HeightRequest="400"
+                StyleUrl="{Binding StyleUrl}" />
 
-        <VerticalStackLayout Grid.Row="1" Spacing="8" Padding="12">
+            <VerticalStackLayout Spacing="8" Padding="12">
 
-            <Label Text="GeoJSON Layers demo — polygon park + walking route" FontAttributes="Bold" />
+                <Label Text="GeoJSON Layers demo — polygon park + walking route" FontAttributes="Bold" />
 
-            <FlexLayout Wrap="Wrap" JustifyContent="Start">
-                <Button Text="Add Polygon"    Clicked="OnAddPolygon"    Margin="0,0,8,8" />
-                <Button Text="Remove Polygon" Clicked="OnRemovePolygon" Margin="0,0,8,8" />
-                <Button Text="Toggle Route"   Clicked="OnToggleRoute"   Margin="0,0,8,8" />
-            </FlexLayout>
+                <FlexLayout Wrap="Wrap" JustifyContent="Start">
+                    <Button Text="Add Polygon"    Clicked="OnAddPolygon"    Margin="0,0,8,8" />
+                    <Button Text="Remove Polygon" Clicked="OnRemovePolygon" Margin="0,0,8,8" />
+                    <Button Text="Toggle Route"   Clicked="OnToggleRoute"   Margin="0,0,8,8" />
+                </FlexLayout>
 
-            <Label Text="{Binding Status}" FontSize="12" TextColor="Gray" />
+                <Label Text="{Binding Status}" FontSize="12" TextColor="Gray" />
 
+            </VerticalStackLayout>
         </VerticalStackLayout>
-    </Grid>
+    </ScrollView>
 
 </ContentPage>

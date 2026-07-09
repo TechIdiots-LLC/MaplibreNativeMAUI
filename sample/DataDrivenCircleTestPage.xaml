@@ -7,18 +7,22 @@
              x:Class="MauiSample.DataDrivenCircleTestPage"
              Title="Data-Driven Test">
 
-    <Grid RowDefinitions="*,Auto,Auto">
-        <maplibre:MapLibreMap x:Name="Map"
-                              Grid.Row="0"
-                              StyleUrl="{Binding StyleUrl}"
-                              MapReady="OnMapReady" />
+    <!-- Single continuous scroll: map at the top (bounded height set in
+         code-behind) with the run button and the (potentially long) test-log
+         status text flowing directly beneath, all in one scroll. Dragging the
+         map pans it; dragging the controls/log scrolls the page. -->
+    <ScrollView>
+        <VerticalStackLayout Spacing="0">
+            <maplibre:MapLibreMap x:Name="Map"
+                                  HeightRequest="400"
+                                  StyleUrl="{Binding StyleUrl}"
+                                  MapReady="OnMapReady" />
 
-        <HorizontalStackLayout Grid.Row="1" Spacing="8" Padding="8">
-            <Button x:Name="RunTestButton" Text="Run Test" Clicked="OnRunTest" />
-        </HorizontalStackLayout>
+            <HorizontalStackLayout Spacing="8" Padding="8">
+                <Button x:Name="RunTestButton" Text="Run Test" Clicked="OnRunTest" />
+            </HorizontalStackLayout>
 
-        <ScrollView Grid.Row="2" MaximumHeightRequest="180">
             <Label Text="{Binding Status}" Padding="8,4" FontFamily="Courier" FontSize="11" />
-        </ScrollView>
-    </Grid>
+        </VerticalStackLayout>
+    </ScrollView>
 </ContentPage>

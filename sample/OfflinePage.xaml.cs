@@ -27,6 +27,12 @@ public partial class OfflinePage : ContentPage
             _vm.Status = $"Region {e.RegionId} error ({e.Reason}): {e.Message}");
     }
 
+    protected override void OnSizeAllocated(double width, double height)
+    {
+        base.OnSizeAllocated(width, height);
+        Map.SizeToViewport(height);
+    }
+
     private IMapLibreMapController? Controller => (Map.Handler as MapLibreMapHandler)?.Controller;
 
     private async void OnDownloadRegion(object? sender, EventArgs e)

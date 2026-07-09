@@ -58,6 +58,12 @@ public partial class GeoJsonLayersPage : ContentPage
         };
     }
 
+    protected override void OnSizeAllocated(double width, double height)
+    {
+        base.OnSizeAllocated(width, height);
+        Map.SizeToViewport(height);
+    }
+
     private void OnAddPolygon(object sender, EventArgs e)
     {
         if (_polygonAdded) { _vm.Status = "Polygon already added"; return; }

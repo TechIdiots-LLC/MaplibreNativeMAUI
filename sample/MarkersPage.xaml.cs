@@ -14,6 +14,12 @@ public partial class MarkersPage : ContentPage
         // Pins are now created from the bound ObservableCollection via ItemsSource + ItemTemplate.
     }
 
+    protected override void OnSizeAllocated(double width, double height)
+    {
+        base.OnSizeAllocated(width, height);
+        Map.SizeToViewport(height);
+    }
+
     private void OnMapReady(object? sender, MapReadyEventArgs e)
     {
         _vm.Status = "Tap a marker to identify it";

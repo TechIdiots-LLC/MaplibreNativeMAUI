@@ -48,6 +48,12 @@ public partial class DataDrivenCircleTestPage : ContentPage
         BindingContext = _vm;
     }
 
+    protected override void OnSizeAllocated(double width, double height)
+    {
+        base.OnSizeAllocated(width, height);
+        Map.SizeToViewport(height);
+    }
+
     private void OnMapReady(object? sender, EventArgs e)
     {
         _vm.Status = "Map ready — tap \"Run Test\"";

@@ -27,4 +27,10 @@ public partial class GpsControlPage : ContentPage
             controller?.JumpTo(47.6062, -122.3321, zoom: 13);
         };
     }
+
+    protected override void OnSizeAllocated(double width, double height)
+    {
+        base.OnSizeAllocated(width, height);
+        Map.SizeToViewport(height);
+    }
 }
