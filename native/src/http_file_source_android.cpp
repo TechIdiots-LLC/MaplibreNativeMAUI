@@ -51,6 +51,8 @@ struct HttpProviderState {
     std::mutex                                    mutex;
     mbgl_http_provider_fn                         fn      = nullptr;
     void*                                         userdata = nullptr;
+    mbgl_http_cancel_fn                           cancelFn = nullptr;
+    void*                                         cancelUserdata = nullptr;
     std::atomic<uint64_t>                         nextId{1};
     std::unordered_map<uint64_t, std::shared_ptr<PendingRequest>> pending;
 };
@@ -71,6 +73,13 @@ void mbgl_set_http_provider_impl(mbgl_http_provider_fn fn, void* userdata) noexc
     std::lock_guard<std::mutex> lock(s.mutex);
     s.fn       = fn;
     s.userdata = userdata;
+}
+
+void mbgl_set_http_cancel_provider_impl(mbgl_http_cancel_fn fn, void* userdata) noexcept {
+    auto& s = state();
+    std::lock_guard<std::mutex> lock(s.mutex);
+    s.cancelFn       = fn;
+    s.cancelUserdata = userdata;
 }
 
 void mbgl_http_respond_impl(uint64_t request_id,
@@ -167,13 +176,25 @@ void mbgl_http_respond_impl(uint64_t request_id,
 }
 
 void mbgl_http_cancel_impl(uint64_t request_id) noexcept {
-    auto& s = state();
-    std::lock_guard<std::mutex> lock(s.mutex);
-    auto it = s.pending.find(request_id);
-    if (it != s.pending.end()) {
-        it->second->cancelled.store(true);
-        s.pending.erase(it);
+    mbgl_http_cancel_fn cancelFn = nullptr;
+    void*               cancelUserdata = nullptr;
+    {
+        auto& s = state();
+        std::lock_guard<std::mutex> lock(s.mutex);
+        auto it = s.pending.find(request_id);
+        if (it != s.pending.end()) {
+            it->second->cancelled.store(true);
+            s.pending.erase(it);
+        }
+        cancelFn       = s.cancelFn;
+        cancelUserdata = s.cancelUserdata;
     }
+    // Notify the host provider so it aborts the in-flight fetch — outside the
+    // lock, since the host callback may re-enter the HTTP layer. Harmless for a
+    // request that already completed (the host's own bookkeeping no-ops).
+    // This is what frees the connection for tiles still needed at the current
+    // zoom; without it, superseded requests run to completion and starve them.
+    if (cancelFn) cancelFn(request_id, cancelUserdata);
 }
 
 } // extern "C"

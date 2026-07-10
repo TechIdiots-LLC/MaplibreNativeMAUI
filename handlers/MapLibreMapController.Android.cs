@@ -36,9 +36,10 @@ public class MapLibreMapController : IMapLibreMapController
         DefaultRequestHeaders = { { "User-Agent", "MapLibreNative/1.0 (.NET MAUI Android)" } },
     };
 
-    // Keep the delegate alive for the lifetime of the process so the GC
-    // never collects it while the native side is still pointing to it.
+    // Keep the delegates alive for the lifetime of the process so the GC
+    // never collects them while the native side is still pointing to them.
     private static readonly NativeMethods.HttpProviderDelegate s_httpProvider = OnHttpRequest;
+    private static readonly NativeMethods.HttpCancelDelegate   s_httpCancel   = OnHttpCancel;
 
     // Tracks in-flight CancellationTokenSources keyed by request_id so we can
     // abort the HttpClient request when the native side cancels it.
@@ -52,6 +53,20 @@ public class MapLibreMapController : IMapLibreMapController
         if (s_httpProviderRegistered) return;
         s_httpProviderRegistered = true;
         NativeMethods.SetHttpProvider(s_httpProvider, IntPtr.Zero);
+        NativeMethods.SetHttpCancelProvider(s_httpCancel, IntPtr.Zero);
+    }
+
+    // Native tells us a request is no longer needed (mbgl superseded the tile,
+    // e.g. while zooming). Abort the in-flight fetch so its connection frees up
+    // for tiles still needed at the current zoom — without this, superseded
+    // requests run to completion and starve them, leaving stale lower-zoom
+    // tiles that never refresh.
+    private static void OnHttpCancel(ulong requestId, IntPtr userdata)
+    {
+        if (s_pendingRequests.TryRemove(requestId, out var cts))
+        {
+            try { cts.Cancel(); } catch { /* already completed/disposed */ }
+        }
     }
 
     private static void OnHttpRequest(ulong requestId, IntPtr urlPtr, IntPtr etagPtr,
