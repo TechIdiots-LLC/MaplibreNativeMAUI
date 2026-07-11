@@ -7,6 +7,11 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 4.2.2
+### 🐞 Bug fixes
+- **Android: fixed a native crash (SIGSEGV in `OnlineFileSource`) under heavy tile traffic** — when an HTTP response arrived, the provider removed the request from its pending table *before* posting the callback onto the RunLoop. A request destroyed in that window (routine with many vector sources loading while panning/zooming or backgrounding the app, where superseded requests are constantly cancelled) couldn't be flagged as cancelled — its destructor found nothing to mark — so the already-posted callback ran against the freed `OnlineFileRequest` and crashed in `mbgl::util::Timer`. The pending entry now stays registered until the callback actually executes, and the posted closure re-checks the cancelled flag (it runs on the same RunLoop thread as the request's destructor, making the check decisive).
+- **Manually opened attribution stays open long enough to read** — tapping the collapsed ⓘ chip now pins the banner on every platform: on Android/iOS camera motion no longer collapses it instantly (with GPS-follow active the camera eases on every fix, which swatted the banner shut the moment it opened), and on all platforms (Android, iOS/MacCatalyst, WinUI, WPF) a manually opened banner gets a longer 10 s auto-collapse instead of the standard 5 s. Automatic expansions (style load, attribution content changes) keep the existing behaviour.
+
 ## 4.2.1
 ### 🐞 Bug fixes
 - **Attribution banner no longer re-expands on every source refresh** — `onSourceChanged` fires for every runtime source mutation, including an app updating a GeoJSON source on a timer, and the attribution handler rebuilt the banner and re-expanded it each time — so an app refreshing a live overlay every few seconds had the attribution popup permanently reopening. The Android, iOS/MacCatalyst, and WPF controls now track the attribution content they last applied and only rewrite/re-expand the banner when that content actually changed (a new style load still shows it once, and newly added sources still surface their attribution). The WinUI control already only refreshed while empty and is unchanged.

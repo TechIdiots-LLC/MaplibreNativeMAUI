@@ -1258,7 +1258,7 @@ public partial class MlnMapImage : Grid
         };
         _attrBorder.MouseLeftButtonUp += (_, e) =>
         {
-            if (_attrCollapsed) ExpandAttribution(); else CollapseAttribution();
+            if (_attrCollapsed) ExpandAttribution(pinned: true); else CollapseAttribution();
             e.Handled = true;
         };
         Children.Add(_attrBorder);
@@ -1298,13 +1298,15 @@ public partial class MlnMapImage : Grid
         }
     }
 
-    private void ExpandAttribution()
+    private void ExpandAttribution(bool pinned = false)
     {
         if (_attrTextBlock == null || _attrText.Length == 0) return;
+        // A deliberate click on the collapsed ⓘ chip gets a longer read window than
+        // the standard auto-shown flash — matching the Android/iOS pinned behaviour.
         _attrCollapsed = false;
         _attrTextBlock.Text = _attrText;
         _attrCollapseTimer?.Stop();
-        _attrCollapseTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        _attrCollapseTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(pinned ? 10 : 5) };
         _attrCollapseTimer.Tick += (_, _) => CollapseAttribution();
         _attrCollapseTimer.Start();
     }
