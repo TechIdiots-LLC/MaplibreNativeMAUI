@@ -82,6 +82,7 @@ public class MapLibreMapController : IMapLibreMapController
     private string?       _customAttribution;
     private int           _attrCollapseGen;       // generation counter for auto-collapse timer
     private bool          _attrLoaded;            // true once attribution content has been fetched
+    private string?       _appliedAttribution;    // content currently shown — banner re-expands only when this changes
 
     // -- Navigation + GPS overlay controls -------------------------------------
 
@@ -427,7 +428,8 @@ public class MapLibreMapController : IMapLibreMapController
                 case "onDidFinishLoadingStyle":
                     _styleReady = true;
                     _style = _map?.GetStyle();
-                    _attrLoaded = false;  // new style — sources may have different attribution
+                    _attrLoaded = false;          // new style — sources may have different attribution
+                    _appliedAttribution = null;   // …and the banner should show once for it
                     RefreshAttribution();
                     _locIndLayer = null;               // layer belongs to the old style
                     if (_pendingLocInd.HasValue) ApplyPendingLocationIndicator();
@@ -681,6 +683,7 @@ public class MapLibreMapController : IMapLibreMapController
     {
         if (_style == null)
         {
+            _appliedAttribution = null;
             _attrView.Hidden   = true;
             _attrButton.Hidden = true;
             return;
@@ -693,12 +696,22 @@ public class MapLibreMapController : IMapLibreMapController
 
         if (attributions.Count == 0 || !_showAttrControl)
         {
+            _appliedAttribution = null;
             _attrView.Hidden   = true;
             _attrButton.Hidden = true;
             return;
         }
 
         _attrLoaded = true;
+
+        // onSourceChanged fires for every runtime source mutation (e.g. an app
+        // refreshing a GeoJSON source on a timer). Only rewrite the view and
+        // re-expand the banner when the attribution content actually changed —
+        // otherwise a periodic source update keeps popping the banner open.
+        var content = string.Join("", attributions);
+        if (content == _appliedAttribution) return;
+        _appliedAttribution = content;
+
         _attrView.AttributedText = BuildAttributionAttributedString(attributions);
         ExpandAttribution();
     }
