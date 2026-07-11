@@ -235,7 +235,7 @@ public class MapLibreMapController : IMapLibreMapController
         };
         _attrBorder.Tapped += (_, e) =>
         {
-            if (_attrCollapsed) ExpandAttribution(); else CollapseAttribution();
+            if (_attrCollapsed) ExpandAttribution(pinned: true); else CollapseAttribution();
             e.Handled = true;
         };
         // Swallow DoubleTapped so a fast double-click on the attribution chip doesn't leak
@@ -919,11 +919,13 @@ public class MapLibreMapController : IMapLibreMapController
         RefreshAttributionText();
     }
 
-    private void ExpandAttribution()
+    private void ExpandAttribution(bool pinned = false)
     {
+        // A deliberate tap on the collapsed chip gets a longer read window than the
+        // standard auto-shown flash — matching the Android/iOS pinned behaviour.
         _attrCollapsed = false;
         RefreshAttributionControl();
-        ScheduleAutoCollapse();
+        ScheduleAutoCollapse(pinned ? 10 : 5);
     }
 
     private void CollapseAttribution()
@@ -935,12 +937,12 @@ public class MapLibreMapController : IMapLibreMapController
         RefreshAttributionControl();
     }
 
-    private void ScheduleAutoCollapse()
+    private void ScheduleAutoCollapse(int delaySeconds = 5)
     {
         _attrCollapseTimer?.Dispose();
         _attrCollapseTimer = new System.Threading.Timer(
             _ => CollapseAttribution(), null,
-            TimeSpan.FromSeconds(5), Timeout.InfiniteTimeSpan);
+            TimeSpan.FromSeconds(delaySeconds), Timeout.InfiniteTimeSpan);
     }
 
     // ── Cleanup ───────────────────────────────────────────────────────────────

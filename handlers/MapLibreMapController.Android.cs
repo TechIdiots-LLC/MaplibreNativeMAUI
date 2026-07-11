@@ -319,6 +319,7 @@ public class MapLibreMapController : IMapLibreMapController
     private int             _attrCollapseGen;            // generation counter for auto-collapse timer
     private bool            _attrLoaded;                 // true once attribution content has been fetched
     private string?         _appliedAttribution;         // content currently shown — banner re-expands only when this changes
+    private bool            _attrPinned;                 // manually expanded — camera motion won't collapse it
 
     // -- Navigation + GPS overlay controls -------------------------------------
 
@@ -462,7 +463,7 @@ public class MapLibreMapController : IMapLibreMapController
         _attrButton.SetBackgroundColor(Android.Graphics.Color.Argb(180, 255, 255, 255));
         _attrButton.SetPadding(8, 4, 8, 4);
         _attrButton.Visibility = ViewStates.Gone;
-        _attrButton.Click += (_, _) => ExpandAttribution();
+        _attrButton.Click += (_, _) => ExpandAttribution(pinned: true);
         var btnParams = new FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WrapContent,
             ViewGroup.LayoutParams.WrapContent,
@@ -809,7 +810,7 @@ public class MapLibreMapController : IMapLibreMapController
                 OnDidBecomeIdleReceived?.Invoke();
                 break;
             case "onCameraIsChanging":
-                CollapseAttribution();
+                if (!_attrPinned) CollapseAttribution();   // don't swat a deliberately opened banner
                 UpdateCompassRotation();
                 OnCameraMoveReceived?.Invoke();
                 break;
@@ -1077,16 +1078,22 @@ public class MapLibreMapController : IMapLibreMapController
         ExpandAttribution();
     }
 
-    private void ExpandAttribution()
+    private void ExpandAttribution(bool pinned = false)
     {
         if (!_showAttrControl || !_attrLoaded) return;
+        // A deliberate tap on the ⓘ button pins the banner so camera motion can't
+        // instantly collapse it (GPS-follow eases the camera every fix, which
+        // otherwise swats the banner shut before it can be read). The auto-collapse
+        // timer still runs — pinning only shields against camera-motion collapse.
+        _attrPinned            = pinned;
         _attrView.Visibility   = ViewStates.Visible;
         _attrButton.Visibility = ViewStates.Gone;
-        ScheduleAutoCollapse();
+        ScheduleAutoCollapse(pinned ? 10000 : 5000);
     }
 
     private void CollapseAttribution()
     {
+        _attrPinned = false;
         // If neither view is showing, there is nothing to collapse.
         if (_attrView.Visibility   == ViewStates.Gone &&
             _attrButton.Visibility == ViewStates.Gone) return;
@@ -1096,7 +1103,7 @@ public class MapLibreMapController : IMapLibreMapController
             ? ViewStates.Visible : ViewStates.Gone;
     }
 
-    private void ScheduleAutoCollapse()
+    private void ScheduleAutoCollapse(int delayMs = 5000)
     {
         int gen = ++_attrCollapseGen;
         // PostDelayed runs on the view's UI thread; generation counter prevents
@@ -1104,7 +1111,7 @@ public class MapLibreMapController : IMapLibreMapController
         _attrView.PostDelayed(() =>
         {
             if (_attrCollapseGen == gen) CollapseAttribution();
-        }, 5000);
+        }, delayMs);
     }
 
     private static ISpanned BuildAttributionSpanned(

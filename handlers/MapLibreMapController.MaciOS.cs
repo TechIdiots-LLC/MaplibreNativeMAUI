@@ -83,6 +83,7 @@ public class MapLibreMapController : IMapLibreMapController
     private int           _attrCollapseGen;       // generation counter for auto-collapse timer
     private bool          _attrLoaded;            // true once attribution content has been fetched
     private string?       _appliedAttribution;    // content currently shown — banner re-expands only when this changes
+    private bool          _attrPinned;            // manually expanded — camera motion won't collapse it
 
     // -- Navigation + GPS overlay controls -------------------------------------
 
@@ -173,7 +174,7 @@ public class MapLibreMapController : IMapLibreMapController
         _attrButton.Layer.CornerRadius = 4f;
         _attrButton.Hidden = true;
         _attrButton.TranslatesAutoresizingMaskIntoConstraints = false;
-        _attrButton.TouchUpInside += (_, _) => ExpandAttribution();
+        _attrButton.TouchUpInside += (_, _) => ExpandAttribution(pinned: true);
         View.AddSubview(_attrButton);
 
         // Navigation + GPS overlay panels (custom native views — mln-cabi does
@@ -446,7 +447,7 @@ public class MapLibreMapController : IMapLibreMapController
                     OnDidBecomeIdleReceived?.Invoke();
                     break;
                 case "onCameraIsChanging":
-                    CollapseAttribution();
+                    if (!_attrPinned) CollapseAttribution();   // don't swat a deliberately opened banner
                     UpdateCompassRotation();
                     OnCameraMoveReceived?.Invoke();
                     break;
@@ -716,16 +717,22 @@ public class MapLibreMapController : IMapLibreMapController
         ExpandAttribution();
     }
 
-    private void ExpandAttribution()
+    private void ExpandAttribution(bool pinned = false)
     {
         if (!_showAttrControl || !_attrLoaded) return;
+        // A deliberate tap on the ⓘ button pins the banner so camera motion can't
+        // instantly collapse it (GPS-follow eases the camera every fix, which
+        // otherwise swats the banner shut before it can be read). The auto-collapse
+        // timer still runs — pinning only shields against camera-motion collapse.
+        _attrPinned        = pinned;
         _attrView.Hidden   = false;
         _attrButton.Hidden = true;
-        ScheduleAutoCollapse();
+        ScheduleAutoCollapse(pinned ? 10000 : 5000);
     }
 
     private void CollapseAttribution()
     {
+        _attrPinned = false;
         // If neither view is showing, there is nothing to collapse.
         if (_attrView.Hidden && _attrButton.Hidden) return;
         ++_attrCollapseGen;  // cancel any pending auto-collapse
@@ -733,12 +740,12 @@ public class MapLibreMapController : IMapLibreMapController
         _attrButton.Hidden = !(_attrLoaded && _showAttrControl);
     }
 
-    private void ScheduleAutoCollapse()
+    private void ScheduleAutoCollapse(int delayMs = 5000)
     {
         int gen = ++_attrCollapseGen;
-        // Fire on the main thread after 5 s; generation counter prevents stale
+        // Fire on the main thread after the delay; generation counter prevents stale
         // callbacks from firing after ExpandAttribution was called again.
-        Task.Delay(5000).ContinueWith(_ =>
+        Task.Delay(delayMs).ContinueWith(_ =>
             MainThread.BeginInvokeOnMainThread(() =>
             {
                 if (_attrCollapseGen == gen) CollapseAttribution();
