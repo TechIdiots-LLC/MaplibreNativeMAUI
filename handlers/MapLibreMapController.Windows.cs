@@ -55,7 +55,8 @@ public class MapLibreMapController : IMapLibreMapController
     private bool   _showNavControls = true;
     private bool   _showAttrControl = true;
     private string? _customAttribution;
-    private string  _attrText = string.Empty;  // cached, rebuilt on StyleLoaded
+    private string  _attrText = string.Empty;   // cached, rebuilt on StyleLoaded / idle
+    private string? _appliedAttribution;        // content currently shown — banner re-expands only when this changes
     private bool   _showGpsControl = true;
     /// <summary>GPS tracking mode — matches Android TrackingMode enum.</summary>
     private enum GpsTrackingMode { Off, Show, Follow, FollowBearing }
@@ -154,12 +155,17 @@ public class MapLibreMapController : IMapLibreMapController
             if (_mapView == null) return;
             _style = _mapView.Style;
             _styleReady = true;
-            RefreshAttributionText();   // build attribution from the new style's sources
+            _appliedAttribution = null;   // new style — banner should show once for it
+            RefreshAttributionText();     // build attribution from the new style's sources
             OnStyleLoadedReceived?.Invoke(new Style(null));
         };
         _mapView.DidBecomeIdle += (_, _) =>
         {
-            if (_attrText.Length == 0) RefreshAttributionText();
+            // Rebuild on every idle so sources added at runtime (whose TileJSON loads
+            // after StyleLoaded) contribute their attribution; the content-change guard
+            // in RefreshAttributionText keeps the banner from re-expanding when nothing
+            // actually changed.
+            RefreshAttributionText();
             OnDidBecomeIdleReceived?.Invoke();
         };
         _mapView.CameraIdle    += (_, _) => { RefreshGpsControl(); OnCameraIdleReceived?.Invoke(); };
@@ -845,9 +851,19 @@ public class MapLibreMapController : IMapLibreMapController
         }
         _attrText = sb.ToString();
         if (_attrText.Length > 0)
+        {
+            // Only re-expand the banner when the attribution content actually changed —
+            // this runs on every DidBecomeIdle (and after runtime source updates), and
+            // unconditional expansion would keep popping the banner open.
+            if (_attrText == _appliedAttribution) return;
+            _appliedAttribution = _attrText;
             ExpandAttribution();
+        }
         else
+        {
+            _appliedAttribution = null;
             RefreshAttributionControl();
+        }
     }
 
     private static string StripHtmlTags(string html)
@@ -894,9 +910,10 @@ public class MapLibreMapController : IMapLibreMapController
 
     public void SetShowAttributionControl(bool show, string? customAttribution)
     {
-        _showAttrControl   = show;
-        _customAttribution = customAttribution;
-        _attrCollapsed     = false;  // reset collapse when attribution settings change
+        _showAttrControl    = show;
+        _customAttribution  = customAttribution;
+        _attrCollapsed      = false;  // reset collapse when attribution settings change
+        _appliedAttribution = null;   // settings changed — allow the banner to re-show
         if (_attrBorder != null)
             _attrBorder.Visibility = show ? WUX.Visibility.Visible : WUX.Visibility.Collapsed;
         RefreshAttributionText();

@@ -7,6 +7,10 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 4.2.1
+### 🐞 Bug fixes
+- **Attribution banner no longer re-expands on every source refresh** — `onSourceChanged` fires for every runtime source mutation, including an app updating a GeoJSON source on a timer, and the attribution handler rebuilt the banner and re-expanded it each time — so an app refreshing a live overlay every few seconds had the attribution popup permanently reopening. The Android, iOS/MacCatalyst, and WPF controls now track the attribution content they last applied and only rewrite/re-expand the banner when that content actually changed (a new style load still shows it once, and newly added sources still surface their attribution). The WinUI control already only refreshed while empty and is unchanged.
+
 ## 4.2.0
 ### ✨ Features and improvements
 - **Android: two-finger pinch-zoom, rotate and tilt** — the two-finger gesture handling was reworked, porting maplibre-gl-js's `two_fingers_touch` model (`MapLibreMapController.Android.cs`). Each of zoom / rotate / tilt now activates independently off its own threshold (zoom: cumulative log2-zoom delta; rotate: pixels along the touch-circle circumference, scaled by the smallest finger separation seen; tilt: both fingers moving vertically in the same direction), so an ordinary pinch no longer also spins or tilts the map. The map also claims the touch stream from any ancestor `ScrollView`/`ViewPager2` via `requestDisallowInterceptTouchEvent`, so gestures work when the map is hosted inside a scrolling/paged container.

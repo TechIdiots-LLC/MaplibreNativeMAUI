@@ -961,7 +961,8 @@ public partial class MlnMapImage : Grid
                     _styleReady = true;
                     _locIndLayer = null; // invalidated by style reload
                     _style = _map?.GetStyle();
-                    _attrLoaded = false; // new style — sources may have different attribution
+                    _attrLoaded = false;        // new style — sources may have different attribution
+                    _appliedAttribution = null; // …and the banner should show once for it
                     _renderNeedsUpdate = true;
                     if (_pendingLocInd.HasValue) ApplyPendingLocationIndicator();
                     RefreshAttribution();
@@ -1228,6 +1229,7 @@ public partial class MlnMapImage : Grid
     private string _attrText = string.Empty;
     private bool _attrCollapsed = true;
     private bool _attrLoaded;           // true once real source attributions have been fetched
+    private string? _appliedAttribution; // content currently shown — banner re-expands only when this changes
     private DispatcherTimer? _attrCollapseTimer;
 
     private void BuildAttributionOverlay()
@@ -1278,11 +1280,20 @@ public partial class MlnMapImage : Grid
         if (_attrText.Length > 0 && ShowAttributionControl)
         {
             _attrLoaded = true;
+
+            // onSourceChanged fires for every runtime source mutation (e.g. an app
+            // refreshing a GeoJSON source on a timer). Only re-expand the banner when
+            // the attribution content actually changed — otherwise a periodic source
+            // update keeps popping it open.
+            if (_attrText == _appliedAttribution) return;
+            _appliedAttribution = _attrText;
+
             _attrBorder.Visibility = Visibility.Visible;
             ExpandAttribution();
         }
         else
         {
+            _appliedAttribution = null;
             _attrBorder.Visibility = Visibility.Collapsed;
         }
     }
