@@ -95,7 +95,13 @@ void mbgl_http_respond_impl(uint64_t request_id,
                              int               no_content,
                              int               not_modified,
                              int               must_revalidate) noexcept {
-    // Find the pending request
+    // Find the pending request. Do NOT erase it yet: the entry must stay in the
+    // map until the callback actually runs, so a cancellation arriving between
+    // this point and the RunLoop executing the posted closure can still mark it
+    // cancelled. Erasing here left a window where the AsyncRequest was destroyed
+    // (its dtor's cancel found nothing to flag) while the already-posted closure
+    // went on to invoke the callback into the freed OnlineFileRequest — a
+    // use-after-free crash on the OnlineFileSource thread.
     std::shared_ptr<PendingRequest> req;
     {
         auto& s = state();
@@ -103,7 +109,6 @@ void mbgl_http_respond_impl(uint64_t request_id,
         auto it = s.pending.find(request_id);
         if (it == s.pending.end()) return; // already cancelled or unknown
         req = it->second;
-        s.pending.erase(it);
     }
 
     if (req->cancelled.load()) return;
@@ -165,13 +170,20 @@ void mbgl_http_respond_impl(uint64_t request_id,
         response.expires = mbgl::util::parseTimestamp(expires);
     }
 
-    // Marshal the callback back onto the map thread's RunLoop.
-    // We capture response by value (it's moveable but let's copy for safety
-    // since invoke stores a std::function).
-    auto cb       = req->callback;
+    // Marshal the callback back onto the requesting thread's RunLoop. The closure
+    // re-checks the cancelled flag when it runs: the AsyncRequest destructor
+    // (which sets the flag via mbgl_http_cancel_impl) executes on this same
+    // RunLoop thread, so by execution time the flag conclusively says whether
+    // the callback target is still alive. The map entry is erased only now.
     auto response_copy = response;
-    req->runLoop->invoke([cb = std::move(cb), r = std::move(response_copy)]() mutable {
-        cb(r);
+    req->runLoop->invoke([id = request_id, req, r = std::move(response_copy)]() mutable {
+        {
+            auto& s = state();
+            std::lock_guard<std::mutex> lock(s.mutex);
+            s.pending.erase(id);
+        }
+        if (req->cancelled.load()) return;   // request destroyed after respond was posted
+        req->callback(r);
     });
 }
 
