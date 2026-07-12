@@ -329,7 +329,7 @@ public class MapLibreMapController : IMapLibreMapController
     private const int OverlayGapDp    = 8;
 
     private LinearLayout _navPanel        = null!;  // d-pad / zoom-in / zoom-out
-    private LinearLayout _gpsPanel        = null!;  // tracking / bearing-reset
+    private LinearLayout _gpsPanel        = null!;  // tracking / bearing mode
     private Android.Views.View _navNorthTick = null!;  // rotates with map bearing
     private TextView     _gpsTrackingIcon = null!;  // reflects tracking mode
     private TextView     _gpsBearingIcon  = null!;
@@ -342,8 +342,10 @@ public class MapLibreMapController : IMapLibreMapController
     private MapControlCorner _attrCorner = MapControlCorner.BottomLeft;
 
     // GPS tracking state (fixes are fed externally via UpdateGpsLocation)
-    private enum GpsTrackingMode { Off, Show, Follow, FollowBearing }
+    private enum GpsTrackingMode { Off, Show, Follow }
+    private enum GpsBearingMode  { Free, NorthUp, GpsBearing }
     private GpsTrackingMode _gpsMode = GpsTrackingMode.Off;
+    private GpsBearingMode  _gpsBearingMode = GpsBearingMode.Free;
     private double _lastGpsLat, _lastGpsLon;
     private float  _lastGpsBearing;
     private float  _lastGpsAccuracy = 10f;
@@ -615,7 +617,7 @@ public class MapLibreMapController : IMapLibreMapController
         _gpsTrackingIcon.Click += (_, _) => CycleGpsMode();
         var divider = MakeDivider(ctx, btn, d);
         _gpsBearingIcon  = MakeOverlayButton(ctx, "\u21BA", btn); // ↺
-        _gpsBearingIcon.Click += (_, _) => ResetNorth();
+        _gpsBearingIcon.Click += (_, _) => CycleGpsBearingMode();
 
         _gpsPanel.AddView(_gpsTrackingIcon);
         _gpsPanel.AddView(divider);
@@ -912,13 +914,18 @@ public class MapLibreMapController : IMapLibreMapController
 
         _pendingLocInd = new LocIndParams(lat, lon, bearing, _lastGpsAccuracy);
 
-        if (_gpsMode is GpsTrackingMode.Follow or GpsTrackingMode.FollowBearing && _map != null)
+        if (_gpsMode == GpsTrackingMode.Follow && _map != null)
         {
-            bool useBearing  = _gpsMode == GpsTrackingMode.FollowBearing;
-            double zoom      = _map.Zoom < 8 ? 14 : _map.Zoom;
-            double camBearing = useBearing ? bearing : _map.Bearing;
+            double zoom       = _map.Zoom < 8 ? 14 : _map.Zoom;
+            double camBearing = CameraBearingForMode();
             if (isFirstFix) _map.JumpTo(lat, lon, zoom, camBearing, _map.Pitch);
             else            _map.EaseTo(lat, lon, _map.Zoom, camBearing, _map.Pitch, durationMs: 200);
+        }
+        else if (_gpsMode != GpsTrackingMode.Off && _gpsBearingMode == GpsBearingMode.GpsBearing && _map != null)
+        {
+            // Not following the position, but still tracking the GPS bearing.
+            var (cLat, cLon) = _map.Center;
+            _map.EaseTo(cLat, cLon, _map.Zoom, bearing, _map.Pitch, durationMs: 200);
         }
 
         if (_styleReady && _style != null)
@@ -938,6 +945,8 @@ public class MapLibreMapController : IMapLibreMapController
     private void ResetNorth()
     {
         if (_map == null) return;
+        // A GPS-driven bearing would immediately rotate away from north again — release it.
+        if (_gpsBearingMode == GpsBearingMode.GpsBearing) OnUserRotatedMap();
         var (lat, lon) = _map.Center;
         _map.EaseTo(lat, lon, _map.Zoom, 0, _map.Pitch, durationMs: 200);
     }
@@ -946,6 +955,7 @@ public class MapLibreMapController : IMapLibreMapController
     private void RotateBy(double deltaDeg)
     {
         if (_map == null) return;
+        OnUserRotatedMap();
         var (lat, lon) = _map.Center;
         _map.EaseTo(lat, lon, _map.Zoom, _map.Bearing + deltaDeg, _map.Pitch, durationMs: 200);
     }
@@ -963,10 +973,9 @@ public class MapLibreMapController : IMapLibreMapController
     {
         _gpsMode = _gpsMode switch
         {
-            GpsTrackingMode.Off           => GpsTrackingMode.Show,
-            GpsTrackingMode.Show          => GpsTrackingMode.Follow,
-            GpsTrackingMode.Follow        => GpsTrackingMode.FollowBearing,
-            _                             => GpsTrackingMode.Off,
+            GpsTrackingMode.Off  => GpsTrackingMode.Show,
+            GpsTrackingMode.Show => GpsTrackingMode.Follow,
+            _                    => GpsTrackingMode.Off,
         };
         RefreshGpsIcons();
 
@@ -981,18 +990,74 @@ public class MapLibreMapController : IMapLibreMapController
             UpdateGpsLocation(_lastGpsLat, _lastGpsLon, _lastGpsBearing, _lastGpsAccuracy);
     }
 
+    /// <summary>Cycle camera bearing mode: Free → NorthUp → GpsBearing → Free.</summary>
+    private void CycleGpsBearingMode()
+    {
+        _gpsBearingMode = _gpsBearingMode switch
+        {
+            GpsBearingMode.Free    => GpsBearingMode.NorthUp,
+            GpsBearingMode.NorthUp => GpsBearingMode.GpsBearing,
+            _                      => GpsBearingMode.Free,
+        };
+        RefreshGpsIcons();
+
+        // Rotate the camera to the newly selected reference immediately.
+        if (_map != null && _gpsBearingMode != GpsBearingMode.Free
+            && (_gpsBearingMode == GpsBearingMode.NorthUp || _hasGpsFix))
+        {
+            var (lat, lon) = _map.Center;
+            double target = _gpsBearingMode == GpsBearingMode.NorthUp ? 0 : _lastGpsBearing;
+            _map.EaseTo(lat, lon, _map.Zoom, target, _map.Pitch, durationMs: 300);
+        }
+    }
+
+    /// <summary>Camera bearing to use for GPS-driven camera moves, per the bearing mode.</summary>
+    private double CameraBearingForMode() => _gpsBearingMode switch
+    {
+        GpsBearingMode.NorthUp    => 0,
+        GpsBearingMode.GpsBearing => _lastGpsBearing,
+        _                         => _map?.Bearing ?? 0,
+    };
+
+    /// <summary>A user pan gesture moved the map: drop Follow back to Show (the button
+    /// re-enters Follow with one click), matching maplibre-gl-js GeolocateControl.</summary>
+    private void OnUserPannedMap()
+    {
+        if (_gpsMode != GpsTrackingMode.Follow) return;
+        _gpsMode = GpsTrackingMode.Show;
+        OnCameraTrackingDismissedReceived?.Invoke();
+        RefreshGpsIcons();
+    }
+
+    /// <summary>A manual rotation (gesture or d-pad) took over the bearing: drop back to Free.</summary>
+    private void OnUserRotatedMap()
+    {
+        if (_gpsBearingMode == GpsBearingMode.Free) return;
+        _gpsBearingMode = GpsBearingMode.Free;
+        RefreshGpsIcons();
+    }
+
     private void RefreshGpsIcons()
     {
         if (_gpsTrackingIcon == null) return;
         (string icon, int r, int g, int b) = _gpsMode switch
         {
-            GpsTrackingMode.Show          => ("\u2299", 30, 136, 229),  // ⊙ blue
-            GpsTrackingMode.Follow        => ("\u25CE", 21, 101, 192),  // ◎ deep blue
-            GpsTrackingMode.FollowBearing => ("\u27A4", 245, 124, 0),   // ➤ orange
-            _                             => ("\u25CB", 120, 120, 120), // ○ gray (Off)
+            GpsTrackingMode.Show   => ("\u2299", 30, 136, 229),  // ⊙ blue
+            GpsTrackingMode.Follow => ("\u25CE", 21, 101, 192),  // ◎ deep blue
+            _                      => ("\u25CB", 120, 120, 120), // ○ gray (Off)
         };
         _gpsTrackingIcon.Text = icon;
         _gpsTrackingIcon.SetTextColor(Android.Graphics.Color.Argb(255, r, g, b));
+
+        if (_gpsBearingIcon == null) return;
+        (string bIcon, int br, int bg, int bb) = _gpsBearingMode switch
+        {
+            GpsBearingMode.NorthUp    => ("N", 21, 101, 192),                 // N north-up blue
+            GpsBearingMode.GpsBearing => ("\u27A4", 245, 124, 0),   // ➤ orange
+            _                         => ("\u21BA", 85, 85, 85),    // ↺ gray (Free)
+        };
+        _gpsBearingIcon.Text = bIcon;
+        _gpsBearingIcon.SetTextColor(Android.Graphics.Color.Argb(255, br, bg, bb));
     }
 
     /// <summary>Rotates the compass north tick to reflect the current map bearing.</summary>
@@ -1016,11 +1081,11 @@ public class MapLibreMapController : IMapLibreMapController
             _locIndLayer.SetPaintProperty("accuracy-radius-border-color", "\"rgba(30,136,229,0.85)\"");
         }
 
-        bool showBearing = _gpsMode == GpsTrackingMode.FollowBearing;
         _locIndLayer.SetPaintProperty("location",
             $"[{p.Lat.ToString(ic)},{p.Lon.ToString(ic)},0]");
-        _locIndLayer.SetPaintProperty("bearing",
-            (showBearing ? p.Bearing : 0f).ToString(ic));
+        // The dot always points the direction of travel; the camera bearing mode
+        // only controls whether the map rotates with it.
+        _locIndLayer.SetPaintProperty("bearing", p.Bearing.ToString(ic));
         _locIndLayer.SetPaintProperty("accuracy-radius", p.AccuracyM.ToString(ic));
     }
 
@@ -1677,6 +1742,7 @@ public class MapLibreMapController : IMapLibreMapController
                         // a "catch up" jump for whatever rotation happened before threshold.
                         double frameDeltaDeg = TpAngleDeg(currVecX, currVecY, c._tpVecX, c._tpVecY);
                         c._tpRotateActive = true;
+                        c.OnUserRotatedMap();
 
                         // Negated: RotateBy's synthetic-point construction otherwise
                         // turns the map opposite to the physical two-finger twist.
@@ -1751,6 +1817,7 @@ public class MapLibreMapController : IMapLibreMapController
             // (scale/rotate/tilt are handled by MapTouchListener directly).
             if (!_ctrl._scrollGesturesEnabled || _ctrl._tpActive) return false;
             _ctrl._map?.MoveBy(-distanceX, -distanceY);
+            _ctrl.OnUserPannedMap();
             return true;
         }
 
@@ -1764,6 +1831,7 @@ public class MapLibreMapController : IMapLibreMapController
             double offsetX = velocityX * animTime * 0.00028;
             double offsetY = velocityY * animTime * 0.00028;
             _ctrl._map?.MoveBy(offsetX, offsetY, animTime);
+            _ctrl.OnUserPannedMap();
             return true;
         }
 

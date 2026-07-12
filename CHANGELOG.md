@@ -2,7 +2,7 @@
 
 ## master
 ### ✨ Features and improvements
-- _...Add new stuff here..._
+- **GPS control reworked: independent tracking and bearing buttons** — on all platforms (Android, iOS/MacCatalyst, WinUI, WPF) the on-map GPS control's two buttons now have separate jobs, mirroring maplibre-gl-js's `GeolocateControl` and the Vistumbler Android app. The top button cycles the tracking mode **Off ○ → Show ⊙ → Follow ◎ → Off** (the old combined `FollowBearing` state is gone), and the bottom button — previously a plain reset-to-north — cycles the camera bearing mode **Free ↺ → North-up N → GPS bearing ➤ → Free**. The two combine: Follow + GPS bearing re-centres *and* rotates with each fix; Show + GPS bearing rotates the camera with the fix bearing without re-centring. Manually panning the map while in Follow drops the control back to Show (one click on the button re-enters Follow), and manually rotating (two-finger twist on Android, nav d-pad on any platform) drops the bearing mode back to Free; the `CameraTrackingDismissed` event fires when a pan dismisses Follow. The location dot now always points in the direction of travel regardless of bearing mode.
 
 ### 🐞 Bug fixes
 - _...Add new stuff here..._

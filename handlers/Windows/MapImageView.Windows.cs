@@ -55,6 +55,8 @@ public sealed class MapImageView : IDisposable
     public event EventHandler? CameraIdle;
     /// <summary>Raised on a tap without pan: (latitude, longitude, physicalX, physicalY).</summary>
     public event EventHandler<(double Lat, double Lon, double X, double Y)>? MapClicked;
+    /// <summary>Raised when a user drag actually moves the map (never for programmatic moves).</summary>
+    public event EventHandler? UserPanned;
 
     // The map surface — a plain XAML Image displaying the WriteableBitmap.
     private readonly WUXC.Image _mapImage = new()
@@ -248,8 +250,10 @@ public sealed class MapImageView : IDisposable
         var pos = e.GetCurrentPoint(View).Position;
         var d = Phys(new Windows.Foundation.Point(pos.X - _lastPos.X, pos.Y - _lastPos.Y));
         _lastPos = pos;
+        if (d.X == 0 && d.Y == 0) return;   // a plain click can raise Moved with no travel
         _map.OnPanMove(d.X, d.Y);
         _renderNeedsUpdate = true;
+        UserPanned?.Invoke(this, System.EventArgs.Empty);
     }
 
     private void OnPointerReleased(object sender, WUXI.PointerRoutedEventArgs e)
