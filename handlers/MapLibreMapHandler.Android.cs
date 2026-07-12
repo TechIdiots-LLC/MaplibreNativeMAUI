@@ -17,6 +17,7 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, FrameLayout>
     protected override FrameLayout CreatePlatformView()
     {
         var dpi = (float)(Platform.CurrentActivity?.Resources?.DisplayMetrics?.Density ?? 1f);
+        dpi *= (float)(VirtualView?.UiScale ?? 1.0);   // app-requested extra scaling (e.g. OS font scale)
         _controller = MapLibreMapFactory.Create(dpi, VirtualView?.StyleUrl);
 
         _controller.OnMapReadyReceived              += VirtualView.OnMapReady;

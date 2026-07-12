@@ -57,6 +57,21 @@ public partial class MlnMapImage : Grid
         }
     }
 
+    /// <summary>
+    /// Extra multiplier applied to the style-unit pixel ratio (text/icon/circle/line
+    /// sizes) when the native map is created — surface dimensions stay in real physical
+    /// pixels. Default 1.0. Lets apps honour the OS text-scale / accessibility setting,
+    /// which MapLibre otherwise ignores. Set before the control initialises; read once.
+    /// </summary>
+    public double UiScale
+    {
+        get => (double)GetValue(UiScaleProperty);
+        set => SetValue(UiScaleProperty, value);
+    }
+    public static readonly DependencyProperty UiScaleProperty =
+        DependencyProperty.Register(nameof(UiScale), typeof(double), typeof(MlnMapImage),
+            new PropertyMetadata(1.0));
+
     public bool ShowGpsControl
     {
         get => (bool)GetValue(ShowGpsControlProperty);
@@ -248,13 +263,17 @@ public partial class MlnMapImage : Grid
         _interop.Resize(_physW, _physH);
         CreateBitmap(_physW, _physH);
 
+        // UiScale multiplies only the style-unit pixel ratio (text/icon/circle/line
+        // sizes) — the surface dimensions above stay in real physical pixels.
+        float pixelRatio = _dpi * (float)UiScale;
+
         _runLoop = new MbglRunLoop();
-        _frontend = new MbglFrontend(_interop.Hdc, _interop.GlContext, _physW, _physH, _dpi,
+        _frontend = new MbglFrontend(_interop.Hdc, _interop.GlContext, _physW, _physH, pixelRatio,
             () => _renderNeedsUpdate = true);
         // Persistent tile/resource cache (mbgl's default is :memory:), shared
         // with MbglOfflineManager via MbglCache.DefaultPath.
         _map = new MbglMap(_frontend, _runLoop, cachePath: MbglCache.DefaultPath,
-                           pixelRatio: _dpi, observer: OnMapObserverEvent);
+                           pixelRatio: pixelRatio, observer: OnMapObserverEvent);
         _map.SetSize(_physW, _physH);
 
         var url = StyleUrl;

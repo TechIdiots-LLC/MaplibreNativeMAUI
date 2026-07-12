@@ -15,6 +15,7 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, UIView>
     protected override UIView CreatePlatformView()
     {
         var scale = (float)UIScreen.MainScreen.Scale;
+        scale *= (float)(VirtualView?.UiScale ?? 1.0);   // app-requested extra scaling (e.g. OS font scale)
         _controller = MapLibreMapFactory.Create(scale, VirtualView?.StyleUrl);
 
         _controller.OnMapReadyReceived              += VirtualView.OnMapReady;

@@ -38,6 +38,11 @@ public sealed class MapImageView : IDisposable
     /// <summary>Style URL or inline style JSON. Applied when the map is created.</summary>
     public string StyleUrl { get; set; } = "https://demotiles.maplibre.org/style.json";
 
+    /// <summary>Extra multiplier applied to the style-unit pixel ratio (text/icon/
+    /// circle/line sizes) — surface dimensions stay in real physical pixels.
+    /// Set before the view loads; read once at native map creation.</summary>
+    public float UiScale { get; set; } = 1f;
+
     /// <summary>The underlying map, once created (on panel load). Drive camera/sources/layers through this.</summary>
     public MbglMap? Map => _map;
 
@@ -129,14 +134,18 @@ public sealed class MapImageView : IDisposable
         _interop.Resize(_width, _height);
         CreateBitmap(_width, _height);
 
+        // UiScale multiplies only the style-unit pixel ratio (text/icon/circle/line
+        // sizes) — the surface dimensions above stay in real physical pixels.
+        float pixelRatio = _dpi * UiScale;
+
         _runLoop  = _sharedRunLoop ??= new MbglRunLoop();
-        _frontend = new MbglFrontend(_interop.Hdc, _interop.GlContext, _width, _height, _dpi,
+        _frontend = new MbglFrontend(_interop.Hdc, _interop.GlContext, _width, _height, pixelRatio,
             () => _renderNeedsUpdate = true);
         // Persistent tile/resource cache (mbgl's default is :memory:). Shares
         // MbglCache.DefaultPath with MbglOfflineManager so offline regions
         // downloaded by the manager are served to the map.
         _map = new MbglMap(_frontend, _runLoop, cachePath: MbglCache.DefaultPath,
-                           pixelRatio: _dpi, observer: OnMapObserverEvent);
+                           pixelRatio: pixelRatio, observer: OnMapObserverEvent);
         _map.SetSize(_width, _height);
 
         var url = StyleUrl;

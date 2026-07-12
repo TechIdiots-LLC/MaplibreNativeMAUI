@@ -87,6 +87,10 @@ public class MapLibreMapController : IMapLibreMapController
     /// <summary>The WinUI placeholder element the handler uses as the platform view.</summary>
     public Microsoft.UI.Xaml.Controls.Grid View { get; } = new();
 
+    /// <summary>Extra style-unit pixel-ratio multiplier forwarded to the map view.
+    /// Set by the handler (from <c>MapLibreMap.UiScale</c>) before <see cref="Init"/>.</summary>
+    public float UiScale { get; set; } = 1f;
+
     // ── Events ────────────────────────────────────────────────────────────────
     public event Action<Map>?                            OnMapReadyReceived;
     public event Action?                                 OnDidBecomeIdleReceived;
@@ -133,6 +137,7 @@ public class MapLibreMapController : IMapLibreMapController
         {
             StyleUrl = string.IsNullOrEmpty(_styleString)
                 ? "https://demotiles.maplibre.org/style.json" : _styleString!,
+            UiScale  = UiScale,
         };
 
         // The self-contained view owns the mbgl objects; mirror them onto the controller's

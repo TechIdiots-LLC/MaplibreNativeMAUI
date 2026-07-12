@@ -7,6 +7,10 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 4.3.0
+### ✨ Features and improvements
+- **`UiScale` — opt-in UI scaling for map content** — new property on the MAUI `MapLibreMap` control (and a matching dependency property on the WPF `MlnMapImage`) that multiplies the platform pixel ratio when the native map is created, scaling everything sized in style pixels: text, icons, circles, line widths. Default `1.0` (no change). Lets apps honour the OS font-scale / accessibility setting, which MapLibre ignores by design — e.g. a user with "large text" enabled sees map labels scaled to match the rest of the UI. Surface dimensions stay in real physical pixels, so rendering stays sharp. Read once at platform-view creation; changing it on a live map has no effect.
+
 ## 4.2.2
 ### 🐞 Bug fixes
 - **Android: fixed a native crash (SIGSEGV in `OnlineFileSource`) under heavy tile traffic** — when an HTTP response arrived, the provider removed the request from its pending table *before* posting the callback onto the RunLoop. A request destroyed in that window (routine with many vector sources loading while panning/zooming or backgrounding the app, where superseded requests are constantly cancelled) couldn't be flagged as cancelled — its destructor found nothing to mark — so the already-posted callback ran against the freed `OnlineFileRequest` and crashed in `mbgl::util::Timer`. The pending entry now stays registered until the callback actually executes, and the posted closure re-checks the cancelled flag (it runs on the same RunLoop thread as the request's destructor, making the check decisive).
