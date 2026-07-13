@@ -2,10 +2,14 @@
 
 ## master
 ### ✨ Features and improvements
-- **`GpsFollowZoomMode` / `GpsFollowZoom` — configurable zoom when GPS Follow engages** — new properties on the MAUI `MapLibreMap` control (and matching dependency properties on the WPF `MlnMapImage`) controlling the camera zoom applied when the GPS control enters Follow mode (via the on-map button, or the first fix while following). `KeepCurrent` (default) preserves the old behaviour (only zooms to 14 when further out than 8); `Fixed` always eases to the `GpsFollowZoom` level (default 16, the vistumbler-android behaviour); `Accuracy` computes the zoom from the fix's reported accuracy so the accuracy circle spans about a third of the viewport — a sharp fix lands at street level (clamped to 17), a coarse cell-grade fix stays zoomed out to cover its uncertainty (clamped to 10). Later fixes never change the zoom, so a manual pinch/scroll zoom sticks until Follow is re-entered. Entering Follow via the button now also applies the entry zoom on Android/iOS (previously only Windows/WPF re-eased the camera there).
+- _...Add new stuff here..._
 
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
+
+## 4.5.0
+### ✨ Features and improvements
+- **`GpsFollowZoomMode` / `GpsFollowZoom` — configurable zoom when GPS Follow engages** — new properties on the MAUI `MapLibreMap` control (and matching dependency properties on the WPF `MlnMapImage`) controlling the camera zoom applied when the GPS control enters Follow mode (via the on-map button, or the first fix while following). `KeepCurrent` (default) preserves the old behaviour (only zooms to 14 when further out than 8); `Fixed` always eases to the `GpsFollowZoom` level (default 16, the vistumbler-android behaviour); `Accuracy` computes the zoom from the fix's reported accuracy so the accuracy circle spans about a third of the viewport — a sharp fix lands at street level (clamped to 17), a coarse cell-grade fix stays zoomed out to cover its uncertainty (clamped to 10). Later fixes never change the zoom, so a manual pinch/scroll zoom sticks until Follow is re-entered. Entering Follow via the button now also applies the entry zoom on Android/iOS (previously only Windows/WPF re-eased the camera there).
 
 ## 4.4.0
 ### ✨ Features and improvements
