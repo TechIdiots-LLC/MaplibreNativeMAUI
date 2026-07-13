@@ -50,6 +50,12 @@ public interface IMapLibreMapOptionsSink
     /// <summary>Show or hide the GPS tracking control overlay.</summary>
     void SetShowGpsControl(bool show);
 
+    /// <summary>
+    /// Set how the GPS control picks the camera zoom when Follow mode engages;
+    /// <paramref name="zoom"/> is the level used by <see cref="GpsFollowZoomMode.Fixed"/>.
+    /// </summary>
+    void SetGpsFollowZoom(GpsFollowZoomMode mode, double zoom);
+
     /// <summary>Set the corner the navigation control is anchored to.</summary>
     void SetNavigationControlPosition(MapControlCorner corner);
 

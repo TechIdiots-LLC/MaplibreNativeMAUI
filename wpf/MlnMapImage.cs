@@ -146,6 +146,32 @@ public partial class MlnMapImage : Grid
         if (d is MlnMapImage m) m.RepositionControls();
     }
 
+    /// <summary>
+    /// How the GPS control picks the camera zoom when Follow mode engages (the on-map
+    /// GPS button, or the first fix while following). KeepCurrent preserves the
+    /// historical behaviour; Accuracy zooms so the fix's accuracy circle is comfortably
+    /// visible; Fixed always uses <see cref="GpsFollowZoom"/>. Later fixes never change
+    /// the zoom, so a manual scroll zoom sticks.
+    /// </summary>
+    public GpsFollowZoomMode GpsFollowZoomMode
+    {
+        get => (GpsFollowZoomMode)GetValue(GpsFollowZoomModeProperty);
+        set => SetValue(GpsFollowZoomModeProperty, value);
+    }
+    public static readonly DependencyProperty GpsFollowZoomModeProperty =
+        DependencyProperty.Register(nameof(GpsFollowZoomMode), typeof(GpsFollowZoomMode), typeof(MlnMapImage),
+            new PropertyMetadata(GpsFollowZoomMode.KeepCurrent));
+
+    /// <summary>Zoom level applied when <see cref="GpsFollowZoomMode"/> is <see cref="MapLibreNative.Maui.GpsFollowZoomMode.Fixed"/>. Default <c>16</c>.</summary>
+    public double GpsFollowZoom
+    {
+        get => (double)GetValue(GpsFollowZoomProperty);
+        set => SetValue(GpsFollowZoomProperty, value);
+    }
+    public static readonly DependencyProperty GpsFollowZoomProperty =
+        DependencyProperty.Register(nameof(GpsFollowZoom), typeof(double), typeof(MlnMapImage),
+            new PropertyMetadata(16.0));
+
     // ── Visible region (read-only, bindable) ──────────────────────────────────
 
     private static readonly DependencyPropertyKey VisibleRegionPropertyKey =
@@ -1108,9 +1134,8 @@ public partial class MlnMapImage : Grid
         _pendingLocInd = new LocIndParams(lat, lon, bearing, Math.Max(5f, accuracyMeters));
         if (_gpsTrackingMode == GpsTrackingMode.Follow && _map != null)
         {
-            double cameraZoom = _map.Zoom < 8 ? 14 : _map.Zoom;
             double cameraBearing = CameraBearingForMode();
-            if (isFirstFix) _map.JumpTo(lat, lon, cameraZoom, cameraBearing, _map.Pitch);
+            if (isFirstFix) _map.JumpTo(lat, lon, FollowEntryZoom(), cameraBearing, _map.Pitch);
             else _map.EaseTo(lat, lon, _map.Zoom, cameraBearing, _map.Pitch, durationMs: 200);
         }
         else if (_gpsBearingMode == GpsBearingMode.GpsBearing && _map != null)
@@ -1166,6 +1191,29 @@ public partial class MlnMapImage : Grid
         _                         => _map?.Bearing ?? 0,
     };
 
+    /// <summary>Zoom to use when Follow mode engages, per <see cref="GpsFollowZoomMode"/>.
+    /// Later fixes keep the live zoom so a manual scroll zoom sticks.</summary>
+    private double FollowEntryZoom() => GpsFollowZoomMode switch
+    {
+        Maui.GpsFollowZoomMode.Fixed    => Math.Clamp(GpsFollowZoom, 1, 22),
+        Maui.GpsFollowZoomMode.Accuracy => AccuracyZoom(),
+        _                               => (_map?.Zoom ?? 0) < 8 ? 14 : _map?.Zoom ?? 14,
+    };
+
+    /// <summary>Zoom at which the fix's accuracy circle spans ~⅓ of the shorter viewport
+    /// side — a sharp fix lands at street level (clamped to 17), a coarse cell-grade fix
+    /// stays zoomed out to cover its uncertainty.</summary>
+    private double AccuracyZoom()
+    {
+        double acc    = Math.Max(5, _lastGpsAccuracy);
+        double minDim = Math.Min(ActualWidth, ActualHeight);
+        if (minDim < 1) minDim = 800;
+        // metres per style pixel at zoom z (512px tiles): 78271.517 * cos(lat) / 2^z
+        double targetMpp = (2 * acc) / (0.33 * minDim);
+        double zoom = Math.Log2(78271.517 * Math.Cos(_lastGpsLat * Math.PI / 180.0) / targetMpp);
+        return Math.Clamp(zoom, 10, 17);
+    }
+
     private void ApplyGpsMode()
     {
         if (_gpsTrackingMode == GpsTrackingMode.Off)
@@ -1177,8 +1225,7 @@ public partial class MlnMapImage : Grid
             _pendingLocInd = new LocIndParams(_lastGpsLat, _lastGpsLon, _lastGpsBearing, Math.Max(5f, _lastGpsAccuracy));
             if (_gpsTrackingMode == GpsTrackingMode.Follow && _map != null)
             {
-                double zoom = _map.Zoom < 8 ? 14 : _map.Zoom;
-                _map.EaseTo(_lastGpsLat, _lastGpsLon, zoom, CameraBearingForMode(), _map.Pitch, durationMs: 300);
+                _map.EaseTo(_lastGpsLat, _lastGpsLon, FollowEntryZoom(), CameraBearingForMode(), _map.Pitch, durationMs: 300);
             }
             if (_styleReady && _style != null) ApplyPendingLocationIndicator();
             _renderNeedsUpdate = true;

@@ -111,6 +111,8 @@ public class MapLibreMapController : IMapLibreMapController
     private enum GpsBearingMode  { Free, NorthUp, GpsBearing }
     private GpsTrackingMode _gpsMode = GpsTrackingMode.Off;
     private GpsBearingMode  _gpsBearingMode = GpsBearingMode.Free;
+    private GpsFollowZoomMode _gpsFollowZoomMode = GpsFollowZoomMode.KeepCurrent;
+    private double _gpsFollowZoom = 16;
     private double _lastGpsLat, _lastGpsLon;
     private float  _lastGpsBearing;
     private float  _lastGpsAccuracy = 10f;
@@ -522,6 +524,35 @@ public class MapLibreMapController : IMapLibreMapController
         RepositionOverlays();
     }
 
+    public void SetGpsFollowZoom(GpsFollowZoomMode mode, double zoom)
+    {
+        _gpsFollowZoomMode = mode;
+        _gpsFollowZoom     = Math.Clamp(zoom, 1, 22);
+    }
+
+    /// <summary>Zoom to use when Follow mode engages, per the follow-zoom mode.
+    /// Later fixes keep the live zoom so a manual pinch zoom sticks.</summary>
+    private double FollowEntryZoom() => _gpsFollowZoomMode switch
+    {
+        GpsFollowZoomMode.Fixed    => _gpsFollowZoom,
+        GpsFollowZoomMode.Accuracy => AccuracyZoom(),
+        _                          => (_map?.Zoom ?? 0) < 8 ? 14 : _map?.Zoom ?? 14,
+    };
+
+    /// <summary>Zoom at which the fix's accuracy circle spans ~⅓ of the shorter
+    /// viewport side (in points) → a sharp fix lands at street level (clamped to
+    /// 17), a coarse cell-grade fix stays zoomed out to cover its uncertainty.</summary>
+    private double AccuracyZoom()
+    {
+        double acc    = Math.Max(5, _lastGpsAccuracy);
+        double minDim = Math.Min((double)View.Bounds.Width, (double)View.Bounds.Height);
+        if (minDim < 1) minDim = 400;
+        // metres per style pixel at zoom z (512px tiles): 78271.517 * cos(lat) / 2^z
+        double targetMpp = (2 * acc) / (0.33 * minDim);
+        double zoom = Math.Log2(78271.517 * Math.Cos(_lastGpsLat * Math.PI / 180.0) / targetMpp);
+        return Math.Clamp(zoom, 10, 17);
+    }
+
     public void SetNavigationControlPosition(MapControlCorner corner)
     {
         if (_navCorner == corner) return;
@@ -556,9 +587,8 @@ public class MapLibreMapController : IMapLibreMapController
 
         if (_gpsMode == GpsTrackingMode.Follow && _map != null)
         {
-            double zoom       = _map.Zoom < 8 ? 14 : _map.Zoom;
             double camBearing = CameraBearingForMode();
-            if (isFirstFix) _map.JumpTo(lat, lon, zoom, camBearing, _map.Pitch);
+            if (isFirstFix) _map.JumpTo(lat, lon, FollowEntryZoom(), camBearing, _map.Pitch);
             else            _map.EaseTo(lat, lon, _map.Zoom, camBearing, _map.Pitch, durationMs: 200);
         }
         else if (_gpsMode != GpsTrackingMode.Off && _gpsBearingMode == GpsBearingMode.GpsBearing && _map != null)
@@ -624,8 +654,17 @@ public class MapLibreMapController : IMapLibreMapController
             ClearLocationIndicator();
             return;
         }
+        // Entering Follow eases to the follow-zoom policy's entry zoom.
         if (_hasGpsFix)
-            UpdateGpsLocation(_lastGpsLat, _lastGpsLon, _lastGpsBearing, _lastGpsAccuracy);
+        {
+            if (_gpsMode == GpsTrackingMode.Follow && _map != null)
+                _map.EaseTo(_lastGpsLat, _lastGpsLon, FollowEntryZoom(),
+                            CameraBearingForMode(), _map.Pitch, durationMs: 300);
+            _pendingLocInd = new LocIndParams(_lastGpsLat, _lastGpsLon, _lastGpsBearing, _lastGpsAccuracy);
+            if (_styleReady && _style != null)
+                ApplyPendingLocationIndicator();
+            _map?.TriggerRepaint();
+        }
     }
 
     /// <summary>Cycle camera bearing mode: Free → NorthUp → GpsBearing → Free.</summary>

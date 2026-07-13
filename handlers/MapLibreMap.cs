@@ -56,6 +56,12 @@ public partial class MapLibreMap : StackLayout
     /// <summary>Corner the attribution control is anchored to. Default <see cref="MapControlCorner.BottomLeft"/>.</summary>
     public static readonly BindableProperty AttributionControlPositionProperty =
         BindableProperty.Create(nameof(AttributionControlPosition), typeof(MapControlCorner), typeof(MapLibreMap), defaultValue: MapControlCorner.BottomLeft);
+    /// <summary>How the GPS control picks the camera zoom when Follow mode engages. Default <see cref="Maui.GpsFollowZoomMode.KeepCurrent"/>.</summary>
+    public static readonly BindableProperty GpsFollowZoomModeProperty =
+        BindableProperty.Create(nameof(GpsFollowZoomMode), typeof(GpsFollowZoomMode), typeof(MapLibreMap), defaultValue: GpsFollowZoomMode.KeepCurrent);
+    /// <summary>Zoom level applied when <see cref="GpsFollowZoomMode"/> is <see cref="Maui.GpsFollowZoomMode.Fixed"/>. Default <c>16</c>.</summary>
+    public static readonly BindableProperty GpsFollowZoomProperty =
+        BindableProperty.Create(nameof(GpsFollowZoom), typeof(double), typeof(MapLibreMap), defaultValue: 16.0);
     /// <summary>
     /// Extra multiplier applied to the platform pixel ratio (display density) when the
     /// native map is created. Default <c>1.0</c>. Everything sized in style pixels —
@@ -304,6 +310,26 @@ public partial class MapLibreMap : StackLayout
     {
         get => (MapControlCorner)GetValue(AttributionControlPositionProperty);
         set => SetValue(AttributionControlPositionProperty, value);
+    }
+
+    /// <summary>
+    /// How the GPS control picks the camera zoom when Follow mode engages (the
+    /// on-map GPS button, or the first fix while following). KeepCurrent preserves
+    /// the historical behaviour; Accuracy zooms so the fix's accuracy circle is
+    /// comfortably visible; Fixed always uses <see cref="GpsFollowZoom"/>.
+    /// Later fixes never change the zoom, so a manual pinch zoom sticks.
+    /// </summary>
+    public GpsFollowZoomMode GpsFollowZoomMode
+    {
+        get => (GpsFollowZoomMode)GetValue(GpsFollowZoomModeProperty);
+        set => SetValue(GpsFollowZoomModeProperty, value);
+    }
+
+    /// <summary>Zoom level applied when <see cref="GpsFollowZoomMode"/> is <see cref="Maui.GpsFollowZoomMode.Fixed"/>. Default <c>16</c>.</summary>
+    public double GpsFollowZoom
+    {
+        get => (double)GetValue(GpsFollowZoomProperty);
+        set => SetValue(GpsFollowZoomProperty, value);
     }
 
     public void AddGeoJsonSource(string sourceName, FeatureCollection collection)
