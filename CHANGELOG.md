@@ -7,6 +7,14 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 4.4.0
+### ✨ Features and improvements
+- **GPS control reworked: independent tracking and bearing buttons** — on all platforms (Android, iOS/MacCatalyst, WinUI, WPF) the on-map GPS control's two buttons now have separate jobs, mirroring maplibre-gl-js's `GeolocateControl` and the Vistumbler Android app. The top button cycles the tracking mode **Off ○ → Show ⊙ → Follow ◎ → Off** (the old combined `FollowBearing` state is gone), and the bottom button — previously a plain reset-to-north — cycles the camera bearing mode **Free ↺ → North-up N → GPS bearing ➤ → Free**. The two combine: Follow + GPS bearing re-centres *and* rotates with each fix; Show + GPS bearing rotates the camera with the fix bearing without re-centring. Manually panning the map while in Follow drops the control back to Show (one click on the button re-enters Follow), and manually rotating (two-finger twist on Android, nav d-pad on any platform) drops the bearing mode back to Free; the `CameraTrackingDismissed` event fires when a pan dismisses Follow. The location dot now always points in the direction of travel regardless of bearing mode.
+
+## 4.3.0
+### ✨ Features and improvements
+- **`UiScale` — opt-in UI scaling for map content** — new property on the MAUI `MapLibreMap` control (and a matching dependency property on the WPF `MlnMapImage`) that multiplies the platform pixel ratio when the native map is created, scaling everything sized in style pixels: text, icons, circles, line widths. Default `1.0` (no change). Lets apps honour the OS font-scale / accessibility setting, which MapLibre ignores by design — e.g. a user with "large text" enabled sees map labels scaled to match the rest of the UI. Surface dimensions stay in real physical pixels, so rendering stays sharp. Read once at platform-view creation; changing it on a live map has no effect.
+
 ## 4.2.2
 ### 🐞 Bug fixes
 - **Android: fixed a native crash (SIGSEGV in `OnlineFileSource`) under heavy tile traffic** — when an HTTP response arrived, the provider removed the request from its pending table *before* posting the callback onto the RunLoop. A request destroyed in that window (routine with many vector sources loading while panning/zooming or backgrounding the app, where superseded requests are constantly cancelled) couldn't be flagged as cancelled — its destructor found nothing to mark — so the already-posted callback ran against the freed `OnlineFileRequest` and crashed in `mbgl::util::Timer`. The pending entry now stays registered until the callback actually executes, and the posted closure re-checks the cancelled flag (it runs on the same RunLoop thread as the request's destructor, making the check decisive).

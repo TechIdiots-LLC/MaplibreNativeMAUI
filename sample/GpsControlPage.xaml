@@ -20,11 +20,16 @@
                 sits bottom-left. Use the pickers below to move each control to any
                 corner at runtime — controls that share a corner stack automatically.
 
-                Tap the GPS button to cycle the four tracking states:
-                  ○  Off            — location indicator hidden
-                  ⊙  Show           — blue dot at last fix, camera free
-                  ◎  Follow         — blue dot + camera re-centres on every GPS update
-                  ➤  FollowBearing  — camera also rotates to the GPS heading (heading-up)
+                Tap the top GPS button to cycle the tracking states:
+                  ○  Off     — location indicator hidden
+                  ⊙  Show    — blue dot at last fix, camera free
+                  ◎  Follow  — blue dot + camera re-centres on every GPS update
+                              (panning the map by hand drops back to Show)
+                Tap the bottom button to cycle the camera bearing modes:
+                  ↺  Free        — bearing untouched
+                  N  North-up    — bearing locked to north
+                  ➤  GPS bearing — camera rotates to the GPS heading (heading-up)
+                              (rotating the map by hand drops back to Free)
             -->
             <maplibre:MapLibreMap
                 x:Name="Map"
@@ -41,7 +46,7 @@
                 <Label FontAttributes="Bold" Text="GPS Overlay Demo" FontSize="16" />
 
                 <Label TextColor="Gray" FontSize="12" Text=
-                    "Tap the ○/⊙/◎/➤ button on the map to cycle tracking mode.&#x0a;Use Start Simulation to feed synthetic GPS fixes." />
+                    "Tap the ○/⊙/◎ button to cycle tracking mode and the ↺/N/➤ button to cycle the camera bearing mode.&#x0a;Use Start Simulation to feed synthetic GPS fixes." />
 
                 <HorizontalStackLayout Spacing="8">
                     <Button Text="▶  Start Simulation"
