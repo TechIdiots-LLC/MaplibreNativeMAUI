@@ -358,6 +358,22 @@ public partial class MlnMapImage : Grid
         _bitmap.Unlock();
     }
 
+    /// <summary>
+    /// Returns a frozen copy of the current rendered frame (BGRA32), or null if no
+    /// frame has been produced yet. Test/diagnostic hook — lets a headless harness
+    /// inspect what the map actually drew (e.g. to verify terrain draping changes
+    /// the output). The GL framebuffer is bottom-left origin, so the returned image
+    /// is vertically flipped relative to on-screen (the live view applies a
+    /// ScaleTransform(1,-1) to compensate); pixel content/statistics are unaffected.
+    /// </summary>
+    public BitmapSource? SnapshotBitmap()
+    {
+        if (_bitmap == null) return null;
+        var clone = _bitmap.Clone();
+        clone.Freeze();
+        return clone;
+    }
+
     // ── Camera API ────────────────────────────────────────────────────────────
 
     public void CenterOn(double latitude, double longitude, double zoom = 14.0)
@@ -662,6 +678,20 @@ public partial class MlnMapImage : Grid
         if (minZoom > 0) layer.SetMinZoom(minZoom);
         if (maxZoom > 0) layer.SetMaxZoom(maxZoom);
         if (sourceLayer != null) layer.SetSourceLayer(sourceLayer);
+        _renderNeedsUpdate = true;
+    }
+
+    /// <summary>
+    /// Adds a hillshade layer over a raster-dem source. Terrain draping displaces
+    /// map geometry by DEM height but that is nearly invisible over flat-coloured
+    /// fills; a hillshade layer from the same DEM shades the relief so 3D terrain
+    /// reads clearly. No-op if the layer already exists or there is no style.
+    /// </summary>
+    public void AddHillshadeLayer(string layerName, string sourceName, string? belowLayerId = null)
+    {
+        if (_style == null) return;
+        if (_style.HasLayer(layerName)) return;
+        _style.AddHillshadeLayer(layerName, sourceName, belowLayerId);
         _renderNeedsUpdate = true;
     }
 

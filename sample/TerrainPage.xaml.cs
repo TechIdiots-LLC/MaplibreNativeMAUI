@@ -11,6 +11,9 @@ public partial class TerrainPage : ContentPage
 {
     // Internal source ID the picked raster-dem is added under.
     private const string TerrainSourceId = "__terrain-dem";
+    // Hillshade layer added alongside terrain so the relief is visible — draping
+    // displaces geometry by DEM height but reads as almost nothing over flat fills.
+    private const string TerrainHillshadeLayerId = "__terrain-hillshade";
     private const float Exaggeration = 1.0f;
 
     private static readonly Dictionary<string, string> Styles = new()
@@ -64,7 +67,8 @@ public partial class TerrainPage : ContentPage
     private void OnToggleTerrain(object? sender, EventArgs e)
     {
         // Turning terrain ON: add the picked raster-dem source to the current style
-        // first (once per style load), so terrain works on whatever style is loaded.
+        // first (once per style load), so terrain works on whatever style is loaded,
+        // plus a hillshade layer from that DEM so the relief is actually visible.
         if (!Map.IsTerrainEnabled)
         {
             var url = SelectedTerrainUrl();
@@ -79,6 +83,11 @@ public partial class TerrainPage : ContentPage
                                        tileSize: 256, minZoom: 0, maxZoom: 15);
                 _demAdded = true;
             }
+            Map.AddHillshadeLayer(TerrainHillshadeLayerId, TerrainSourceId);
+        }
+        else
+        {
+            Map.RemoveLayer(TerrainHillshadeLayerId);
         }
 
         Map.ToggleTerrain(TerrainSourceId, Exaggeration);
@@ -90,7 +99,7 @@ public partial class TerrainPage : ContentPage
         bool on = Map.IsTerrainEnabled;
         ToggleButton.Text = on ? "Disable 3D Terrain" : "Enable 3D Terrain";
         StatusLabel.Text = on
-            ? $"Terrain: on (exaggeration {Exaggeration}) — navigate to the source's coverage and tilt to see it."
+            ? $"Terrain: on with hillshade (exaggeration {Exaggeration}) — navigate to the source's coverage and tilt to see it."
             : "Terrain: off";
     }
 

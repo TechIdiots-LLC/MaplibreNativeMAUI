@@ -385,6 +385,20 @@ public partial class MapLibreMap : StackLayout
     }
 
     /// <summary>
+    /// Adds a hillshade layer over a raster-dem source. Pair this with
+    /// <see cref="SetTerrain"/> so the relief is visible: draping displaces geometry
+    /// by DEM height but reads as almost nothing over flat fills; hillshade from the
+    /// same DEM shades the slopes so 3D terrain is legible on any style.
+    /// </summary>
+    public void AddHillshadeLayer(string layerName, string sourceName,
+        IDictionary<string, object?>? properties = null, string? belowLayerId = null)
+    {
+        if (Handler is not MapLibreMapHandler handler) return;
+        handler.Controller.AddHillshadeLayer(layerName, sourceName,
+            properties ?? new Dictionary<string, object?>(), belowLayerId: belowLayerId);
+    }
+
+    /// <summary>
     /// Enables 3D terrain, draping the map over elevation from an existing
     /// raster-dem source (add it first with <see cref="AddRasterDemSource"/>).
     /// </summary>
