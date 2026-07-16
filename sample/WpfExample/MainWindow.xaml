@@ -26,6 +26,13 @@
 
             <Separator Margin="4,0" />
 
+            <Label Content="Terrain:" VerticalAlignment="Center" />
+            <Button x:Name="BtnToggleTerrain" Content="Toggle 3D Terrain"
+                    Click="BtnToggleTerrain_Click" Margin="2,0" Padding="6,2"
+                    ToolTip="Pick the '3D Terrain' style, then toggle draping the map over 3D terrain" />
+
+            <Separator Margin="4,0" />
+
             <Label Content="GeoJSON:" VerticalAlignment="Center" />
             <Button x:Name="BtnMarker" Content="Add Marker"
                     Click="BtnMarker_Click" Margin="2,0" Padding="6,2" />

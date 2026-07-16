@@ -527,6 +527,36 @@ public partial class MlnMapImage : Grid
         _renderNeedsUpdate = true;
     }
 
+    // ── 3D terrain ────────────────────────────────────────────────────────────
+
+    /// <summary>Enables 3D terrain from an existing raster-dem source in the style.</summary>
+    public void SetTerrain(string sourceId, float exaggeration = 1.0f)
+    {
+        if (_style == null) return;
+        _style.SetTerrain(sourceId, exaggeration);
+        _renderNeedsUpdate = true;
+    }
+
+    /// <summary>Disables 3D terrain; the map renders flat again.</summary>
+    public void RemoveTerrain()
+    {
+        if (_style == null) return;
+        _style.RemoveTerrain();
+        _renderNeedsUpdate = true;
+    }
+
+    /// <summary>Turns 3D terrain on if it is off, or off if it is on.</summary>
+    public void ToggleTerrain(string sourceId, float exaggeration = 1.0f)
+    {
+        if (_style == null) return;
+        if (_style.IsTerrainEnabled) _style.RemoveTerrain();
+        else _style.SetTerrain(sourceId, exaggeration);
+        _renderNeedsUpdate = true;
+    }
+
+    /// <summary>Whether 3D terrain is currently enabled.</summary>
+    public bool IsTerrainEnabled => _style != null && _style.IsTerrainEnabled;
+
     public void AddRasterSource(string sourceId, string url, int tileSize = 512)
     {
         if (_style == null) return;

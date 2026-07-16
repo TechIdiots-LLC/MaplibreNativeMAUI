@@ -78,7 +78,47 @@ public partial class MainWindow : Window
         ["OpenFreeMap Lib."] = "https://tiles.openfreemap.org/styles/liberty",
         ["OpenFreeMap Pos."] = "https://tiles.openfreemap.org/styles/positron",
         ["OpenFreeMap Brt."] = "https://tiles.openfreemap.org/styles/bright",
+        ["3D Terrain"]       = TerrainStyleJson,
     };
+
+    // The terrain source ID used by the Toggle 3D Terrain button (present in the
+    // "3D Terrain" style below, shared with the hillshade layer).
+    const string TerrainSourceId = "mapterhorn";
+
+    // OSM raster + hillshade over the Mapterhorn DEM, pitched over Innsbruck via
+    // the style-spec root camera. No "terrain" property: the map starts flat and
+    // the Toggle 3D Terrain button enables terrain through the API.
+    const string TerrainStyleJson = """
+        {
+          "version": 8,
+          "center": [11.39085, 47.27574],
+          "zoom": 12,
+          "pitch": 60,
+          "sources": {
+            "osm": {
+              "type": "raster",
+              "tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+              "tileSize": 256,
+              "attribution": "© OpenStreetMap Contributors",
+              "maxzoom": 19
+            },
+            "mapterhorn": {
+              "type": "raster-dem",
+              "url": "https://tiles.mapterhorn.com/tilejson.json",
+              "encoding": "terrarium"
+            }
+          },
+          "layers": [
+            { "id": "osm", "type": "raster", "source": "osm" },
+            {
+              "id": "hills",
+              "type": "hillshade",
+              "source": "mapterhorn",
+              "paint": { "hillshade-shadow-color": "#473B24" }
+            }
+          ]
+        }
+        """;
 
     const string MarkerSourceId = "example-marker";
     const string MarkerLayerId  = "example-marker-layer";
@@ -192,6 +232,14 @@ public partial class MainWindow : Window
     private void BtnZoomIn_Click(object sender, RoutedEventArgs e)  => MapHost.ZoomIn();
     private void BtnZoomOut_Click(object sender, RoutedEventArgs e) => MapHost.ZoomOut();
     private void BtnNorth_Click(object sender, RoutedEventArgs e)   => MapHost.ResetNorth();
+
+    private void BtnToggleTerrain_Click(object sender, RoutedEventArgs e)
+    {
+        MapHost.ToggleTerrain(TerrainSourceId, 1.0f);
+        StatusText.Text = MapHost.IsTerrainEnabled
+            ? "3D terrain on (pick the '3D Terrain' style if the map is flat)."
+            : "3D terrain off.";
+    }
 
     // ── Data-bound pins (ItemsSource of MlnMapMarker) ──────────────────────
 
