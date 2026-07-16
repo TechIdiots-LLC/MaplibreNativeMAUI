@@ -38,6 +38,29 @@ public partial class MapLibreMap : StackLayout
     public static readonly BindableProperty ShowGpsControlProperty =
         BindableProperty.Create(nameof(ShowGpsControl), typeof(bool), typeof(MapLibreMap), defaultValue: true);
     /// <summary>
+    /// Show an on-map 3D-terrain toggle button (like the navigation and GPS controls).
+    /// Clicking it toggles terrain on <see cref="TerrainControlSourceId"/>: if terrain is
+    /// off it enables it on that raster-dem source, if on it disables it — mirroring
+    /// maplibre-gl-js's TerrainControl. The source must already exist in the style (the
+    /// control does not add sources or hillshade). Default <c>false</c>.
+    /// </summary>
+    public static readonly BindableProperty ShowTerrainControlProperty =
+        BindableProperty.Create(nameof(ShowTerrainControl), typeof(bool), typeof(MapLibreMap), defaultValue: false);
+    /// <summary>
+    /// ID of the raster-dem source the terrain control toggles. Must already be present in
+    /// the loaded style. Defaults to an app-specific <c>"mln-terrain-dem"</c> (rather than a
+    /// generic name like "terrain") so it does not collide with a source in a real style;
+    /// set it to your style's raster-dem source id.
+    /// </summary>
+    public static readonly BindableProperty TerrainControlSourceIdProperty =
+        BindableProperty.Create(nameof(TerrainControlSourceId), typeof(string), typeof(MapLibreMap), defaultValue: "mln-terrain-dem");
+    /// <summary>Vertical exaggeration the terrain control applies when enabling terrain. Default <c>1.0</c>.</summary>
+    public static readonly BindableProperty TerrainControlExaggerationProperty =
+        BindableProperty.Create(nameof(TerrainControlExaggeration), typeof(float), typeof(MapLibreMap), defaultValue: 1.0f);
+    /// <summary>Corner the terrain control is anchored to. Default <see cref="MapControlCorner.TopRight"/>.</summary>
+    public static readonly BindableProperty TerrainControlPositionProperty =
+        BindableProperty.Create(nameof(TerrainControlPosition), typeof(MapControlCorner), typeof(MapLibreMap), defaultValue: MapControlCorner.TopRight);
+    /// <summary>
     /// Show an always-visible attribution overlay (OSM requires this).
     /// Attributions are collected from all loaded TileJSON sources plus
     /// <see cref="CustomAttribution"/>. Default <c>true</c>.
@@ -265,6 +288,45 @@ public partial class MapLibreMap : StackLayout
         set => SetValue(ShowAttributionControlProperty, value);
     }
 
+    /// <summary>
+    /// Show an on-map 3D-terrain toggle button. Toggles terrain on
+    /// <see cref="TerrainControlSourceId"/> (enable if off, disable if on), like
+    /// maplibre-gl-js's TerrainControl. The raster-dem source must already be in the
+    /// style; the control does not add sources or hillshade. Default <c>false</c>.
+    /// </summary>
+    public bool ShowTerrainControl
+    {
+        get => (bool)GetValue(ShowTerrainControlProperty);
+        set => SetValue(ShowTerrainControlProperty, value);
+    }
+
+    /// <summary>
+    /// ID of the raster-dem source the terrain control toggles. Must already be in the style.
+    /// Defaults to app-specific <c>"mln-terrain-dem"</c>; set it to your style's dem source id.
+    /// </summary>
+    public string TerrainControlSourceId
+    {
+        get => (string)GetValue(TerrainControlSourceIdProperty);
+        set => SetValue(TerrainControlSourceIdProperty, value);
+    }
+
+    /// <summary>Vertical exaggeration the terrain control applies when enabling terrain. Default <c>1.0</c>.</summary>
+    public float TerrainControlExaggeration
+    {
+        get => (float)GetValue(TerrainControlExaggerationProperty);
+        set => SetValue(TerrainControlExaggerationProperty, value);
+    }
+
+    /// <summary>
+    /// Corner the terrain control is anchored to. When multiple controls share a corner
+    /// they stack (terrain, then navigation, then GPS, then attribution).
+    /// </summary>
+    public MapControlCorner TerrainControlPosition
+    {
+        get => (MapControlCorner)GetValue(TerrainControlPositionProperty);
+        set => SetValue(TerrainControlPositionProperty, value);
+    }
+
     public string? CustomAttribution
     {
         get => (string?)GetValue(CustomAttributionProperty);
@@ -383,6 +445,53 @@ public partial class MapLibreMap : StackLayout
         var controller = handler.Controller;
         controller.AddRasterDemSource(sourceName, tileUrl, tileUrlTemplates, tileSize, minZoom, maxZoom);
     }
+
+    /// <summary>
+    /// Adds a hillshade layer over a raster-dem source. Pair this with
+    /// <see cref="SetTerrain"/> so the relief is visible: draping displaces geometry
+    /// by DEM height but reads as almost nothing over flat fills; hillshade from the
+    /// same DEM shades the slopes so 3D terrain is legible on any style.
+    /// </summary>
+    public void AddHillshadeLayer(string layerName, string sourceName,
+        IDictionary<string, object?>? properties = null, string? belowLayerId = null)
+    {
+        if (Handler is not MapLibreMapHandler handler) return;
+        handler.Controller.AddHillshadeLayer(layerName, sourceName,
+            properties ?? new Dictionary<string, object?>(), belowLayerId: belowLayerId);
+    }
+
+    /// <summary>
+    /// Enables 3D terrain, draping the map over elevation from an existing
+    /// raster-dem source (add it first with <see cref="AddRasterDemSource"/>).
+    /// </summary>
+    /// <param name="sourceName">ID of a raster-dem source already in the style.</param>
+    /// <param name="exaggeration">Vertical exaggeration multiplier (1.0 = true scale).</param>
+    public void SetTerrain(string sourceName, float exaggeration = 1.0f)
+    {
+        if (Handler is not MapLibreMapHandler handler) return;
+        handler.Controller.SetTerrain(sourceName, exaggeration);
+    }
+
+    /// <summary>Disables 3D terrain; the map renders flat again.</summary>
+    public void RemoveTerrain()
+    {
+        if (Handler is not MapLibreMapHandler handler) return;
+        handler.Controller.RemoveTerrain();
+    }
+
+    /// <summary>
+    /// Turns 3D terrain on if it is off, or off if it is on. Wire a button to
+    /// this for an on/off toggle (see maplibre-gl-js TerrainControl).
+    /// </summary>
+    public void ToggleTerrain(string sourceName, float exaggeration = 1.0f)
+    {
+        if (Handler is not MapLibreMapHandler handler) return;
+        handler.Controller.ToggleTerrain(sourceName, exaggeration);
+    }
+
+    /// <summary>Whether 3D terrain is currently enabled.</summary>
+    public bool IsTerrainEnabled
+        => Handler is MapLibreMapHandler handler && handler.Controller.IsTerrainEnabled;
 
     public void AddVectorSource(string sourceName, string? tileUrl, string[]? tileUrlTemplates,
         int minZoom, int maxZoom)

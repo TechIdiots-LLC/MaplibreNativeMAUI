@@ -176,6 +176,8 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
     public void UpdateNavigationControlPosition(MapControlCorner corner)  => _controller.SetNavigationControlPosition(corner);
     public void UpdateGpsControlPosition(MapControlCorner corner)         => _controller.SetGpsControlPosition(corner);
     public void UpdateAttributionControlPosition(MapControlCorner corner) => _controller.SetAttributionControlPosition(corner);
+    public void UpdateShowTerrainControl(bool show, string sourceId, float exaggeration) => _controller.SetShowTerrainControl(show, sourceId, exaggeration);
+    public void UpdateTerrainControlPosition(MapControlCorner corner)     => _controller.SetTerrainControlPosition(corner);
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 

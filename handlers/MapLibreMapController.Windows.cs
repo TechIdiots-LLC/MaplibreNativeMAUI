@@ -58,6 +58,12 @@ public class MapLibreMapController : IMapLibreMapController
     private string  _attrText = string.Empty;   // cached, rebuilt on StyleLoaded / idle
     private string? _appliedAttribution;        // content currently shown — banner re-expands only when this changes
     private bool   _showGpsControl = true;
+    // Terrain toggle control — a single on-map button (like nav/gps) that toggles terrain
+    // on _terrainControlSourceId. The source must already exist in the style; the control
+    // does not add sources or hillshade. Stacked above the navigation panel.
+    private bool   _showTerrainControl;
+    private string _terrainControlSourceId = "mln-terrain-dem";
+    private float  _terrainControlExaggeration = 1.0f;
     /// <summary>GPS tracking mode — Off (no dot), Show (dot only), Follow (dot + camera).</summary>
     private enum GpsTrackingMode { Off, Show, Follow }
     /// <summary>Camera bearing mode — Free (untouched), NorthUp (locked to 0), GpsBearing (follows fix bearing).</summary>
@@ -87,6 +93,9 @@ public class MapLibreMapController : IMapLibreMapController
     private WUXC.TextBlock?  _gpsTopIcon;
     private WUXC.Border?     _gpsBottomBtn;
     private WUXC.TextBlock?  _gpsBottomIcon;
+    private WUXC.StackPanel? _terrainPanel;
+    private WUXC.Border?     _terrainBtn;
+    private WUXC.TextBlock?  _terrainIcon;
     private WUXC.Border?     _attrBorder;
     private WUXC.TextBlock?  _attrTextBlock;
 
@@ -168,6 +177,7 @@ public class MapLibreMapController : IMapLibreMapController
             _styleReady = true;
             _appliedAttribution = null;   // new style — banner should show once for it
             RefreshAttributionText();     // build attribution from the new style's sources
+            RefreshTerrainControl();      // terrain state resets with the new style
             OnStyleLoadedReceived?.Invoke(new Style(null));
         };
         _mapView.DidBecomeIdle += (_, _) =>
@@ -189,14 +199,35 @@ public class MapLibreMapController : IMapLibreMapController
 
     // ── XAML overlays (nav / GPS / attribution) ────────────────────────────────
 
+    // Vertical space (px) the terrain control occupies at the top of the top-right
+    // column when shown: 30px button + 4px gap. The nav/GPS panels shift down by this.
+    private const int TerrainSlotPx = 34;
+
     private void CreateOverlays()
     {
+        int terrainSlot = _showTerrainControl ? TerrainSlotPx : 0;
+
+        // Terrain toggle — top-right, above the navigation panel (matching the common
+        // web-map convention of stacking the terrain button above navigation).
+        _terrainPanel = new WUXC.StackPanel
+        {
+            HorizontalAlignment = WUX.HorizontalAlignment.Right,
+            VerticalAlignment = WUX.VerticalAlignment.Top,
+            Margin = new WUX.Thickness(0, 10, 10, 0),
+            Width = 30,
+            Visibility = _showTerrainControl ? WUX.Visibility.Visible : WUX.Visibility.Collapsed,
+        };
+        _terrainBtn = MakeTerrainButton("⛰", ToggleTerrainControl);
+        _terrainIcon = (WUXC.TextBlock)_terrainBtn.Child;
+        _terrainPanel.Children.Add(_terrainBtn);
+        View.Children.Add(_terrainPanel);
+
         // Navigation — top-right corner: rotate/pitch/compass d-pad, then zoom in/out.
         _navPanel = new WUXC.StackPanel
         {
             HorizontalAlignment = WUX.HorizontalAlignment.Right,
             VerticalAlignment = WUX.VerticalAlignment.Top,
-            Margin = new WUX.Thickness(0, 10, 10, 0),
+            Margin = new WUX.Thickness(0, 10 + terrainSlot, 10, 0),
             Width = 30,
         };
         _navPanel.Children.Add(BuildDpad());
@@ -211,7 +242,7 @@ public class MapLibreMapController : IMapLibreMapController
         {
             HorizontalAlignment = WUX.HorizontalAlignment.Right,
             VerticalAlignment = WUX.VerticalAlignment.Top,
-            Margin = new WUX.Thickness(0, 112, 10, 0),
+            Margin = new WUX.Thickness(0, 112 + terrainSlot, 10, 0),
             Width = 30,
             Visibility = _showGpsControl ? WUX.Visibility.Visible : WUX.Visibility.Collapsed,
         };
@@ -256,6 +287,7 @@ public class MapLibreMapController : IMapLibreMapController
         View.Children.Add(_attrBorder);
 
         RefreshGpsControl();
+        RefreshTerrainControl();
     }
 
     private static WUXC.Border MakeGpsButton(string glyph, Action onClick, bool top)
@@ -279,6 +311,29 @@ public class MapLibreMapController : IMapLibreMapController
         // WinUI raises the *second* click of a rapid double-click as DoubleTapped (not a
         // second Tapped). Without this, a double-click on a GPS button would drop every
         // second press and let the unhandled DoubleTapped bubble past the button.
+        b.Tapped       += (_, e) => { onClick(); e.Handled = true; };
+        b.DoubleTapped += (_, e) => { onClick(); e.Handled = true; };
+        return b;
+    }
+
+    private static WUXC.Border MakeTerrainButton(string glyph, Action onClick)
+    {
+        var b = new WUXC.Border
+        {
+            Height = 30,
+            Background = new WUXM.SolidColorBrush(Microsoft.UI.Colors.White),
+            BorderBrush = new WUXM.SolidColorBrush(Windows.UI.Color.FromArgb(255, 218, 218, 218)),
+            BorderThickness = new WUX.Thickness(1),
+            CornerRadius = new WUX.CornerRadius(4),
+            Child = new WUXC.TextBlock
+            {
+                Text = glyph,
+                FontSize = 18,
+                FontWeight = Microsoft.UI.Text.FontWeights.Bold,
+                HorizontalAlignment = WUX.HorizontalAlignment.Center,
+                VerticalAlignment = WUX.VerticalAlignment.Center,
+            },
+        };
         b.Tapped       += (_, e) => { onClick(); e.Handled = true; };
         b.DoubleTapped += (_, e) => { onClick(); e.Handled = true; };
         return b;
@@ -422,6 +477,23 @@ public class MapLibreMapController : IMapLibreMapController
         _gpsBottomIcon.Text = bGlyph;
         _gpsBottomIcon.Foreground = new WUXM.SolidColorBrush(bFg);
         _gpsBottomBtn.Background = new WUXM.SolidColorBrush(bBg);
+    }
+
+    /// <summary>Toggles terrain on the configured source (enable if off, disable if on), then refreshes the button.</summary>
+    private void ToggleTerrainControl()
+    {
+        ToggleTerrain(_terrainControlSourceId, _terrainControlExaggeration);
+        RefreshTerrainControl();
+    }
+
+    /// <summary>Updates the terrain button's active/idle colours from the current terrain state.</summary>
+    private void RefreshTerrainControl()
+    {
+        if (_terrainIcon == null || _terrainBtn == null) return;
+        bool on = IsTerrainEnabled;
+        _terrainIcon.Foreground = new WUXM.SolidColorBrush(on ? Rgb(0x00, 0x70, 0xC5) : Rgb(0x55, 0x55, 0x55));
+        _terrainBtn.Background  = new WUXM.SolidColorBrush(on ? Rgb(0xE0, 0xF3, 0xFF) : Rgb(255, 255, 255));
+        WUXC.ToolTipService.SetToolTip(_terrainBtn, on ? "Disable 3D terrain" : "Enable 3D terrain");
     }
 
     /// <summary>Updates the attribution control text from <c>_attrText</c> / collapsed state (UI thread safe).</summary>
@@ -576,6 +648,28 @@ public class MapLibreMapController : IMapLibreMapController
         if (!_styleReady || _style == null) return;
         _style.RemoveSource(sourceId);
     }
+
+    public void SetTerrain(string sourceId, float exaggeration)
+    {
+        if (!_styleReady || _style == null) return;
+        _style.SetTerrain(sourceId, exaggeration);
+    }
+
+    public void RemoveTerrain()
+    {
+        if (!_styleReady || _style == null) return;
+        _style.RemoveTerrain();
+    }
+
+    public void ToggleTerrain(string sourceId, float exaggeration)
+    {
+        if (!_styleReady || _style == null) return;
+        if (_style.IsTerrainEnabled) _style.RemoveTerrain();
+        else _style.SetTerrain(sourceId, exaggeration);
+    }
+
+    public bool IsTerrainEnabled => _styleReady && _style != null && _style.IsTerrainEnabled;
+
 
     // ── Layers ────────────────────────────────────────────────────────────────
 
@@ -990,6 +1084,22 @@ public class MapLibreMapController : IMapLibreMapController
     public void SetNavigationControlPosition(MapControlCorner corner) { }
     public void SetGpsControlPosition(MapControlCorner corner) { }
     public void SetAttributionControlPosition(MapControlCorner corner) { }
+    public void SetTerrainControlPosition(MapControlCorner corner) { }
+
+    public void SetShowTerrainControl(bool show, string sourceId, float exaggeration)
+    {
+        _showTerrainControl         = show;
+        _terrainControlSourceId     = string.IsNullOrEmpty(sourceId) ? "mln-terrain-dem" : sourceId;
+        _terrainControlExaggeration = exaggeration;
+        if (_terrainPanel != null)
+            _terrainPanel.Visibility = show ? WUX.Visibility.Visible : WUX.Visibility.Collapsed;
+        // Reflow the nav/GPS panels so the terrain slot at the top of the column is
+        // reserved only when the control is shown.
+        int terrainSlot = show ? TerrainSlotPx : 0;
+        if (_navPanel != null) _navPanel.Margin = new WUX.Thickness(0, 10 + terrainSlot, 10, 0);
+        if (_gpsPanel != null) _gpsPanel.Margin = new WUX.Thickness(0, 112 + terrainSlot, 10, 0);
+        RefreshTerrainControl();
+    }
 
     public void SetShowAttributionControl(bool show, string? customAttribution)
     {
