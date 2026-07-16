@@ -13,6 +13,9 @@
  */
 
 #include "platform_frontend.hpp"
+
+#if defined(MLN_RENDER_BACKEND_METAL)  // ── Metal (default Apple renderer) ──────────
+
 #include "null_map_observer.hpp"
 
 #include <mbgl/mtl/renderer_backend.hpp>
@@ -291,3 +294,111 @@ PlatformFrontend* createPlatformFrontend(
 {
     return new MetalFrontend(sz, pixelRatio, renderCb, renderUd);
 }
+
+#elif defined(MLN_RENDER_BACKEND_VULKAN)  // ── Vulkan via MoltenVK (opt-in) ──────────
+
+/*
+ * MoltenVK frontend: renders Vulkan into a CAMetalLayer-backed UIView using the
+ * VK_EXT_metal_surface extension. The view is handed back via getNativeView() and
+ * added as a subview by the MAUI handler, exactly like the MTKView on the Metal
+ * path. Enable VK_USE_PLATFORM_METAL_EXT before vulkan.hpp is pulled in (by the
+ * mbgl vulkan headers below) so vk::MetalSurfaceCreateInfoEXT is declared.
+ */
+#define VK_USE_PLATFORM_METAL_EXT 1
+
+#include "platform_frontend_vulkan_common.hpp"
+
+#include <mbgl/vulkan/renderer_backend.hpp>
+#include <mbgl/vulkan/renderable_resource.hpp>
+#include <mbgl/vulkan/context.hpp>
+
+#import <UIKit/UIKit.h>
+#import <QuartzCore/CAMetalLayer.h>
+
+#include <vector>
+
+/// A UIView whose backing layer is a CAMetalLayer — required by VK_EXT_metal_surface.
+@interface MbglMetalLayerView : UIView
+@end
+@implementation MbglMetalLayerView
++ (Class)layerClass { return [CAMetalLayer class]; }
+@end
+
+namespace {
+
+class AppleVulkanBackend;
+
+class AppleVulkanResource final : public mbgl::vulkan::SurfaceRenderableResource {
+public:
+    explicit AppleVulkanResource(AppleVulkanBackend& b);
+    std::vector<const char*> getDeviceExtensions() override {
+        return {VK_KHR_SWAPCHAIN_EXTENSION_NAME, "VK_KHR_portability_subset"};
+    }
+    void createPlatformSurface() override;
+    void bind() override {}
+};
+
+class AppleVulkanBackend final : public mbgl::vulkan::RendererBackend,
+                                 public mbgl::vulkan::Renderable {
+public:
+    explicit AppleVulkanBackend(mbgl::Size sz)
+        : mbgl::vulkan::RendererBackend(mbgl::gfx::ContextMode::Unique),
+          mbgl::vulkan::Renderable(sz, std::make_unique<AppleVulkanResource>(*this)) {
+        _view = [[MbglMetalLayerView alloc] initWithFrame:CGRectZero];
+        ((CAMetalLayer*)_view.layer).drawableSize = CGSizeMake(sz.width, sz.height);
+        init();
+    }
+    ~AppleVulkanBackend() override { context.reset(); }
+
+    CAMetalLayer* getMetalLayer() const { return (CAMetalLayer*)_view.layer; }
+
+    mbgl::gfx::Renderable& getDefaultRenderable() override { return *this; }
+
+    // Backend contract required by VulkanFrontendT<Backend>.
+    mbgl::Size getSize() const { return size; }
+    void setSize(mbgl::Size sz) {
+        size = sz;
+        ((CAMetalLayer*)_view.layer).drawableSize = CGSizeMake(sz.width, sz.height);
+        if (context) static_cast<mbgl::vulkan::Context&>(*context).requestSurfaceUpdate();
+    }
+    void* getNativeView() { return (__bridge void*)_view; }
+    bool  readPixels(uint8_t*, size_t) { return false; }
+
+protected:
+    std::vector<const char*> getInstanceExtensions() override {
+        auto ext = mbgl::vulkan::RendererBackend::getInstanceExtensions();
+        ext.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+        ext.push_back(VK_EXT_METAL_SURFACE_EXTENSION_NAME);
+        ext.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+        return ext;
+    }
+    void activate() override {}
+    void deactivate() override {}
+
+private:
+    MbglMetalLayerView* _view = nil;
+};
+
+AppleVulkanResource::AppleVulkanResource(AppleVulkanBackend& b)
+    : mbgl::vulkan::SurfaceRenderableResource(b) {}
+
+void AppleVulkanResource::createPlatformSurface() {
+    auto& b = static_cast<AppleVulkanBackend&>(backend);
+    const vk::MetalSurfaceCreateInfoEXT createInfo(
+        vk::MetalSurfaceCreateFlagsEXT{}, (__bridge const CAMetalLayer*)b.getMetalLayer());
+    surface = b.getInstance()->createMetalSurfaceEXTUnique(createInfo, nullptr, b.getDispatcher());
+}
+
+} // namespace
+
+PlatformFrontend* createPlatformFrontend(
+    void* /*surface_handle*/, void* /*gl_context*/,
+    mbgl::Size sz, float pixelRatio,
+    mbgl_render_fn renderCb, void* renderUd)
+{
+    return new VulkanFrontendT<AppleVulkanBackend>(pixelRatio, renderCb, renderUd, sz);
+}
+
+#else
+#  error "Apple mln-cabi build requires MLN_WITH_METAL or MLN_WITH_VULKAN"
+#endif

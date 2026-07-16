@@ -51,6 +51,12 @@ if(WIN32)
     target_sources(mln-cabi PRIVATE src/platform_frontend_windows.cpp)
     target_compile_options(mln-cabi PRIVATE /wd4267)
     target_include_directories(mln-cabi PRIVATE "${MAPLIBRE_NATIVE_DIR}/src")
+    # Vulkan build: the offscreen frontend reuses mbgl::vulkan::HeadlessBackend,
+    # whose header lives in platform/default/include (added to mbgl-core by
+    # platform/windows/windows.cmake).
+    if(MLN_WITH_VULKAN)
+        target_include_directories(mln-cabi PRIVATE "${MAPLIBRE_NATIVE_DIR}/platform/default/include")
+    endif()
 elseif(ANDROID)
     target_sources(mln-cabi PRIVATE src/platform_frontend_android.cpp)
     target_link_libraries(mln-cabi PRIVATE EGL android log)
@@ -86,13 +92,27 @@ elseif(APPLE)
     set_source_files_properties(src/platform_frontend_apple.mm PROPERTIES
         COMPILE_FLAGS "-x objective-c++")
     target_include_directories(mln-cabi PRIVATE "${MAPLIBRE_NATIVE_DIR}/src")
-    # metal-cpp headers (vendored inside maplibre-native)
-    target_include_directories(mln-cabi PRIVATE
-        "${MAPLIBRE_NATIVE_DIR}/vendor/metal-cpp")
-    find_library(METAL_LIB Metal REQUIRED)
-    find_library(METALKIT_LIB MetalKit REQUIRED)
-    find_library(QUARTZCORE_LIB QuartzCore REQUIRED)
-    target_link_libraries(mln-cabi PRIVATE ${METAL_LIB} ${METALKIT_LIB} ${QUARTZCORE_LIB})
+
+    if(MLN_WITH_VULKAN)
+        # Vulkan via MoltenVK. mln-cabi is a static archive on Apple, so MoltenVK and
+        # the Vulkan loader are linked into the final app (by the consuming project /
+        # buildTransitive NativeReference); here we only need headers to compile.
+        # QuartzCore provides CAMetalLayer; UIKit provides UIView (iOS + macCatalyst).
+        target_include_directories(mln-cabi PRIVATE "${MAPLIBRE_NATIVE_DIR}/platform/default/include")
+        find_library(QUARTZCORE_LIB QuartzCore REQUIRED)
+        find_library(UIKIT_LIB UIKit)
+        target_link_libraries(mln-cabi PRIVATE ${QUARTZCORE_LIB})
+        if(UIKIT_LIB)
+            target_link_libraries(mln-cabi PRIVATE ${UIKIT_LIB})
+        endif()
+    else()
+        # Metal (default Apple renderer). metal-cpp headers are vendored in maplibre-native.
+        target_include_directories(mln-cabi PRIVATE "${MAPLIBRE_NATIVE_DIR}/vendor/metal-cpp")
+        find_library(METAL_LIB Metal REQUIRED)
+        find_library(METALKIT_LIB MetalKit REQUIRED)
+        find_library(QUARTZCORE_LIB QuartzCore REQUIRED)
+        target_link_libraries(mln-cabi PRIVATE ${METAL_LIB} ${METALKIT_LIB} ${QUARTZCORE_LIB})
+    endif()
     # mbgl-core is compiled with -fno-rtti on Apple (same as Android/Linux).
     # We must match that flag so MetalBackend's typeinfo does not emit a
     # reference to the non-existent base class typeinfo

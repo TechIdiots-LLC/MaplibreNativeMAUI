@@ -221,18 +221,94 @@ PlatformFrontend* createPlatformFrontend(
     );
 }
 
-#else  // non-OpenGL build (e.g. Vulkan) — stub until a Vulkan frontend is implemented
+#else  // Vulkan build — render into the TextureView's ANativeWindow via VK_KHR_android_surface
 
-#include <stdexcept>
+#include "platform_frontend_vulkan_common.hpp"
+
+#include <mbgl/vulkan/renderer_backend.hpp>
+#include <mbgl/vulkan/renderable_resource.hpp>
+#include <mbgl/vulkan/context.hpp>
+
+#include <android/native_window.h>
+#include <vulkan/vulkan_android.h>
+
+#include <vector>
+
+namespace {
+
+class AndroidVulkanBackend;
+
+/* ── Surface resource (mirrors maplibre-native android_vulkan_renderer_backend) ── */
+class AndroidVulkanResource final : public mbgl::vulkan::SurfaceRenderableResource {
+public:
+    explicit AndroidVulkanResource(AndroidVulkanBackend& b);
+
+    std::vector<const char*> getDeviceExtensions() override { return {VK_KHR_SWAPCHAIN_EXTENSION_NAME}; }
+    void createPlatformSurface() override;
+    void bind() override {}
+};
+
+/* ── Backend ─────────────────────────────────────────────────────────────────── */
+class AndroidVulkanBackend final : public mbgl::vulkan::RendererBackend,
+                                   public mbgl::vulkan::Renderable {
+public:
+    AndroidVulkanBackend(ANativeWindow* window, mbgl::Size sz)
+        : mbgl::vulkan::RendererBackend(mbgl::gfx::ContextMode::Unique),
+          mbgl::vulkan::Renderable(sz, std::make_unique<AndroidVulkanResource>(*this)),
+          _window(window) {
+        init();
+    }
+    ~AndroidVulkanBackend() override { context.reset(); }
+
+    ANativeWindow* getWindow() const { return _window; }
+
+    mbgl::gfx::Renderable& getDefaultRenderable() override { return *this; }
+
+    // Backend contract required by VulkanFrontendT<Backend>.
+    mbgl::Size getSize() const { return size; }
+    void setSize(mbgl::Size sz) {
+        size = sz;
+        if (context) static_cast<mbgl::vulkan::Context&>(*context).requestSurfaceUpdate();
+    }
+    void* getNativeView() { return nullptr; }        // presents into the ANativeWindow directly
+    bool  readPixels(uint8_t*, size_t) { return false; }
+
+protected:
+    std::vector<const char*> getInstanceExtensions() override {
+        auto ext = mbgl::vulkan::RendererBackend::getInstanceExtensions();
+        ext.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+        ext.push_back(VK_KHR_ANDROID_SURFACE_EXTENSION_NAME);
+        return ext;
+    }
+    void activate() override {}
+    void deactivate() override {}
+
+private:
+    ANativeWindow* _window;
+};
+
+AndroidVulkanResource::AndroidVulkanResource(AndroidVulkanBackend& b)
+    : mbgl::vulkan::SurfaceRenderableResource(b) {}
+
+void AndroidVulkanResource::createPlatformSurface() {
+    auto& b = static_cast<AndroidVulkanBackend&>(backend);
+    const vk::AndroidSurfaceCreateInfoKHR createInfo({}, b.getWindow());
+    surface = b.getInstance()->createAndroidSurfaceKHRUnique(createInfo, nullptr, b.getDispatcher());
+
+    const int apiLevel = android_get_device_api_level();
+    if (apiLevel < __ANDROID_API_Q__) setSurfaceTransformPollingInterval(30);
+}
+
+} // namespace
 
 PlatformFrontend* createPlatformFrontend(
-    void* /*surface_handle*/, void* /*context*/,
-    mbgl::Size /*sz*/, float /*pixelRatio*/,
-    mbgl_render_fn /*renderCb*/, void* /*renderUd*/)
+    void* surface_handle, void* /*context*/,
+    mbgl::Size sz, float pixelRatio,
+    mbgl_render_fn renderCb, void* renderUd)
 {
-    throw std::runtime_error(
-        "Android Vulkan frontend is not yet implemented. "
-        "This build was compiled without MLN_RENDER_BACKEND_OPENGL.");
+    return new VulkanFrontendT<AndroidVulkanBackend>(
+        pixelRatio, renderCb, renderUd,
+        reinterpret_cast<ANativeWindow*>(surface_handle), sz);
 }
 
 #endif  // MLN_RENDER_BACKEND_OPENGL
