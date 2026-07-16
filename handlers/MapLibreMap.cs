@@ -384,6 +384,39 @@ public partial class MapLibreMap : StackLayout
         controller.AddRasterDemSource(sourceName, tileUrl, tileUrlTemplates, tileSize, minZoom, maxZoom);
     }
 
+    /// <summary>
+    /// Enables 3D terrain, draping the map over elevation from an existing
+    /// raster-dem source (add it first with <see cref="AddRasterDemSource"/>).
+    /// </summary>
+    /// <param name="sourceName">ID of a raster-dem source already in the style.</param>
+    /// <param name="exaggeration">Vertical exaggeration multiplier (1.0 = true scale).</param>
+    public void SetTerrain(string sourceName, float exaggeration = 1.0f)
+    {
+        if (Handler is not MapLibreMapHandler handler) return;
+        handler.Controller.SetTerrain(sourceName, exaggeration);
+    }
+
+    /// <summary>Disables 3D terrain; the map renders flat again.</summary>
+    public void RemoveTerrain()
+    {
+        if (Handler is not MapLibreMapHandler handler) return;
+        handler.Controller.RemoveTerrain();
+    }
+
+    /// <summary>
+    /// Turns 3D terrain on if it is off, or off if it is on. Wire a button to
+    /// this for an on/off toggle (see maplibre-gl-js TerrainControl).
+    /// </summary>
+    public void ToggleTerrain(string sourceName, float exaggeration = 1.0f)
+    {
+        if (Handler is not MapLibreMapHandler handler) return;
+        handler.Controller.ToggleTerrain(sourceName, exaggeration);
+    }
+
+    /// <summary>Whether 3D terrain is currently enabled.</summary>
+    public bool IsTerrainEnabled
+        => Handler is MapLibreMapHandler handler && handler.Controller.IsTerrainEnabled;
+
     public void AddVectorSource(string sourceName, string? tileUrl, string[]? tileUrlTemplates,
         int minZoom, int maxZoom)
     {

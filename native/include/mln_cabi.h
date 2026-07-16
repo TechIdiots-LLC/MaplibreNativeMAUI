@@ -556,6 +556,23 @@ MLN_CABI_API mbgl_layer_t*   mbgl_style_add_layer_json(mbgl_style_t* st,
                                                          const char* layer_json,
                                                          const char* before_id) MLN_CABI_NOEXCEPT;
 
+/* ── Style – 3D terrain ──────────────────────────────────────────────────────
+ *
+ * Terrain is a style root property, not a source or layer: it drapes the map
+ * over elevation from an existing raster-dem source. Add that source first with
+ * mbgl_style_add_source_json (or include it in the style JSON); it may be the
+ * same source a hillshade layer uses. */
+/** Enable 3D terrain from an existing raster-dem source.
+ *  @param source_id     ID of a raster-dem source already in the style.
+ *  @param exaggeration  Vertical exaggeration multiplier (1.0 = true scale). */
+MLN_CABI_API mbgl_status_t   mbgl_style_set_terrain(mbgl_style_t* st,
+                                                     const char* source_id,
+                                                     float exaggeration) MLN_CABI_NOEXCEPT;
+/** Disable 3D terrain (the map renders flat again). */
+MLN_CABI_API mbgl_status_t   mbgl_style_remove_terrain(mbgl_style_t* st) MLN_CABI_NOEXCEPT;
+/** Returns 1 when 3D terrain is currently enabled, 0 otherwise. */
+MLN_CABI_API int             mbgl_style_is_terrain_enabled(mbgl_style_t* st) MLN_CABI_NOEXCEPT;
+
 /* ── Offline regions + ambient cache ─────────────────────────────────────────
  *
  * Wraps mbgl::DatabaseFileSource. The manager shares the map's cache database

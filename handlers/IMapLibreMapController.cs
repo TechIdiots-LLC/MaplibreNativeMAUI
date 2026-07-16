@@ -57,7 +57,13 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
     public void SetGeoJsonSource(string sourceName, string source);
     public void SetGeoJsonFeature(string sourceName, string geojsonFeature);
     public void RemoveSource(string sourceId);
-    
+
+    // 3D terrain (drapes the map over an existing raster-dem source)
+    public void SetTerrain(string sourceId, float exaggeration);
+    public void RemoveTerrain();
+    public void ToggleTerrain(string sourceId, float exaggeration);
+    public bool IsTerrainEnabled { get; }
+
     // Layers
     public void AddSymbolLayer(
         string layerName,

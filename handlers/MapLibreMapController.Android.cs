@@ -1361,6 +1361,28 @@ public class MapLibreMapController : IMapLibreMapController
         _style.RemoveSource(sourceId);
     }
 
+    public void SetTerrain(string sourceId, float exaggeration)
+    {
+        if (!_styleReady || _style == null) return;
+        _style.SetTerrain(sourceId, exaggeration);
+    }
+
+    public void RemoveTerrain()
+    {
+        if (!_styleReady || _style == null) return;
+        _style.RemoveTerrain();
+    }
+
+    public void ToggleTerrain(string sourceId, float exaggeration)
+    {
+        if (!_styleReady || _style == null) return;
+        if (_style.IsTerrainEnabled) _style.RemoveTerrain();
+        else _style.SetTerrain(sourceId, exaggeration);
+    }
+
+    public bool IsTerrainEnabled => _styleReady && _style != null && _style.IsTerrainEnabled;
+
+
     // -- Layers ----------------------------------------------------------------
 
     public void AddFillLayer(string layerName, string sourceName, string? belowLayerId,
