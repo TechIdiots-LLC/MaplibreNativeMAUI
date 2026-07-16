@@ -155,6 +155,11 @@ public partial class MainWindow : Window
             MapHost.CenterOn(47.6062, -122.3321, zoom: 9);
         }
 
+        // A reloaded style drops runtime sources/layers, so re-add the DEM + hillshade
+        // that the on-map ⛰ terrain control (ShowTerrainControl) toggles.
+        _terrainDemAdded = false;
+        EnsureTerrainDemAndHillshade();
+
         if (_terrainTestRequested)
         {
             _terrainTestRequested = false; // run once
@@ -329,28 +334,31 @@ public partial class MainWindow : Window
     // displaces geometry by DEM height but reads as almost nothing over flat fills, so
     // a hillshade from the same DEM makes 3D terrain legible on any style.
     const string TerrainHillshadeLayerId = "__terrain-hillshade";
+    private bool _terrainDemAdded;
 
+    // Adds the picked raster-dem source (+ a hillshade layer so the relief is visible)
+    // to the current style if not already there. Both the on-map ⛰ terrain control
+    // (ShowTerrainControl) and the toolbar button below toggle terrain on this source.
+    private void EnsureTerrainDemAndHillshade()
+    {
+        if (_terrainDemAdded) return;
+        var url = SelectedTerrainUrl();
+        if (string.IsNullOrWhiteSpace(url)) return;
+        MapHost.AddRasterDemSource(TerrainSourceId, url);
+        MapHost.AddHillshadeLayer(TerrainHillshadeLayerId, TerrainSourceId);
+        _terrainDemAdded = true;
+    }
+
+    // The toolbar button is the programmatic equivalent of the on-map ⛰ terrain control:
+    // both toggle terrain on the same pre-added raster-dem source (hillshade stays on).
     private void BtnToggleTerrain_Click(object sender, RoutedEventArgs e)
     {
-        // Turning terrain ON: add the picked raster-dem source to the current style
-        // first (if not already there), so terrain works on whatever style is loaded,
-        // plus a hillshade layer from that DEM so the relief is actually visible.
-        if (!MapHost.IsTerrainEnabled)
+        EnsureTerrainDemAndHillshade();
+        if (!_terrainDemAdded)
         {
-            var url = SelectedTerrainUrl();
-            if (string.IsNullOrWhiteSpace(url))
-            {
-                StatusText.Text = "Pick or type a terrain source URL first.";
-                return;
-            }
-            MapHost.AddRasterDemSource(TerrainSourceId, url);
-            MapHost.AddHillshadeLayer(TerrainHillshadeLayerId, TerrainSourceId);
+            StatusText.Text = "Pick or type a terrain source URL first.";
+            return;
         }
-        else
-        {
-            MapHost.RemoveLayer(TerrainHillshadeLayerId);
-        }
-
         MapHost.ToggleTerrain(TerrainSourceId, 1.0f);
         StatusText.Text = MapHost.IsTerrainEnabled
             ? "3D terrain on (with hillshade) — navigate to the source's coverage (e.g. the Alps) and tilt to see relief."

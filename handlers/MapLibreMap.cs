@@ -38,6 +38,29 @@ public partial class MapLibreMap : StackLayout
     public static readonly BindableProperty ShowGpsControlProperty =
         BindableProperty.Create(nameof(ShowGpsControl), typeof(bool), typeof(MapLibreMap), defaultValue: true);
     /// <summary>
+    /// Show an on-map 3D-terrain toggle button (like the navigation and GPS controls).
+    /// Clicking it toggles terrain on <see cref="TerrainControlSourceId"/>: if terrain is
+    /// off it enables it on that raster-dem source, if on it disables it — mirroring
+    /// maplibre-gl-js's TerrainControl. The source must already exist in the style (the
+    /// control does not add sources or hillshade). Default <c>false</c>.
+    /// </summary>
+    public static readonly BindableProperty ShowTerrainControlProperty =
+        BindableProperty.Create(nameof(ShowTerrainControl), typeof(bool), typeof(MapLibreMap), defaultValue: false);
+    /// <summary>
+    /// ID of the raster-dem source the terrain control toggles. Must already be present in
+    /// the loaded style. Defaults to an app-specific <c>"mln-terrain-dem"</c> (rather than a
+    /// generic name like "terrain") so it does not collide with a source in a real style;
+    /// set it to your style's raster-dem source id.
+    /// </summary>
+    public static readonly BindableProperty TerrainControlSourceIdProperty =
+        BindableProperty.Create(nameof(TerrainControlSourceId), typeof(string), typeof(MapLibreMap), defaultValue: "mln-terrain-dem");
+    /// <summary>Vertical exaggeration the terrain control applies when enabling terrain. Default <c>1.0</c>.</summary>
+    public static readonly BindableProperty TerrainControlExaggerationProperty =
+        BindableProperty.Create(nameof(TerrainControlExaggeration), typeof(float), typeof(MapLibreMap), defaultValue: 1.0f);
+    /// <summary>Corner the terrain control is anchored to. Default <see cref="MapControlCorner.TopRight"/>.</summary>
+    public static readonly BindableProperty TerrainControlPositionProperty =
+        BindableProperty.Create(nameof(TerrainControlPosition), typeof(MapControlCorner), typeof(MapLibreMap), defaultValue: MapControlCorner.TopRight);
+    /// <summary>
     /// Show an always-visible attribution overlay (OSM requires this).
     /// Attributions are collected from all loaded TileJSON sources plus
     /// <see cref="CustomAttribution"/>. Default <c>true</c>.
@@ -263,6 +286,45 @@ public partial class MapLibreMap : StackLayout
     {
         get => (bool)GetValue(ShowAttributionControlProperty);
         set => SetValue(ShowAttributionControlProperty, value);
+    }
+
+    /// <summary>
+    /// Show an on-map 3D-terrain toggle button. Toggles terrain on
+    /// <see cref="TerrainControlSourceId"/> (enable if off, disable if on), like
+    /// maplibre-gl-js's TerrainControl. The raster-dem source must already be in the
+    /// style; the control does not add sources or hillshade. Default <c>false</c>.
+    /// </summary>
+    public bool ShowTerrainControl
+    {
+        get => (bool)GetValue(ShowTerrainControlProperty);
+        set => SetValue(ShowTerrainControlProperty, value);
+    }
+
+    /// <summary>
+    /// ID of the raster-dem source the terrain control toggles. Must already be in the style.
+    /// Defaults to app-specific <c>"mln-terrain-dem"</c>; set it to your style's dem source id.
+    /// </summary>
+    public string TerrainControlSourceId
+    {
+        get => (string)GetValue(TerrainControlSourceIdProperty);
+        set => SetValue(TerrainControlSourceIdProperty, value);
+    }
+
+    /// <summary>Vertical exaggeration the terrain control applies when enabling terrain. Default <c>1.0</c>.</summary>
+    public float TerrainControlExaggeration
+    {
+        get => (float)GetValue(TerrainControlExaggerationProperty);
+        set => SetValue(TerrainControlExaggerationProperty, value);
+    }
+
+    /// <summary>
+    /// Corner the terrain control is anchored to. When multiple controls share a corner
+    /// they stack (terrain, then navigation, then GPS, then attribution).
+    /// </summary>
+    public MapControlCorner TerrainControlPosition
+    {
+        get => (MapControlCorner)GetValue(TerrainControlPositionProperty);
+        set => SetValue(TerrainControlPositionProperty, value);
     }
 
     public string? CustomAttribution

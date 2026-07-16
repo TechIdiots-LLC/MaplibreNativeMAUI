@@ -14,7 +14,10 @@
                 x:Name="Map"
                 HeightRequest="400"
                 ShowNavigationControls="True"
+                ShowTerrainControl="True"
+                TerrainControlSourceId="__terrain-dem"
                 NavigationControlPosition="TopRight"
+                TerrainControlPosition="TopRight"
                 AttributionControlPosition="BottomLeft" />
 
             <VerticalStackLayout Spacing="8" Padding="12">
@@ -22,7 +25,7 @@
                 <Label FontAttributes="Bold" FontSize="16" Text="3D Terrain Toggle" />
 
                 <Label TextColor="Gray" FontSize="12" Text=
-                    "Toggle 3D terrain on any style using a preset or custom raster-dem source. Enable terrain, then navigate to the source's coverage (e.g. the Alps) and tilt with two fingers to see the relief." />
+                    "The ⛰ button on the map (above the navigation control) is the built-in terrain control — it toggles terrain on the raster-dem source added below. Or use the button here. Navigate to the source's coverage (e.g. the Alps) and tilt with two fingers to see the relief." />
 
                 <Label Text="Style:" FontAttributes="Bold" />
                 <Picker x:Name="StylePicker" SelectedIndexChanged="OnStyleChanged" />

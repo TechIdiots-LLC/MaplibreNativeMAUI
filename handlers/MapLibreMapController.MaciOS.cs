@@ -93,6 +93,8 @@ public class MapLibreMapController : IMapLibreMapController
 
     private UIStackView _navPanel     = null!;   // d-pad / zoom-in / zoom-out
     private UIStackView _gpsPanel     = null!;   // tracking / bearing mode
+    private UIStackView _terrainPanel = null!;   // 3D-terrain toggle button
+    private UIButton    _terrainButton = null!;
     private UIView      _navNorthTick = null!;   // rotates with map bearing
     private UIButton    _gpsTracking  = null!;   // reflects tracking mode
     private UIButton    _gpsBearing   = null!;
@@ -101,10 +103,16 @@ public class MapLibreMapController : IMapLibreMapController
 
     private bool _showNavControls = true;
     private bool _showGpsControl  = true;
+    // Terrain toggle control — toggles terrain on _terrainControlSourceId (which must
+    // already exist in the style). The control does not add sources or hillshade.
+    private bool   _showTerrainControl;
+    private string _terrainControlSourceId = "mln-terrain-dem";
+    private float  _terrainControlExaggeration = 1.0f;
 
-    private MapControlCorner _navCorner  = MapControlCorner.TopRight;
-    private MapControlCorner _gpsCorner  = MapControlCorner.TopRight;
-    private MapControlCorner _attrCorner = MapControlCorner.BottomLeft;
+    private MapControlCorner _navCorner     = MapControlCorner.TopRight;
+    private MapControlCorner _gpsCorner     = MapControlCorner.TopRight;
+    private MapControlCorner _terrainCorner = MapControlCorner.TopRight;
+    private MapControlCorner _attrCorner    = MapControlCorner.BottomLeft;
 
     // GPS tracking state (fixes are fed externally via UpdateGpsLocation)
     private enum GpsTrackingMode { Off, Show, Follow }
@@ -183,10 +191,46 @@ public class MapLibreMapController : IMapLibreMapController
 
         // Navigation + GPS overlay panels (custom native views — mln-cabi does
         // not expose the platform SDK's built-in controls).
+        BuildTerrainPanel();
         BuildNavigationPanel();
         BuildGpsPanel();
 
         RepositionOverlays();
+    }
+
+    private void BuildTerrainPanel()
+    {
+        _terrainPanel = MakeOverlayPanel();
+
+        _terrainButton = MakeOverlayButton("⛰");   // ⛰
+        _terrainButton.TouchUpInside += (_, _) => ToggleTerrainControl();
+
+        _terrainPanel.AddArrangedSubview(_terrainButton);
+        _terrainPanel.Hidden = !_showTerrainControl;
+        View.AddSubview(_terrainPanel);
+
+        RefreshTerrainButton();
+    }
+
+    /// <summary>Toggles terrain on the configured source (enable if off, disable if on), then refreshes the button.</summary>
+    private void ToggleTerrainControl()
+    {
+        ToggleTerrain(_terrainControlSourceId, _terrainControlExaggeration);
+        RefreshTerrainButton();
+    }
+
+    /// <summary>Colours the terrain button to reflect whether terrain is currently enabled.</summary>
+    private void RefreshTerrainButton()
+    {
+        if (_terrainButton == null) return;
+        bool on = IsTerrainEnabled;
+        _terrainButton.SetTitleColor(on
+            ? UIColor.FromRGBA((byte)0x00, (byte)0x70, (byte)0xC5, (byte)255)
+            : UIColor.FromRGBA((byte)40, (byte)40, (byte)40, (byte)230), UIControlState.Normal);
+        if (_terrainPanel != null)
+            _terrainPanel.BackgroundColor = on
+                ? UIColor.FromRGBA((byte)0xE0, (byte)0xF3, (byte)0xFF, (byte)255)
+                : UIColor.FromRGBA(255, 255, 255, 230);
     }
 
     // -- Navigation + GPS panel construction -----------------------------------
@@ -321,16 +365,21 @@ public class MapLibreMapController : IMapLibreMapController
             _overlayConstraints.Clear();
         }
 
+        float terrainH = OverlayBtn;
         float navH = OverlayBtn * 3;
         float gpsH = OverlayBtn * 2;
+        bool terrainVis = _showTerrainControl;
         bool navVis = _showNavControls;
         bool gpsVis = _showGpsControl;
 
+        // Terrain sits at index 0 (top of the column), then navigation, then GPS, then
+        // attribution — each control offset by the visible controls stacked above it.
         float StackOffset(MapControlCorner c, int idx)
         {
             float off = 0;
-            if (idx > 0 && navVis && _navCorner == c) off += navH + OverlayGap;
-            if (idx > 1 && gpsVis && _gpsCorner == c) off += gpsH + OverlayGap;
+            if (idx > 0 && terrainVis && _terrainCorner == c) off += terrainH + OverlayGap;
+            if (idx > 1 && navVis && _navCorner == c) off += navH + OverlayGap;
+            if (idx > 2 && gpsVis && _gpsCorner == c) off += gpsH + OverlayGap;
             return off;
         }
 
@@ -352,10 +401,11 @@ public class MapLibreMapController : IMapLibreMapController
             _overlayConstraints.Add(vt);
         }
 
-        Anchor(_navPanel,   _navCorner,  StackOffset(_navCorner, 0));
-        Anchor(_gpsPanel,   _gpsCorner,  StackOffset(_gpsCorner, 1));
-        Anchor(_attrView,   _attrCorner, StackOffset(_attrCorner, 2));
-        Anchor(_attrButton, _attrCorner, StackOffset(_attrCorner, 2));
+        Anchor(_terrainPanel, _terrainCorner, StackOffset(_terrainCorner, 0));
+        Anchor(_navPanel,   _navCorner,  StackOffset(_navCorner, 1));
+        Anchor(_gpsPanel,   _gpsCorner,  StackOffset(_gpsCorner, 2));
+        Anchor(_attrView,   _attrCorner, StackOffset(_attrCorner, 3));
+        Anchor(_attrButton, _attrCorner, StackOffset(_attrCorner, 3));
     }
 
     // -- View size -------------------------------------------------------------
@@ -394,6 +444,7 @@ public class MapLibreMapController : IMapLibreMapController
         // Keep the attribution overlays on top of the metal view.
         View.BringSubviewToFront(_attrView);
         View.BringSubviewToFront(_attrButton);
+        View.BringSubviewToFront(_terrainPanel);
         View.BringSubviewToFront(_navPanel);
         View.BringSubviewToFront(_gpsPanel);
 
@@ -438,6 +489,7 @@ public class MapLibreMapController : IMapLibreMapController
                     RefreshAttribution();
                     _locIndLayer = null;               // layer belongs to the old style
                     if (_pendingLocInd.HasValue) ApplyPendingLocationIndicator();
+                    RefreshTerrainButton();            // terrain state resets with the new style
                     OnStyleLoadedReceived?.Invoke(new Style(null));
                     break;
                 case "onSourceChanged":
@@ -524,6 +576,16 @@ public class MapLibreMapController : IMapLibreMapController
         RepositionOverlays();
     }
 
+    public void SetShowTerrainControl(bool show, string sourceId, float exaggeration)
+    {
+        _showTerrainControl         = show;
+        _terrainControlSourceId     = string.IsNullOrEmpty(sourceId) ? "mln-terrain-dem" : sourceId;
+        _terrainControlExaggeration = exaggeration;
+        if (_terrainPanel != null) _terrainPanel.Hidden = !show;
+        RefreshTerrainButton();
+        RepositionOverlays();
+    }
+
     public void SetGpsFollowZoom(GpsFollowZoomMode mode, double zoom)
     {
         _gpsFollowZoomMode = mode;
@@ -564,6 +626,13 @@ public class MapLibreMapController : IMapLibreMapController
     {
         if (_gpsCorner == corner) return;
         _gpsCorner = corner;
+        RepositionOverlays();
+    }
+
+    public void SetTerrainControlPosition(MapControlCorner corner)
+    {
+        if (_terrainCorner == corner) return;
+        _terrainCorner = corner;
         RepositionOverlays();
     }
 

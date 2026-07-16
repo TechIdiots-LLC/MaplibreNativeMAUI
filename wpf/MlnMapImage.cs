@@ -98,6 +98,52 @@ public partial class MlnMapImage : Grid
                     m._attrBorder.Visibility = (bool)e.NewValue ? Visibility.Visible : Visibility.Collapsed;
             }));
 
+    /// <summary>
+    /// Show an on-map 3D-terrain toggle button (like the navigation and GPS controls).
+    /// Clicking it toggles terrain on <see cref="TerrainControlSourceId"/>: enable if off,
+    /// disable if on — mirroring maplibre-gl-js's TerrainControl. The raster-dem source must
+    /// already exist in the style; the control does not add sources or hillshade. Default <c>false</c>.
+    /// </summary>
+    public bool ShowTerrainControl
+    {
+        get => (bool)GetValue(ShowTerrainControlProperty);
+        set => SetValue(ShowTerrainControlProperty, value);
+    }
+    public static readonly DependencyProperty ShowTerrainControlProperty =
+        DependencyProperty.Register(nameof(ShowTerrainControl), typeof(bool), typeof(MlnMapImage),
+            new PropertyMetadata(false, (d, e) =>
+            {
+                if (d is MlnMapImage m && m._terrainPanel != null)
+                {
+                    m._terrainPanel.Visibility = (bool)e.NewValue ? Visibility.Visible : Visibility.Collapsed;
+                    m.RepositionControls();
+                }
+            }));
+
+    /// <summary>
+    /// ID of the raster-dem source the terrain control toggles. Must already be in the style.
+    /// Defaults to app-specific <c>"mln-terrain-dem"</c> (not a generic name like "terrain")
+    /// so it does not collide with a real style source; set it to your dem source id.
+    /// </summary>
+    public string TerrainControlSourceId
+    {
+        get => (string)GetValue(TerrainControlSourceIdProperty);
+        set => SetValue(TerrainControlSourceIdProperty, value);
+    }
+    public static readonly DependencyProperty TerrainControlSourceIdProperty =
+        DependencyProperty.Register(nameof(TerrainControlSourceId), typeof(string), typeof(MlnMapImage),
+            new PropertyMetadata("mln-terrain-dem"));
+
+    /// <summary>Vertical exaggeration the terrain control applies when enabling terrain. Default <c>1.0</c>.</summary>
+    public float TerrainControlExaggeration
+    {
+        get => (float)GetValue(TerrainControlExaggerationProperty);
+        set => SetValue(TerrainControlExaggerationProperty, value);
+    }
+    public static readonly DependencyProperty TerrainControlExaggerationProperty =
+        DependencyProperty.Register(nameof(TerrainControlExaggeration), typeof(float), typeof(MlnMapImage),
+            new PropertyMetadata(1.0f));
+
     public bool ShowNavigationControls
     {
         get => (bool)GetValue(ShowNavigationControlsProperty);
@@ -140,6 +186,16 @@ public partial class MlnMapImage : Grid
     public static readonly DependencyProperty AttributionControlPositionProperty =
         DependencyProperty.Register(nameof(AttributionControlPosition), typeof(MapControlCorner), typeof(MlnMapImage),
             new PropertyMetadata(MapControlCorner.BottomLeft, OnControlPositionChanged));
+
+    /// <summary>Corner the terrain control is anchored to. Default <see cref="MapControlCorner.TopRight"/>.</summary>
+    public MapControlCorner TerrainControlPosition
+    {
+        get => (MapControlCorner)GetValue(TerrainControlPositionProperty);
+        set => SetValue(TerrainControlPositionProperty, value);
+    }
+    public static readonly DependencyProperty TerrainControlPositionProperty =
+        DependencyProperty.Register(nameof(TerrainControlPosition), typeof(MapControlCorner), typeof(MlnMapImage),
+            new PropertyMetadata(MapControlCorner.TopRight, OnControlPositionChanged));
 
     private static void OnControlPositionChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
@@ -261,6 +317,7 @@ public partial class MlnMapImage : Grid
         _image.RenderTransform = new ScaleTransform(1, -1);
         Children.Add(_image);
 
+        BuildTerrainOverlay();
         BuildNavOverlay();
         BuildGpsOverlay();
         BuildAttributionOverlay();
@@ -1024,18 +1081,33 @@ public partial class MlnMapImage : Grid
     private const double NavDpadH            = 29;          // round d-pad height (square with panel width)
     private const double NavPanelH           = NavDpadH + 29 * 2 + 2;  // d-pad + 2 zoom buttons + 2 separator px
     private const double GpsPanelH           = 29 * 2 + 1;  // 2 buttons + 1 separator
+    private const double TerrainPanelH       = 30;          // single toggle button
 
     private void RepositionControls()
     {
+        // Terrain sits at the top of its corner column (above navigation), so it anchors
+        // at offset 0; nav and GPS shift inward by the visible controls stacked above them.
+        bool terrainVis = ShowTerrainControl && _terrainPanel?.Visibility == Visibility.Visible;
+
+        if (_terrainPanel != null)
+            ApplyCorner(_terrainPanel, TerrainControlPosition, 0);
+
         if (_navPanel != null)
-            ApplyCorner(_navPanel, NavigationControlPosition, 0);
+        {
+            double off = terrainVis && NavigationControlPosition == TerrainControlPosition
+                ? TerrainPanelH + ControlStackGap : 0;
+            ApplyCorner(_navPanel, NavigationControlPosition, off);
+        }
 
         if (_gpsPanel != null)
         {
-            // Stack the GPS panel inward from the nav panel when they share a corner.
-            bool sharesNav = ShowNavigationControls && _navPanel?.Visibility == Visibility.Visible
-                             && GpsControlPosition == NavigationControlPosition;
-            double off = sharesNav ? NavPanelH + ControlStackGap : 0;
+            // Stack the GPS panel inward from the terrain + nav panels when they share a corner.
+            double off = 0;
+            if (terrainVis && GpsControlPosition == TerrainControlPosition)
+                off += TerrainPanelH + ControlStackGap;
+            if (ShowNavigationControls && _navPanel?.Visibility == Visibility.Visible
+                && GpsControlPosition == NavigationControlPosition)
+                off += NavPanelH + ControlStackGap;
             ApplyCorner(_gpsPanel, GpsControlPosition, off);
         }
 
@@ -1075,6 +1147,7 @@ public partial class MlnMapImage : Grid
                     if (_pendingLocInd.HasValue) ApplyPendingLocationIndicator();
                     RefreshAttribution();
                     RebuildItemsLayer();
+                    RefreshTerrainButton();   // terrain state resets with the new style
                     StyleLoaded?.Invoke(this, EventArgs.Empty);
                 });
                 break;
@@ -1385,6 +1458,65 @@ public partial class MlnMapImage : Grid
         _gpsPanel.Children.Add(_gpsBtnTracking);
         _gpsPanel.Children.Add(_gpsBtnBearing);
         Children.Add(_gpsPanel);
+    }
+
+    private StackPanel? _terrainPanel;
+    private TextBlock? _terrainIcon;
+    private Border? _terrainBtn;
+
+    private void BuildTerrainOverlay()
+    {
+        _terrainPanel = new StackPanel
+        {
+            Width = NavPanelW,
+            Visibility = ShowTerrainControl ? Visibility.Visible : Visibility.Collapsed,
+        };
+        _terrainIcon = new TextBlock
+        {
+            Text = "⛰",
+            FontSize = 15,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        _terrainBtn = MakeSoloButton(_terrainIcon, ToggleTerrainControl);
+        _terrainPanel.Children.Add(_terrainBtn);
+        Children.Add(_terrainPanel);
+        RefreshTerrainButton();
+    }
+
+    /// <summary>Toggles terrain on the configured source (enable if off, disable if on), then refreshes the button.</summary>
+    private void ToggleTerrainControl()
+    {
+        ToggleTerrain(TerrainControlSourceId, TerrainControlExaggeration);
+        RefreshTerrainButton();
+    }
+
+    /// <summary>Colours the terrain button to reflect whether terrain is currently enabled.</summary>
+    private void RefreshTerrainButton()
+    {
+        if (_terrainIcon == null || _terrainBtn == null) return;
+        bool on = IsTerrainEnabled;
+        _terrainIcon.Foreground = new SolidColorBrush(on ? Color.FromRgb(0x00, 0x70, 0xC5) : Color.FromRgb(0x55, 0x55, 0x55));
+        _terrainBtn.Background = on ? new SolidColorBrush(Color.FromRgb(0xE3, 0xF2, 0xFF)) : Brushes.White;
+        _terrainBtn.ToolTip = on ? "Disable 3D terrain" : "Enable 3D terrain";
+    }
+
+    // A standalone rounded icon button (all four corners), for single-button panels.
+    private static Border MakeSoloButton(TextBlock icon, Action onClick)
+    {
+        var b = new Border
+        {
+            Height = 30,
+            Background = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.FromRgb(218, 218, 218)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Cursor = Cursors.Hand,
+            Child = icon,
+        };
+        b.MouseLeftButtonUp += (_, e) => { onClick(); e.Handled = true; };
+        return b;
     }
 
     private static Border MakeIconButton(TextBlock icon, Action onClick, bool top)
