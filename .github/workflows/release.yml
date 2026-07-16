@@ -76,6 +76,12 @@ jobs:
     if: needs.version-check.outputs.published == 'false'
     uses: ./.github/workflows/native-android-vulkan.yml
 
+  build-apple-vulkan:
+    name: Build Apple Vulkan native
+    needs: version-check
+    if: needs.version-check.outputs.published == 'false'
+    uses: ./.github/workflows/native-apple-vulkan.yml
+
   # ── NuGet packaging ───────────────────────────────────────────────────────
   pack:
     name: Pack NuGet
@@ -161,7 +167,7 @@ jobs:
   pack-wpf:
     name: Pack WPF NuGet + Windows samples
     runs-on: windows-latest
-    needs: [version-check, build-windows, pack]
+    needs: [version-check, build-windows, build-windows-vulkan, pack]
     if: needs.version-check.outputs.published == 'false'
 
     steps:
@@ -180,6 +186,12 @@ jobs:
         with:
           pattern: native-windows-*
           path: native-artifacts
+
+      - name: Download Windows Vulkan native
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-mln-windows-x64-vulkan
+          path: vulkan-native
 
       - name: Stage native DLLs
         shell: bash
@@ -264,6 +276,23 @@ jobs:
             -p:UseLocalPackages=true \
             -o publish/MauiSample-win-x64
 
+      # Vulkan variants: the managed layer is backend-agnostic, so each published app
+      # runs on Vulkan simply by swapping in the Vulkan-built mln-cabi.dll — at runtime
+      # the renderers (MapImageView, MlnMapImage, ConsoleExample) detect the "vulkan"
+      # backend and use the offscreen read-back path.
+      - name: Create Vulkan sample variants (win-x64)
+        shell: bash
+        run: |
+          DLL=$(find vulkan-native -name mln-cabi.dll | head -1)
+          if [ -z "$DLL" ]; then echo "Vulkan mln-cabi.dll not found"; exit 1; fi
+          echo "Overlaying Vulkan native: $DLL"
+          for app in ConsoleExample WpfExample MauiSample; do
+            cp -r "publish/${app}-win-x64" "publish/${app}-vulkan-win-x64"
+            cp "$DLL" "publish/${app}-vulkan-win-x64/mln-cabi.dll"
+            find "publish/${app}-vulkan-win-x64" -path "*runtimes/win-x64/native/mln-cabi.dll" \
+              -exec cp "$DLL" {} \;
+          done
+
       - name: Publish MauiSample (win-arm64)
         shell: bash
         run: |
@@ -282,7 +311,8 @@ jobs:
           @(
             'ConsoleExample-win-x64','ConsoleExample-win-arm64',
             'WpfExample-win-x64','WpfExample-win-arm64',
-            'MauiSample-win-x64','MauiSample-win-arm64'
+            'MauiSample-win-x64','MauiSample-win-arm64',
+            'ConsoleExample-vulkan-win-x64','WpfExample-vulkan-win-x64','MauiSample-vulkan-win-x64'
           ) | ForEach-Object {
             Compress-Archive -Path "publish/$_/*" -DestinationPath "samples/$_.zip"
           }
@@ -385,7 +415,7 @@ jobs:
   pack-vulkan:
     name: Pack Vulkan NuGet
     runs-on: macos-latest
-    needs: [version-check, build-windows-vulkan, build-android-vulkan, build-apple]
+    needs: [version-check, build-windows-vulkan, build-android-vulkan, build-apple-vulkan]
     if: needs.version-check.outputs.published == 'false'
 
     steps:
@@ -399,28 +429,12 @@ jobs:
             9.0.x
             10.0.x
 
-      - name: Download MLN native artifacts (Windows + Android)
+      # Vulkan native artifacts for every platform share the native-mln-*-vulkan
+      # naming (Windows/Android/Apple), so one pattern collects them all.
+      - name: Download MLN Vulkan native artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: native-mln-*
-          path: mln-artifacts
-
-      - name: Download Apple native artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: native-ios-arm64
-          path: mln-artifacts
-
-      - name: Download Apple iOS simulator native artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: native-iossimulator-arm64
-          path: mln-artifacts
-
-      - name: Download Apple macCatalyst native artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: native-maccatalyst
           path: mln-artifacts
 
       - name: Arrange native libs for Vulkan bindings project
@@ -430,16 +444,32 @@ jobs:
           mkdir -p $N/android-arm64 $N/android-x64
           mkdir -p $N/ios-arm64 $N/iossimulator-arm64 $N/maccatalyst
 
-          find mln-artifacts/native-mln-windows-x64-vulkan   -name "mln-cabi.dll"   -exec cp {} $N/win-x64/       \; 2>/dev/null || true
-          find mln-artifacts/native-mln-windows-arm64-vulkan -name "mln-cabi.dll"   -exec cp {} $N/win-arm64/     \; 2>/dev/null || true
-          find mln-artifacts/native-mln-android-arm64-v8a    -name "libmln-cabi.so" -exec cp {} $N/android-arm64/ \; 2>/dev/null || true
-          find mln-artifacts/native-mln-android-x86_64       -name "libmln-cabi.so" -exec cp {} $N/android-x64/   \; 2>/dev/null || true
-          find mln-artifacts/native-ios-arm64               -name "libmln-cabi.a"  -exec cp {} $N/ios-arm64/     \; 2>/dev/null || true
-          find mln-artifacts/native-iossimulator-arm64      -name "libmln-cabi.a"  -exec cp {} $N/iossimulator-arm64/ \; 2>/dev/null || true
-          find mln-artifacts/native-maccatalyst              -name "libmln-cabi.a"  -exec cp {} $N/maccatalyst/   \; 2>/dev/null || true
+          find mln-artifacts/native-mln-windows-x64-vulkan       -name "mln-cabi.dll"   -exec cp {} $N/win-x64/       \; 2>/dev/null || true
+          find mln-artifacts/native-mln-windows-arm64-vulkan     -name "mln-cabi.dll"   -exec cp {} $N/win-arm64/     \; 2>/dev/null || true
+          find mln-artifacts/native-mln-android-arm64-v8a        -name "libmln-cabi.so" -exec cp {} $N/android-arm64/ \; 2>/dev/null || true
+          find mln-artifacts/native-mln-android-x86_64           -name "libmln-cabi.so" -exec cp {} $N/android-x64/   \; 2>/dev/null || true
+          find mln-artifacts/native-mln-ios-arm64-vulkan          -name "libmln-cabi.a"  -exec cp {} $N/ios-arm64/     \; 2>/dev/null || true
+          find mln-artifacts/native-mln-iossimulator-arm64-vulkan -name "libmln-cabi.a"  -exec cp {} $N/iossimulator-arm64/ \; 2>/dev/null || true
+          find mln-artifacts/native-mln-maccatalyst-vulkan        -name "libmln-cabi.a"  -exec cp {} $N/maccatalyst/   \; 2>/dev/null || true
 
           echo "Vulkan native libs arranged:"
           find $N -type f
+
+      - name: Create iOS XCFramework
+        run: |
+          N=bindings/native-vulkan
+          mkdir -p $N/ios
+          XCFW_ARGS=""
+          [ -f $N/ios-arm64/libmln-cabi.a ]          && XCFW_ARGS="$XCFW_ARGS -library $N/ios-arm64/libmln-cabi.a"
+          [ -f $N/iossimulator-arm64/libmln-cabi.a ] && XCFW_ARGS="$XCFW_ARGS -library $N/iossimulator-arm64/libmln-cabi.a"
+          if [ -n "$XCFW_ARGS" ]; then
+            xcodebuild -create-xcframework \
+              $XCFW_ARGS \
+              -output $N/ios/libmln-cabi.xcframework
+            echo "XCFramework created at $N/ios/libmln-cabi.xcframework"
+          else
+            echo "No iOS libraries found; skipping XCFramework creation."
+          fi
 
       - name: Restore workloads
         run: dotnet workload restore maplibre-maui.sln
