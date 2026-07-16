@@ -82,6 +82,7 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
         {
             ["styleString"] = _styleUrl
         });
+        _controller.UiScale = (float)(VirtualView?.UiScale ?? 1.0);   // read before Init creates the view
 
         _controller.OnMapReadyReceived               += VirtualView.OnMapReady;
         _controller.OnStyleLoadedReceived            += VirtualView.OnStyleLoaded;
@@ -171,6 +172,7 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
     public void UpdateShowNavigationControls(bool show) => _controller.SetShowNavigationControls(show);
     public void UpdateShowAttributionControl(bool show, string? customAttribution) => _controller.SetShowAttributionControl(show, customAttribution);
     public void UpdateShowGpsControl(bool show)         => _controller.SetShowGpsControl(show);
+    public void UpdateGpsFollowZoom(GpsFollowZoomMode mode, double zoom) => _controller.SetGpsFollowZoom(mode, zoom);
     public void UpdateNavigationControlPosition(MapControlCorner corner)  => _controller.SetNavigationControlPosition(corner);
     public void UpdateGpsControlPosition(MapControlCorner corner)         => _controller.SetGpsControlPosition(corner);
     public void UpdateAttributionControlPosition(MapControlCorner corner) => _controller.SetAttributionControlPosition(corner);

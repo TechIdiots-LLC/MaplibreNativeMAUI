@@ -55,11 +55,17 @@ public class MapLibreMapController : IMapLibreMapController
     private bool   _showNavControls = true;
     private bool   _showAttrControl = true;
     private string? _customAttribution;
-    private string  _attrText = string.Empty;  // cached, rebuilt on StyleLoaded
+    private string  _attrText = string.Empty;   // cached, rebuilt on StyleLoaded / idle
+    private string? _appliedAttribution;        // content currently shown — banner re-expands only when this changes
     private bool   _showGpsControl = true;
-    /// <summary>GPS tracking mode — matches Android TrackingMode enum.</summary>
-    private enum GpsTrackingMode { Off, Show, Follow, FollowBearing }
+    /// <summary>GPS tracking mode — Off (no dot), Show (dot only), Follow (dot + camera).</summary>
+    private enum GpsTrackingMode { Off, Show, Follow }
+    /// <summary>Camera bearing mode — Free (untouched), NorthUp (locked to 0), GpsBearing (follows fix bearing).</summary>
+    private enum GpsBearingMode { Free, NorthUp, GpsBearing }
     private GpsTrackingMode _gpsMode = GpsTrackingMode.Off;
+    private GpsBearingMode  _gpsBearingMode = GpsBearingMode.Free;
+    private GpsFollowZoomMode _gpsFollowZoomMode = GpsFollowZoomMode.KeepCurrent;
+    private double _gpsFollowZoom = 16;
     // Last received GPS fix — cached so SHOW mode can display it immediately when enabled
     private double _lastGpsLat, _lastGpsLon;
     private float  _lastGpsBearing, _lastGpsAccuracy;
@@ -79,12 +85,17 @@ public class MapLibreMapController : IMapLibreMapController
     private WUXC.StackPanel? _gpsPanel;
     private WUXC.Border?     _gpsTopBtn;
     private WUXC.TextBlock?  _gpsTopIcon;
+    private WUXC.Border?     _gpsBottomBtn;
     private WUXC.TextBlock?  _gpsBottomIcon;
     private WUXC.Border?     _attrBorder;
     private WUXC.TextBlock?  _attrTextBlock;
 
     /// <summary>The WinUI placeholder element the handler uses as the platform view.</summary>
     public Microsoft.UI.Xaml.Controls.Grid View { get; } = new();
+
+    /// <summary>Extra style-unit pixel-ratio multiplier forwarded to the map view.
+    /// Set by the handler (from <c>MapLibreMap.UiScale</c>) before <see cref="Init"/>.</summary>
+    public float UiScale { get; set; } = 1f;
 
     // ── Events ────────────────────────────────────────────────────────────────
     public event Action<Map>?                            OnMapReadyReceived;
@@ -132,6 +143,7 @@ public class MapLibreMapController : IMapLibreMapController
         {
             StyleUrl = string.IsNullOrEmpty(_styleString)
                 ? "https://demotiles.maplibre.org/style.json" : _styleString!,
+            UiScale  = UiScale,
         };
 
         // The self-contained view owns the mbgl objects; mirror them onto the controller's
@@ -154,15 +166,21 @@ public class MapLibreMapController : IMapLibreMapController
             if (_mapView == null) return;
             _style = _mapView.Style;
             _styleReady = true;
-            RefreshAttributionText();   // build attribution from the new style's sources
+            _appliedAttribution = null;   // new style — banner should show once for it
+            RefreshAttributionText();     // build attribution from the new style's sources
             OnStyleLoadedReceived?.Invoke(new Style(null));
         };
         _mapView.DidBecomeIdle += (_, _) =>
         {
-            if (_attrText.Length == 0) RefreshAttributionText();
+            // Rebuild on every idle so sources added at runtime (whose TileJSON loads
+            // after StyleLoaded) contribute their attribution; the content-change guard
+            // in RefreshAttributionText keeps the banner from re-expanding when nothing
+            // actually changed.
+            RefreshAttributionText();
             OnDidBecomeIdleReceived?.Invoke();
         };
         _mapView.CameraIdle    += (_, _) => { RefreshGpsControl(); OnCameraIdleReceived?.Invoke(); };
+        _mapView.UserPanned    += (_, _) => OnUserPannedMap();
         _mapView.MapClicked    += (_, e) => OnMapClickReceived?.Invoke(new LatLng(e.Lat, e.Lon), e.X, e.Y);
 
         // Below the nav / GPS / attribution overlay panels (which persist across rebuilds).
@@ -199,10 +217,10 @@ public class MapLibreMapController : IMapLibreMapController
         };
         _gpsTopBtn = MakeGpsButton("○", CycleGpsMode, true);
         _gpsTopIcon = (WUXC.TextBlock)_gpsTopBtn.Child;
-        var gpsBottom = MakeGpsButton("↺", GpsBearingButtonPressed, false);
-        _gpsBottomIcon = (WUXC.TextBlock)gpsBottom.Child;
+        _gpsBottomBtn = MakeGpsButton("↺", CycleGpsBearingMode, false);
+        _gpsBottomIcon = (WUXC.TextBlock)_gpsBottomBtn.Child;
         _gpsPanel.Children.Add(_gpsTopBtn);
-        _gpsPanel.Children.Add(gpsBottom);
+        _gpsPanel.Children.Add(_gpsBottomBtn);
         View.Children.Add(_gpsPanel);
 
         // Attribution — bottom-left, collapsed ⓘ that expands on tap.
@@ -229,7 +247,7 @@ public class MapLibreMapController : IMapLibreMapController
         };
         _attrBorder.Tapped += (_, e) =>
         {
-            if (_attrCollapsed) ExpandAttribution(); else CollapseAttribution();
+            if (_attrCollapsed) ExpandAttribution(pinned: true); else CollapseAttribution();
             e.Handled = true;
         };
         // Swallow DoubleTapped so a fast double-click on the attribution chip doesn't leak
@@ -379,25 +397,31 @@ public class MapLibreMapController : IMapLibreMapController
         return btn;
     }
 
-    /// <summary>Updates the GPS button glyphs/colours from the current tracking mode + bearing.</summary>
+    /// <summary>Updates the GPS button glyphs/colours from the current tracking + bearing modes.</summary>
     private void RefreshGpsControl()
     {
         if (_compassRotate != null) _compassRotate.Angle = -GetBearing();
-        if (_gpsTopIcon == null || _gpsTopBtn == null || _gpsBottomIcon == null) return;
+        if (_gpsTopIcon == null || _gpsTopBtn == null || _gpsBottomIcon == null || _gpsBottomBtn == null) return;
 
         (string glyph, Windows.UI.Color fg, Windows.UI.Color bg) = _gpsMode switch
         {
-            GpsTrackingMode.Show          => ("⊙", Rgb(0x1E, 0x88, 0xE5), Rgb(255, 255, 255)),
-            GpsTrackingMode.Follow        => ("◎", Rgb(0x00, 0x70, 0xC5), Rgb(0xE0, 0xF3, 0xFF)),
-            GpsTrackingMode.FollowBearing => ("▲", Rgb(0xF5, 0x7C, 0x00), Rgb(0xFF, 0xF3, 0xE0)),
-            _                             => ("○", Rgb(0x99, 0x99, 0x99), Rgb(255, 255, 255)),
+            GpsTrackingMode.Show   => ("⊙", Rgb(0x1E, 0x88, 0xE5), Rgb(255, 255, 255)),
+            GpsTrackingMode.Follow => ("◎", Rgb(0x00, 0x70, 0xC5), Rgb(0xE0, 0xF3, 0xFF)),
+            _                      => ("○", Rgb(0x99, 0x99, 0x99), Rgb(255, 255, 255)),
         };
         _gpsTopIcon.Text = glyph;
         _gpsTopIcon.Foreground = new WUXM.SolidColorBrush(fg);
         _gpsTopBtn.Background = new WUXM.SolidColorBrush(bg);
 
-        bool rotated = Math.Abs(GetBearing()) > 0.5;
-        _gpsBottomIcon.Foreground = new WUXM.SolidColorBrush(rotated ? Rgb(0x1E, 0x88, 0xE5) : Rgb(0x55, 0x55, 0x55));
+        (string bGlyph, Windows.UI.Color bFg, Windows.UI.Color bBg) = _gpsBearingMode switch
+        {
+            GpsBearingMode.NorthUp    => ("N", Rgb(0x00, 0x70, 0xC5), Rgb(0xE0, 0xF3, 0xFF)),
+            GpsBearingMode.GpsBearing => ("➤", Rgb(0xF5, 0x7C, 0x00), Rgb(0xFF, 0xF3, 0xE0)),
+            _                         => ("↺", Rgb(0x55, 0x55, 0x55), Rgb(255, 255, 255)),
+        };
+        _gpsBottomIcon.Text = bGlyph;
+        _gpsBottomIcon.Foreground = new WUXM.SolidColorBrush(bFg);
+        _gpsBottomBtn.Background = new WUXM.SolidColorBrush(bBg);
     }
 
     /// <summary>Updates the attribution control text from <c>_attrText</c> / collapsed state (UI thread safe).</summary>
@@ -678,21 +702,48 @@ public class MapLibreMapController : IMapLibreMapController
         }
     }
 
-    /// <summary>Cycle GPS tracking mode: Off → Show → Follow → FollowBearing → Off.</summary>
+    /// <summary>Cycle GPS tracking mode: Off → Show → Follow → Off.</summary>
     private void CycleGpsMode()
     {
         _gpsMode = _gpsMode switch
         {
-            GpsTrackingMode.Off           => GpsTrackingMode.Show,
-            GpsTrackingMode.Show          => GpsTrackingMode.Follow,
-            GpsTrackingMode.Follow        => GpsTrackingMode.FollowBearing,
-            GpsTrackingMode.FollowBearing => GpsTrackingMode.Off,
-            _                             => GpsTrackingMode.Off,
+            GpsTrackingMode.Off  => GpsTrackingMode.Show,
+            GpsTrackingMode.Show => GpsTrackingMode.Follow,
+            _                    => GpsTrackingMode.Off,
         };
 
         ApplyGpsMode();
         RefreshGpsControl();
     }
+
+    /// <summary>Cycle camera bearing mode: Free → NorthUp → GpsBearing → Free.</summary>
+    private void CycleGpsBearingMode()
+    {
+        _gpsBearingMode = _gpsBearingMode switch
+        {
+            GpsBearingMode.Free    => GpsBearingMode.NorthUp,
+            GpsBearingMode.NorthUp => GpsBearingMode.GpsBearing,
+            _                      => GpsBearingMode.Free,
+        };
+
+        // Rotate the camera to the newly selected reference immediately.
+        if (_map != null && _gpsBearingMode != GpsBearingMode.Free
+            && (_gpsBearingMode == GpsBearingMode.NorthUp || _hasGpsFix))
+        {
+            var center = GetCenter();
+            double target = _gpsBearingMode == GpsBearingMode.NorthUp ? 0 : _lastGpsBearing;
+            EaseTo(center.Latitude, center.Longitude, GetZoom(), target, GetPitch(), durationMs: 300);
+        }
+        RefreshGpsControl();
+    }
+
+    /// <summary>Camera bearing to use for GPS-driven camera moves, per the bearing mode.</summary>
+    private double CameraBearingForMode() => _gpsBearingMode switch
+    {
+        GpsBearingMode.NorthUp    => 0,
+        GpsBearingMode.GpsBearing => _lastGpsBearing,
+        _                         => GetBearing(),
+    };
 
     /// <summary>Apply the current GPS mode to the location indicator and camera.</summary>
     private void ApplyGpsMode()
@@ -705,22 +756,39 @@ public class MapLibreMapController : IMapLibreMapController
         {
             // (Re-)apply the last known GPS fix to the location indicator
             _pendingLocInd = new LocIndParams(_lastGpsLat, _lastGpsLon, _lastGpsBearing, Math.Max(5f, _lastGpsAccuracy));
-            if (_gpsMode is GpsTrackingMode.Follow or GpsTrackingMode.FollowBearing)
+            if (_gpsMode == GpsTrackingMode.Follow)
             {
-                double cameraZoom    = GetZoom() < 8 ? 14 : GetZoom();
-                double cameraBearing = _gpsMode == GpsTrackingMode.FollowBearing ? _lastGpsBearing : GetBearing();
-                EaseTo(_lastGpsLat, _lastGpsLon, cameraZoom, cameraBearing, GetPitch(), durationMs: 300);
+                EaseTo(_lastGpsLat, _lastGpsLon, FollowEntryZoom(), CameraBearingForMode(), GetPitch(), durationMs: 300);
             }
             if (_styleReady && _style != null)
                 ApplyPendingLocationIndicator();
         }
     }
 
+    /// <summary>A user pan gesture moved the map: drop Follow back to Show (the button
+    /// re-enters Follow with one click), matching maplibre-gl-js GeolocateControl.</summary>
+    private void OnUserPannedMap()
+    {
+        if (_gpsMode != GpsTrackingMode.Follow) return;
+        _gpsMode = GpsTrackingMode.Show;
+        OnCameraTrackingDismissedReceived?.Invoke();
+        RefreshGpsControl();
+    }
+
+    /// <summary>A manual rotation (d-pad) took over the bearing: drop back to Free.</summary>
+    private void OnUserRotatedMap()
+    {
+        if (_gpsBearingMode == GpsBearingMode.Free) return;
+        _gpsBearingMode = GpsBearingMode.Free;
+        RefreshGpsControl();
+    }
+
     /// <summary>
     /// Feed a GPS location update to the controller.
     /// The controller stores the fix and applies it according to the current
     /// <see cref="GpsTrackingMode"/> (Off = ignored; Show = update dot only;
-    /// Follow = update dot + re-centre camera).
+    /// Follow = update dot + re-centre camera) and <see cref="GpsBearingMode"/>
+    /// (camera bearing kept free, north-up, or rotated to the fix bearing).
     /// </summary>
     public void UpdateGpsLocation(double lat, double lon, float bearing = 0, float accuracyMeters = 10)
     {
@@ -733,16 +801,19 @@ public class MapLibreMapController : IMapLibreMapController
 
         if (_gpsMode == GpsTrackingMode.Off) return;
 
-        bool follow        = _gpsMode is GpsTrackingMode.Follow or GpsTrackingMode.FollowBearing;
-        bool useBearing    = _gpsMode == GpsTrackingMode.FollowBearing;
-        _pendingLocInd     = new LocIndParams(lat, lon, bearing, Math.Max(5f, accuracyMeters));
+        _pendingLocInd = new LocIndParams(lat, lon, bearing, Math.Max(5f, accuracyMeters));
 
-        if (follow)
+        if (_gpsMode == GpsTrackingMode.Follow)
         {
-            double cameraZoom    = GetZoom() < 8 ? 14 : GetZoom();
-            double cameraBearing = useBearing ? bearing : GetBearing();
-            if (isFirstFix) JumpTo(lat, lon, cameraZoom, cameraBearing, GetPitch());
+            double cameraBearing = CameraBearingForMode();
+            if (isFirstFix) JumpTo(lat, lon, FollowEntryZoom(), cameraBearing, GetPitch());
             else            EaseTo(lat, lon, GetZoom(), cameraBearing, GetPitch(), durationMs: 200);
+        }
+        else if (_gpsBearingMode == GpsBearingMode.GpsBearing)
+        {
+            // Not following the position, but still tracking the GPS bearing.
+            var center = GetCenter();
+            EaseTo(center.Latitude, center.Longitude, GetZoom(), bearing, GetPitch(), durationMs: 200);
         }
 
         if (_styleReady && _style != null)
@@ -753,25 +824,40 @@ public class MapLibreMapController : IMapLibreMapController
         if (isFirstFix) RefreshGpsControl();
     }
 
-    /// <summary>
-    /// Bearing button pressed: if in FollowBearing mode, drop to Follow (stop rotating) and
-    /// reset bearing to north; otherwise just reset bearing to north.
-    /// </summary>
-    private void GpsBearingButtonPressed()
-    {
-        if (_gpsMode == GpsTrackingMode.FollowBearing)
-        {
-            _gpsMode = GpsTrackingMode.Follow;
-            RefreshGpsControl();
-        }
-        ResetNorth();
-    }
-
     public void SetShowGpsControl(bool show)
     {
         _showGpsControl = show;
         if (_gpsPanel != null)
             _gpsPanel.Visibility = show ? WUX.Visibility.Visible : WUX.Visibility.Collapsed;
+    }
+
+    public void SetGpsFollowZoom(GpsFollowZoomMode mode, double zoom)
+    {
+        _gpsFollowZoomMode = mode;
+        _gpsFollowZoom     = Math.Clamp(zoom, 1, 22);
+    }
+
+    /// <summary>Zoom to use when Follow mode engages, per the follow-zoom mode.
+    /// Later fixes keep the live zoom so a manual pinch/scroll zoom sticks.</summary>
+    private double FollowEntryZoom() => _gpsFollowZoomMode switch
+    {
+        GpsFollowZoomMode.Fixed    => _gpsFollowZoom,
+        GpsFollowZoomMode.Accuracy => AccuracyZoom(),
+        _                          => GetZoom() < 8 ? 14 : GetZoom(),
+    };
+
+    /// <summary>Zoom at which the fix's accuracy circle spans ~⅓ of the shorter
+    /// viewport side — a sharp fix lands at street level (clamped to 17), a
+    /// coarse cell-grade fix stays zoomed out to cover its uncertainty.</summary>
+    private double AccuracyZoom()
+    {
+        double acc    = Math.Max(5, _lastGpsAccuracy);
+        double minDim = Math.Min(View.ActualWidth, View.ActualHeight);
+        if (minDim < 1) minDim = 800;
+        // metres per style pixel at zoom z (512px tiles): 78271.517 * cos(lat) / 2^z
+        double targetMpp = (2 * acc) / (0.33 * minDim);
+        double zoom = Math.Log2(78271.517 * Math.Cos(_lastGpsLat * Math.PI / 180.0) / targetMpp);
+        return Math.Clamp(zoom, 10, 17);
     }
 
 
@@ -794,6 +880,8 @@ public class MapLibreMapController : IMapLibreMapController
     private void ResetNorth()
     {
         if (_map == null) return;
+        // A GPS-driven bearing would immediately rotate away from north again — release it.
+        if (_gpsBearingMode == GpsBearingMode.GpsBearing) OnUserRotatedMap();
         var center = GetCenter();
         // Match maplibre-gl-js: first click resets bearing to 0 (keeping pitch);
         // if bearing is already ~0, also reset pitch to 0.
@@ -806,6 +894,7 @@ public class MapLibreMapController : IMapLibreMapController
     private void RotateBy(double deltaDeg)
     {
         if (_map == null || deltaDeg == 0) return;
+        OnUserRotatedMap();
         // Snap the target onto the increment grid (multiples of |deltaDeg|) so a full
         // rotation returns exactly to the start. Incrementing the live bearing instead
         // accumulates float error each ease and never quite closes the loop.
@@ -845,9 +934,19 @@ public class MapLibreMapController : IMapLibreMapController
         }
         _attrText = sb.ToString();
         if (_attrText.Length > 0)
+        {
+            // Only re-expand the banner when the attribution content actually changed —
+            // this runs on every DidBecomeIdle (and after runtime source updates), and
+            // unconditional expansion would keep popping the banner open.
+            if (_attrText == _appliedAttribution) return;
+            _appliedAttribution = _attrText;
             ExpandAttribution();
+        }
         else
+        {
+            _appliedAttribution = null;
             RefreshAttributionControl();
+        }
     }
 
     private static string StripHtmlTags(string html)
@@ -894,19 +993,22 @@ public class MapLibreMapController : IMapLibreMapController
 
     public void SetShowAttributionControl(bool show, string? customAttribution)
     {
-        _showAttrControl   = show;
-        _customAttribution = customAttribution;
-        _attrCollapsed     = false;  // reset collapse when attribution settings change
+        _showAttrControl    = show;
+        _customAttribution  = customAttribution;
+        _attrCollapsed      = false;  // reset collapse when attribution settings change
+        _appliedAttribution = null;   // settings changed — allow the banner to re-show
         if (_attrBorder != null)
             _attrBorder.Visibility = show ? WUX.Visibility.Visible : WUX.Visibility.Collapsed;
         RefreshAttributionText();
     }
 
-    private void ExpandAttribution()
+    private void ExpandAttribution(bool pinned = false)
     {
+        // A deliberate tap on the collapsed chip gets a longer read window than the
+        // standard auto-shown flash — matching the Android/iOS pinned behaviour.
         _attrCollapsed = false;
         RefreshAttributionControl();
-        ScheduleAutoCollapse();
+        ScheduleAutoCollapse(pinned ? 10 : 5);
     }
 
     private void CollapseAttribution()
@@ -918,12 +1020,12 @@ public class MapLibreMapController : IMapLibreMapController
         RefreshAttributionControl();
     }
 
-    private void ScheduleAutoCollapse()
+    private void ScheduleAutoCollapse(int delaySeconds = 5)
     {
         _attrCollapseTimer?.Dispose();
         _attrCollapseTimer = new System.Threading.Timer(
             _ => CollapseAttribution(), null,
-            TimeSpan.FromSeconds(5), Timeout.InfiniteTimeSpan);
+            TimeSpan.FromSeconds(delaySeconds), Timeout.InfiniteTimeSpan);
     }
 
     // ── Cleanup ───────────────────────────────────────────────────────────────

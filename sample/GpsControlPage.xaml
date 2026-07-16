@@ -7,77 +7,85 @@
              x:Class="MauiSample.GpsControlPage"
              Title="GPS Control">
 
-    <Grid RowDefinitions="*, Auto">
+    <!-- Single continuous scroll: map at the top (bounded height set in
+         code-behind) with controls flowing directly beneath. Dragging the map
+         pans it; dragging the controls scrolls the page. -->
+    <ScrollView>
+        <VerticalStackLayout Spacing="0">
 
-        <!--
-            MapLibreMap with ShowGpsControl="True" and ShowNavigationControls="True"
-            (both default). By default the navigation and GPS panels share the
-            top-right corner and stack (navigation on top, GPS below); attribution
-            sits bottom-left. Use the pickers below to move each control to any
-            corner at runtime — controls that share a corner stack automatically.
+            <!--
+                MapLibreMap with ShowGpsControl="True" and ShowNavigationControls="True"
+                (both default). By default the navigation and GPS panels share the
+                top-right corner and stack (navigation on top, GPS below); attribution
+                sits bottom-left. Use the pickers below to move each control to any
+                corner at runtime — controls that share a corner stack automatically.
 
-            Tap the GPS button to cycle the four tracking states:
-              ○  Off            — location indicator hidden
-              ⊙  Show           — blue dot at last fix, camera free
-              ◎  Follow         — blue dot + camera re-centres on every GPS update
-              ➤  FollowBearing  — camera also rotates to the GPS heading (heading-up)
-        -->
-        <maplibre:MapLibreMap
-            Grid.Row="0"
-            x:Name="Map"
-            StyleUrl="https://demotiles.maplibre.org/style.json"
-            ShowGpsControl="True"
-            ShowNavigationControls="True"
-            NavigationControlPosition="TopRight"
-            GpsControlPosition="TopRight"
-            AttributionControlPosition="BottomLeft" />
+                Tap the top GPS button to cycle the tracking states:
+                  ○  Off     — location indicator hidden
+                  ⊙  Show    — blue dot at last fix, camera free
+                  ◎  Follow  — blue dot + camera re-centres on every GPS update
+                              (panning the map by hand drops back to Show)
+                Tap the bottom button to cycle the camera bearing modes:
+                  ↺  Free        — bearing untouched
+                  N  North-up    — bearing locked to north
+                  ➤  GPS bearing — camera rotates to the GPS heading (heading-up)
+                              (rotating the map by hand drops back to Free)
+            -->
+            <maplibre:MapLibreMap
+                x:Name="Map"
+                HeightRequest="400"
+                StyleUrl="https://demotiles.maplibre.org/style.json"
+                ShowGpsControl="True"
+                ShowNavigationControls="True"
+                NavigationControlPosition="TopRight"
+                GpsControlPosition="TopRight"
+                AttributionControlPosition="BottomLeft" />
 
-        <!-- Controls -->
-        <VerticalStackLayout Grid.Row="1" Spacing="8" Padding="12">
+            <VerticalStackLayout Spacing="8" Padding="12">
 
-            <Label FontAttributes="Bold" Text="GPS Overlay Demo" FontSize="16" />
+                <Label FontAttributes="Bold" Text="GPS Overlay Demo" FontSize="16" />
 
-            <Label TextColor="Gray" FontSize="12" Text=
-                "Tap the ○/⊙/◎/➤ button on the map to cycle tracking mode.&#x0a;Use Start Simulation to feed synthetic GPS fixes." />
+                <Label TextColor="Gray" FontSize="12" Text=
+                    "Tap the ○/⊙/◎ button to cycle tracking mode and the ↺/N/➤ button to cycle the camera bearing mode.&#x0a;Use Start Simulation to feed synthetic GPS fixes." />
 
-            <HorizontalStackLayout Spacing="8">
-                <Button Text="▶  Start Simulation"
-                        Command="{Binding StartSimulationCommand}"
-                        BackgroundColor="#1E88E5" TextColor="White"
-                        Padding="12,6" />
-                <Button Text="⏹  Stop"
-                        Command="{Binding StopSimulationCommand}"
-                        BackgroundColor="#E53935" TextColor="White"
-                        Padding="12,6" />
-            </HorizontalStackLayout>
+                <HorizontalStackLayout Spacing="8">
+                    <Button Text="▶  Start Simulation"
+                            Command="{Binding StartSimulationCommand}"
+                            BackgroundColor="#1E88E5" TextColor="White"
+                            Padding="12,6" />
+                    <Button Text="⏹  Stop"
+                            Command="{Binding StopSimulationCommand}"
+                            BackgroundColor="#E53935" TextColor="White"
+                            Padding="12,6" />
+                </HorizontalStackLayout>
 
-            <!-- Live control placement -->
-            <Label FontAttributes="Bold" Text="Control placement" FontSize="13" />
-            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto"
-                  ColumnSpacing="10" RowSpacing="2">
-                <Label Grid.Row="0" Grid.Column="0" Text="Navigation" FontSize="12"
-                       VerticalOptions="Center" />
-                <Picker Grid.Row="0" Grid.Column="1"
-                        ItemsSource="{Binding Corners}"
-                        SelectedItem="{Binding Source={x:Reference Map}, Path=NavigationControlPosition, Mode=TwoWay}" />
+                <!-- Live control placement -->
+                <Label FontAttributes="Bold" Text="Control placement" FontSize="13" />
+                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto"
+                      ColumnSpacing="10" RowSpacing="2">
+                    <Label Grid.Row="0" Grid.Column="0" Text="Navigation" FontSize="12"
+                           VerticalOptions="Center" />
+                    <Picker Grid.Row="0" Grid.Column="1"
+                            ItemsSource="{Binding Corners}"
+                            SelectedItem="{Binding Source={x:Reference Map}, Path=NavigationControlPosition, Mode=TwoWay}" />
 
-                <Label Grid.Row="1" Grid.Column="0" Text="GPS" FontSize="12"
-                       VerticalOptions="Center" />
-                <Picker Grid.Row="1" Grid.Column="1"
-                        ItemsSource="{Binding Corners}"
-                        SelectedItem="{Binding Source={x:Reference Map}, Path=GpsControlPosition, Mode=TwoWay}" />
+                    <Label Grid.Row="1" Grid.Column="0" Text="GPS" FontSize="12"
+                           VerticalOptions="Center" />
+                    <Picker Grid.Row="1" Grid.Column="1"
+                            ItemsSource="{Binding Corners}"
+                            SelectedItem="{Binding Source={x:Reference Map}, Path=GpsControlPosition, Mode=TwoWay}" />
 
-                <Label Grid.Row="2" Grid.Column="0" Text="Attribution" FontSize="12"
-                       VerticalOptions="Center" />
-                <Picker Grid.Row="2" Grid.Column="1"
-                        ItemsSource="{Binding Corners}"
-                        SelectedItem="{Binding Source={x:Reference Map}, Path=AttributionControlPosition, Mode=TwoWay}" />
-            </Grid>
+                    <Label Grid.Row="2" Grid.Column="0" Text="Attribution" FontSize="12"
+                           VerticalOptions="Center" />
+                    <Picker Grid.Row="2" Grid.Column="1"
+                            ItemsSource="{Binding Corners}"
+                            SelectedItem="{Binding Source={x:Reference Map}, Path=AttributionControlPosition, Mode=TwoWay}" />
+                </Grid>
 
-            <!-- Status line -->
-            <Label Text="{Binding Status}" FontSize="12" TextColor="Gray" />
+                <!-- Status line -->
+                <Label Text="{Binding Status}" FontSize="12" TextColor="Gray" />
 
+            </VerticalStackLayout>
         </VerticalStackLayout>
-
-    </Grid>
+    </ScrollView>
 </ContentPage>

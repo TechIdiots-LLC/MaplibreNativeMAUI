@@ -38,6 +38,11 @@ public sealed class MapImageView : IDisposable
     /// <summary>Style URL or inline style JSON. Applied when the map is created.</summary>
     public string StyleUrl { get; set; } = "https://demotiles.maplibre.org/style.json";
 
+    /// <summary>Extra multiplier applied to the style-unit pixel ratio (text/icon/
+    /// circle/line sizes) — surface dimensions stay in real physical pixels.
+    /// Set before the view loads; read once at native map creation.</summary>
+    public float UiScale { get; set; } = 1f;
+
     /// <summary>The underlying map, once created (on panel load). Drive camera/sources/layers through this.</summary>
     public MbglMap? Map => _map;
 
@@ -50,6 +55,8 @@ public sealed class MapImageView : IDisposable
     public event EventHandler? CameraIdle;
     /// <summary>Raised on a tap without pan: (latitude, longitude, physicalX, physicalY).</summary>
     public event EventHandler<(double Lat, double Lon, double X, double Y)>? MapClicked;
+    /// <summary>Raised when a user drag actually moves the map (never for programmatic moves).</summary>
+    public event EventHandler? UserPanned;
 
     // The map surface — a plain XAML Image displaying the WriteableBitmap.
     private readonly WUXC.Image _mapImage = new()
@@ -142,18 +149,23 @@ public sealed class MapImageView : IDisposable
         }
         CreateBitmap(_width, _height);
 
+        // UiScale multiplies only the style-unit pixel ratio (text/icon/circle/line
+        // sizes) — the surface dimensions above stay in real physical pixels.
+        float pixelRatio = _dpi * UiScale;
+
         _runLoop  = _sharedRunLoop ??= new MbglRunLoop();
         // Vulkan renders headless (no surface handle); OpenGL needs the WGL HDC + context.
+        // pixelRatio (= _dpi * UiScale) scales style-unit sizes; the surface dims above stay physical.
         _frontend = _vulkan
-            ? new MbglFrontend(IntPtr.Zero, IntPtr.Zero, _width, _height, _dpi,
+            ? new MbglFrontend(IntPtr.Zero, IntPtr.Zero, _width, _height, pixelRatio,
                 () => _renderNeedsUpdate = true)
-            : new MbglFrontend(_interop!.Hdc, _interop.GlContext, _width, _height, _dpi,
+            : new MbglFrontend(_interop!.Hdc, _interop.GlContext, _width, _height, pixelRatio,
                 () => _renderNeedsUpdate = true);
         // Persistent tile/resource cache (mbgl's default is :memory:). Shares
         // MbglCache.DefaultPath with MbglOfflineManager so offline regions
         // downloaded by the manager are served to the map.
         _map = new MbglMap(_frontend, _runLoop, cachePath: MbglCache.DefaultPath,
-                           pixelRatio: _dpi, observer: OnMapObserverEvent);
+                           pixelRatio: pixelRatio, observer: OnMapObserverEvent);
         _map.SetSize(_width, _height);
 
         var url = StyleUrl;
@@ -266,8 +278,10 @@ public sealed class MapImageView : IDisposable
         var pos = e.GetCurrentPoint(View).Position;
         var d = Phys(new Windows.Foundation.Point(pos.X - _lastPos.X, pos.Y - _lastPos.Y));
         _lastPos = pos;
+        if (d.X == 0 && d.Y == 0) return;   // a plain click can raise Moved with no travel
         _map.OnPanMove(d.X, d.Y);
         _renderNeedsUpdate = true;
+        UserPanned?.Invoke(this, System.EventArgs.Empty);
     }
 
     private void OnPointerReleased(object sender, WUXI.PointerRoutedEventArgs e)

@@ -16,9 +16,9 @@ namespace MauiSample;
 ///      vector source, source-layer "centroids") with a layer added then given
 ///      its source-layer via SetSourceLayer — the pattern that exposed the real
 ///      bug: Layer::setSourceLayer() never notified the render orchestrator, so
-///      already-loaded tiles never relaid out. Fixed in mln_cabi.cpp's
-///      mbgl_layer_set_source_layer (see CHANGELOG 3.2.10) by also touching
-///      visibility to force the missing notification.
+///      already-loaded tiles never relaid out. Fixed upstream in maplibre-native
+///      (setSourceLayer now calls observer->onLayerChanged(); PR #4372); this page
+///      remains as a regression check.
 ///
 /// Uses only the public demotiles tile server — no external/private tile server.
 /// </summary>
@@ -46,6 +46,12 @@ public partial class DataDrivenCircleTestPage : ContentPage
     {
         InitializeComponent();
         BindingContext = _vm;
+    }
+
+    protected override void OnSizeAllocated(double width, double height)
+    {
+        base.OnSizeAllocated(width, height);
+        Map.SizeToViewport(height);
     }
 
     private void OnMapReady(object? sender, EventArgs e)

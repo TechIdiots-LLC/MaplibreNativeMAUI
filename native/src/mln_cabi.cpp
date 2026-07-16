@@ -807,32 +807,7 @@ mbgl_status_t mbgl_layer_set_source_layer(mbgl_layer_t* layer, const char* sourc
     if (!layer || !source_layer) return set_error(MBGL_INVALID_ARG, "mbgl_layer_set_source_layer: null arg");
     try {
         auto* l = as<mbgl::style::Layer>(layer);
-        const bool changed = (l->getSourceLayer() != safe_str(source_layer));
         l->setSourceLayer(safe_str(source_layer));
-
-        // WORKAROUND for a maplibre-native quirk: Layer::setSourceLayer() (unlike
-        // setFilter/setVisibility/setMinZoom/setMaxZoom) does NOT call
-        // observer->onLayerChanged(). The new source-layer value lands in the layer
-        // impl, but the render orchestrator is never told to re-evaluate, so a layer
-        // whose source-layer is set AFTER it was added to the style (the runtime
-        // AddCircleLayer + SetSourceLayer pattern) never lays out the already-loaded
-        // vector tiles and renders nothing — until some other notifying setter
-        // (e.g. a filter change) happens to fire onLayerChanged.
-        //
-        // Toggle visibility to itself (set to the opposite value, then restore) purely
-        // to fire onLayerChanged. Both calls happen before the next frame, so net
-        // visibility is unchanged and there is no flicker; the orchestrator then
-        // diffs the impl, sees the (already-applied) source-layer change, and relays
-        // out the tiles. Kept here in our C ABI to avoid patching the upstream
-        // maplibre-native submodule.
-        if (changed) {
-            const auto vis = l->getVisibility();
-            const auto other = (vis == mbgl::style::VisibilityType::Visible)
-                                   ? mbgl::style::VisibilityType::None
-                                   : mbgl::style::VisibilityType::Visible;
-            l->setVisibility(other);
-            l->setVisibility(vis);
-        }
         return MBGL_OK;
     }
     catch (const std::exception& e) { return set_native_error(e); }
@@ -1866,6 +1841,7 @@ void mbgl_android_release_window(void* window) noexcept {
 
 // ── Android HTTP provider (implemented in http_file_source_android.cpp) ───────
 extern "C" void mbgl_set_http_provider_impl(mbgl_http_provider_fn fn, void* userdata) noexcept;
+extern "C" void mbgl_set_http_cancel_provider_impl(mbgl_http_cancel_fn fn, void* userdata) noexcept;
 extern "C" void mbgl_http_respond_impl(uint64_t request_id,
                                    mbgl_http_error_t error,
                                    const char* error_message,
@@ -1881,6 +1857,10 @@ extern "C" void mbgl_http_cancel_impl(uint64_t request_id) noexcept;
 
 void mbgl_set_http_provider(mbgl_http_provider_fn fn, void* userdata) noexcept {
     mbgl_set_http_provider_impl(fn, userdata);
+}
+
+void mbgl_set_http_cancel_provider(mbgl_http_cancel_fn fn, void* userdata) noexcept {
+    mbgl_set_http_cancel_provider_impl(fn, userdata);
 }
 
 void mbgl_http_respond(uint64_t request_id,

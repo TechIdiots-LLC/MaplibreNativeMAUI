@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8" ?>
+<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:maplibre="clr-namespace:MapLibreNative.Maui.Handlers;assembly=MapLibreNative.Maui.Handlers"
@@ -7,55 +7,64 @@
              x:Class="MauiSample.BasicMapPage"
              Title="Basic Map">
 
-    <Grid RowDefinitions="*, Auto">
+    <!-- One continuous scroll: the map sits at the top with a bounded height and
+         the controls flow directly beneath it, so the page reads as a single
+         surface rather than two stacked panels. Dragging on the map pans the
+         map (the handler claims the gesture from this ScrollView via
+         requestDisallowInterceptTouchEvent); dragging on the controls scrolls
+         the page. The map's height is set in code-behind to a fraction of the
+         page height so a strip of controls always peeks below it — that strip
+         is the grab area for scrolling, and keeping the map shorter than the
+         viewport is what makes the two gestures unambiguous. -->
+    <ScrollView>
+        <VerticalStackLayout Spacing="0">
 
-        <!-- Map fills the top area -->
-        <maplibre:MapLibreMap
-            Grid.Row="0"
-            x:Name="Map"
-            StyleUrl="{Binding StyleUrl}" />
+            <maplibre:MapLibreMap
+                x:Name="Map"
+                HeightRequest="400"
+                StyleUrl="{Binding StyleUrl}" />
 
-        <!-- Controls bar at the bottom -->
-        <VerticalStackLayout Grid.Row="1" Spacing="8" Padding="12">
+            <VerticalStackLayout Spacing="8" Padding="12">
 
-            <!-- Style picker -->
-            <Picker Title="Map Style"
-                    ItemsSource="{Binding StyleNames}"
-                    SelectedItem="{Binding SelectedStyleName}" />
+                <!-- Style picker -->
+                <Picker Title="Map Style"
+                        ItemsSource="{Binding StyleNames}"
+                        SelectedItem="{Binding SelectedStyleName}" />
 
-            <!-- Custom style URL -->
-            <Label Text="Custom Style URL:" FontAttributes="Bold" />
-            <Grid ColumnDefinitions="*, Auto" ColumnSpacing="8">
-                <Entry Grid.Column="0"
-                       x:Name="CustomUrlEntry"
-                       Placeholder="https://…/style.json"
-                       Text="{Binding CustomStyleUrl}"
-                       Keyboard="Url"
-                       ReturnCommand="{Binding ApplyCustomUrlCommand}" />
-                <Button Grid.Column="1"
-                        Text="Apply"
-                        Command="{Binding ApplyCustomUrlCommand}" />
-            </Grid>
+                <!-- Custom style URL -->
+                <Label Text="Custom Style URL:" FontAttributes="Bold" />
+                <Grid ColumnDefinitions="*, Auto" ColumnSpacing="8">
+                    <Entry Grid.Column="0"
+                           x:Name="CustomUrlEntry"
+                           Placeholder="https://…/style.json"
+                           Text="{Binding CustomStyleUrl}"
+                           Keyboard="Url"
+                           ReturnCommand="{Binding ApplyCustomUrlCommand}" />
+                    <Button Grid.Column="1"
+                            Text="Apply"
+                            Command="{Binding ApplyCustomUrlCommand}" />
+                </Grid>
 
-            <!-- Jump-to city buttons -->
-            <Label Text="Jump to city:" FontAttributes="Bold" />
-            <FlexLayout Wrap="Wrap" JustifyContent="Start">
-                <Button Text="London"   Clicked="OnCityClicked" CommandParameter="London"   Margin="0,0,8,8" />
-                <Button Text="New York" Clicked="OnCityClicked" CommandParameter="New York" Margin="0,0,8,8" />
-                <Button Text="Tokyo"   Clicked="OnCityClicked" CommandParameter="Tokyo"   Margin="0,0,8,8" />
-                <Button Text="Sydney"  Clicked="OnCityClicked" CommandParameter="Sydney"  Margin="0,0,8,8" />
-            </FlexLayout>
+                <!-- Jump-to city buttons -->
+                <Label Text="Jump to city:" FontAttributes="Bold" />
+                <FlexLayout Wrap="Wrap" JustifyContent="Start">
+                    <Button Text="London"   Clicked="OnCityClicked" CommandParameter="London"   Margin="0,0,8,8" />
+                    <Button Text="New York" Clicked="OnCityClicked" CommandParameter="New York" Margin="0,0,8,8" />
+                    <Button Text="Tokyo"   Clicked="OnCityClicked" CommandParameter="Tokyo"   Margin="0,0,8,8" />
+                    <Button Text="Sydney"  Clicked="OnCityClicked" CommandParameter="Sydney"  Margin="0,0,8,8" />
+                </FlexLayout>
 
-            <!-- Debug overlay toggle -->
-            <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
-                <Label Text="Debug Overlays:" FontAttributes="Bold" VerticalOptions="Center" />
-                <Switch x:Name="DebugSwitch" Toggled="OnDebugToggled" VerticalOptions="Center" />
-            </HorizontalStackLayout>
+                <!-- Debug overlay toggle -->
+                <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+                    <Label Text="Debug Overlays:" FontAttributes="Bold" VerticalOptions="Center" />
+                    <Switch x:Name="DebugSwitch" Toggled="OnDebugToggled" VerticalOptions="Center" />
+                </HorizontalStackLayout>
 
-            <!-- Status line -->
-            <Label Text="{Binding Status}" FontSize="12" TextColor="Gray" />
+                <!-- Status line -->
+                <Label Text="{Binding Status}" FontSize="12" TextColor="Gray" />
 
+            </VerticalStackLayout>
         </VerticalStackLayout>
-    </Grid>
+    </ScrollView>
 
 </ContentPage>

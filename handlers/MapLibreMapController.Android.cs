@@ -36,9 +36,10 @@ public class MapLibreMapController : IMapLibreMapController
         DefaultRequestHeaders = { { "User-Agent", "MapLibreNative/1.0 (.NET MAUI Android)" } },
     };
 
-    // Keep the delegate alive for the lifetime of the process so the GC
-    // never collects it while the native side is still pointing to it.
+    // Keep the delegates alive for the lifetime of the process so the GC
+    // never collects them while the native side is still pointing to them.
     private static readonly NativeMethods.HttpProviderDelegate s_httpProvider = OnHttpRequest;
+    private static readonly NativeMethods.HttpCancelDelegate   s_httpCancel   = OnHttpCancel;
 
     // Tracks in-flight CancellationTokenSources keyed by request_id so we can
     // abort the HttpClient request when the native side cancels it.
@@ -52,6 +53,20 @@ public class MapLibreMapController : IMapLibreMapController
         if (s_httpProviderRegistered) return;
         s_httpProviderRegistered = true;
         NativeMethods.SetHttpProvider(s_httpProvider, IntPtr.Zero);
+        NativeMethods.SetHttpCancelProvider(s_httpCancel, IntPtr.Zero);
+    }
+
+    // Native tells us a request is no longer needed (mbgl superseded the tile,
+    // e.g. while zooming). Abort the in-flight fetch so its connection frees up
+    // for tiles still needed at the current zoom — without this, superseded
+    // requests run to completion and starve them, leaving stale lower-zoom
+    // tiles that never refresh.
+    private static void OnHttpCancel(ulong requestId, IntPtr userdata)
+    {
+        if (s_pendingRequests.TryRemove(requestId, out var cts))
+        {
+            try { cts.Cancel(); } catch { /* already completed/disposed */ }
+        }
     }
 
     private static void OnHttpRequest(ulong requestId, IntPtr urlPtr, IntPtr etagPtr,
@@ -281,6 +296,20 @@ public class MapLibreMapController : IMapLibreMapController
     private MbglStyle?    _style;
     private bool          _styleReady;
 
+    // Render-loop state. mbgl's frontend.update() calls the render callback
+    // synchronously from wherever mbgl-native's internal scheduler happens to
+    // be (which can itself be nested inside a RunLoop::RunOnce() dispatch).
+    // The callback must stay trivial — it must NOT call Render()/RunOnce()
+    // itself, or a burst of queued events (e.g. many tiles finishing during
+    // the initial style load) recurses through Render()+RunOnce() on the same
+    // native call stack, and the very stack-hungry Adreno GL driver overflows
+    // the thread's stack within a few dozen nested frames. Windows avoids this
+    // by only setting a flag in the callback and pumping Render()/RunOnce()
+    // from a separate, non-nested CompositionTarget.Rendering tick — mirrored
+    // here via PostOnAnimation.
+    private bool _renderNeedsUpdate;
+    private bool _frameLoopRunning;
+
     private TextureView            _textureView    = null!;
     private Android.Views.Surface? _textureSurface;
     private TextView        _attrView         = null!;  // expanded full text
@@ -289,6 +318,8 @@ public class MapLibreMapController : IMapLibreMapController
     private string?         _customAttribution;
     private int             _attrCollapseGen;            // generation counter for auto-collapse timer
     private bool            _attrLoaded;                 // true once attribution content has been fetched
+    private string?         _appliedAttribution;         // content currently shown — banner re-expands only when this changes
+    private bool            _attrPinned;                 // manually expanded — camera motion won't collapse it
 
     // -- Navigation + GPS overlay controls -------------------------------------
 
@@ -298,7 +329,7 @@ public class MapLibreMapController : IMapLibreMapController
     private const int OverlayGapDp    = 8;
 
     private LinearLayout _navPanel        = null!;  // d-pad / zoom-in / zoom-out
-    private LinearLayout _gpsPanel        = null!;  // tracking / bearing-reset
+    private LinearLayout _gpsPanel        = null!;  // tracking / bearing mode
     private Android.Views.View _navNorthTick = null!;  // rotates with map bearing
     private TextView     _gpsTrackingIcon = null!;  // reflects tracking mode
     private TextView     _gpsBearingIcon  = null!;
@@ -311,8 +342,12 @@ public class MapLibreMapController : IMapLibreMapController
     private MapControlCorner _attrCorner = MapControlCorner.BottomLeft;
 
     // GPS tracking state (fixes are fed externally via UpdateGpsLocation)
-    private enum GpsTrackingMode { Off, Show, Follow, FollowBearing }
+    private enum GpsTrackingMode { Off, Show, Follow }
+    private enum GpsBearingMode  { Free, NorthUp, GpsBearing }
     private GpsTrackingMode _gpsMode = GpsTrackingMode.Off;
+    private GpsBearingMode  _gpsBearingMode = GpsBearingMode.Free;
+    private GpsFollowZoomMode _gpsFollowZoomMode = GpsFollowZoomMode.KeepCurrent;
+    private double _gpsFollowZoom = 16;
     private double _lastGpsLat, _lastGpsLon;
     private float  _lastGpsBearing;
     private float  _lastGpsAccuracy = 10f;
@@ -327,15 +362,27 @@ public class MapLibreMapController : IMapLibreMapController
     // -- Gesture state ---------------------------------------------------------
 
     private GestureDetector      _gestureDetector = null!;
-    private ScaleGestureDetector _scaleDetector   = null!;
     private bool _scrollGesturesEnabled = true;
     private bool _zoomGesturesEnabled   = true;
     private bool _rotateGesturesEnabled = true;
     private bool _tiltGesturesEnabled   = true;
-    // Two-pointer tracking (rotation + tilt)
-    private float _tpPrevAngle;
-    private float _tpPrevMidY;
-    private bool  _tpActive;
+
+    // Two-pointer (pinch/rotate/tilt) tracking, ported from maplibre-gl-js's
+    // src/ui/handler/two_fingers_touch.ts. Each of the three gestures runs
+    // independently off the same two tracked fingers and only starts moving
+    // the camera once its own activation threshold is crossed — that's what
+    // keeps an ordinary pinch from also triggering spurious rotation/tilt
+    // (the naive fixed-epsilon thresholds this replaced did not).
+    private bool   _tpActive;
+    private double _tpStartDistance, _tpDistance;      // zoom
+    private bool   _tpZoomActive;
+    private double _tpStartVecX, _tpStartVecY;         // rotate: finger0 - finger1
+    private double _tpVecX, _tpVecY;
+    private double _tpMinDiameter;
+    private bool   _tpRotateActive;
+    private double _tpLastP0X, _tpLastP0Y, _tpLastP1X, _tpLastP1Y; // tilt
+    private bool?  _tpPitchValid;
+    private long?  _tpFirstMoveTime;
 
     public FrameLayout View { get; private set; } = null!;
 
@@ -373,6 +420,23 @@ public class MapLibreMapController : IMapLibreMapController
             SizeChanged = (_, w, h) => OnTextureSizeChanged(w, h),
             Destroyed   = _ => DisposeNative(),
         };
+        // A tab that isn't the currently-visible one (e.g. a ViewPager2 page
+        // that's been detached from the window) never gets an
+        // onSurfaceTextureSizeChanged callback for a rotation that happens
+        // while it's hidden — Android only relays layout size changes to
+        // attached views. Re-check and reapply the current size whenever this
+        // view re-attaches, or switching back to that tab shows the stale
+        // pre-rotation frame stretched into the new (correctly laid-out) bounds.
+        //
+        // OnViewAttachedToWindow can fire *before* the layout pass that follows
+        // reattachment finishes, so Width/Height read right there can still be
+        // the stale pre-reattachment values. Re-check on a few subsequent
+        // animation frames instead of just once, so whichever frame the layout
+        // actually lands on still gets picked up.
+        _textureView.AddOnAttachStateChangeListener(new TextureAttachStateListener
+        {
+            Attached = () => RecheckSizeOverNextFrames(8),
+        });
         SetupGestureDetectors();
 
         // Attribution overlay (bottom-right corner, OSM licence compliance)
@@ -403,7 +467,7 @@ public class MapLibreMapController : IMapLibreMapController
         _attrButton.SetBackgroundColor(Android.Graphics.Color.Argb(180, 255, 255, 255));
         _attrButton.SetPadding(8, 4, 8, 4);
         _attrButton.Visibility = ViewStates.Gone;
-        _attrButton.Click += (_, _) => ExpandAttribution();
+        _attrButton.Click += (_, _) => ExpandAttribution(pinned: true);
         var btnParams = new FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WrapContent,
             ViewGroup.LayoutParams.WrapContent,
@@ -433,7 +497,7 @@ public class MapLibreMapController : IMapLibreMapController
         // otherwise they fall through to the map TextureView and pan the map.
         _navPanel.Clickable = true;
 
-        // Round rotate/pitch d-pad on top.
+        // Round rotate/pitch d-pad on top — same width as the other overlay buttons.
         var dpad = BuildDpad(ctx, btn, d);
 
         var zoomIn   = MakeOverlayButton(ctx, "\uFF0B", btn);   // ＋
@@ -478,11 +542,22 @@ public class MapLibreMapController : IMapLibreMapController
             if (text != null)
             {
                 tv.Text = text;
-                tv.SetTextSize(Android.Util.ComplexUnitType.Sp, 8f);
-                tv.SetTextColor(Android.Graphics.Color.Argb(230, 40, 40, 40));
+                tv.SetTextSize(Android.Util.ComplexUnitType.Sp, 9f);
+                tv.SetTextColor(Android.Graphics.Color.Argb(255, 20, 20, 20));
             }
             if (onClick != null) { tv.Clickable = true; tv.Click += (_, _) => onClick(); }
             return tv;
+        }
+
+        // Unicode triangle glyphs (▲◀▶▼) render with odd clipped/notched
+        // shapes at this cell size on some devices/fonts — draw plain
+        // triangles via TriangleView instead of relying on font glyphs.
+        Android.Views.View Arrow(ArrowDir dir, Action onClick)
+        {
+            var v = new TriangleView(ctx, dir) { LayoutParameters = new LinearLayout.LayoutParams(cell, cell) };
+            v.Clickable = true;
+            v.Click += (_, _) => onClick();
+            return v;
         }
 
         LinearLayout Row(params Android.Views.View[] cells)
@@ -501,9 +576,9 @@ public class MapLibreMapController : IMapLibreMapController
             Orientation      = Orientation.Vertical,
             LayoutParameters = new FrameLayout.LayoutParams(btn, btn),
         };
-        grid.AddView(Row(Cell(null, null),               Cell("\u25B2", () => PitchBy(10)),  Cell(null, null)));                // ▲ up
-        grid.AddView(Row(Cell("\u25C0", () => RotateBy(-15)), Cell(null, ResetNorth),         Cell("\u25B6", () => RotateBy(15))));  // ◀ reset ▶
-        grid.AddView(Row(Cell(null, null),               Cell("\u25BC", () => PitchBy(-10)), Cell(null, null)));                // ▼ down
+        grid.AddView(Row(Cell(null, null),               Arrow(ArrowDir.Up, () => PitchBy(10)),  Cell(null, null)));                // ▲ up
+        grid.AddView(Row(Arrow(ArrowDir.Left, () => RotateBy(-15)), Cell(null, ResetNorth),         Arrow(ArrowDir.Right, () => RotateBy(15))));  // ◀ reset ▶
+        grid.AddView(Row(Cell(null, null),               Arrow(ArrowDir.Down, () => PitchBy(-10)), Cell(null, null)));                // ▼ down
         host.AddView(grid);
 
         // Hollow compass ring around the arrows (non-interactive).
@@ -544,7 +619,7 @@ public class MapLibreMapController : IMapLibreMapController
         _gpsTrackingIcon.Click += (_, _) => CycleGpsMode();
         var divider = MakeDivider(ctx, btn, d);
         _gpsBearingIcon  = MakeOverlayButton(ctx, "\u21BA", btn); // ↺
-        _gpsBearingIcon.Click += (_, _) => ResetNorth();
+        _gpsBearingIcon.Click += (_, _) => CycleGpsBearingMode();
 
         _gpsPanel.AddView(_gpsTrackingIcon);
         _gpsPanel.AddView(divider);
@@ -634,9 +709,33 @@ public class MapLibreMapController : IMapLibreMapController
 
     private void OnTextureSizeChanged(int width, int height)
     {
+        // A rotation/layout transition (e.g. an adjacent ViewPager2 tab being
+        // pre-laid-out before it's actually shown) can momentarily report a
+        // zero/near-zero dimension here. Feeding that straight to the native
+        // map/renderer leaves it in a degenerate state (NaN camera math, a
+        // zero-area EGL viewport) that a later valid-size call doesn't
+        // recover from — the map just stays blank from then on.
+        width  = Math.Max(1, width);
+        height = Math.Max(1, height);
         _frontend?.SetSize(width, height);
         _map?.SetSize(width, height);
         _map?.TriggerRepaint();
+    }
+
+    /// <summary>
+    /// Re-applies the TextureView's current size on each of the next
+    /// <paramref name="framesLeft"/> animation frames. Used after the view
+    /// re-attaches to a window (e.g. switching back to a tab that was hidden
+    /// during a rotation) — the layout pass that produces the view's true
+    /// post-reattachment size can land on any of the next few frames, not
+    /// necessarily the one OnViewAttachedToWindow fires on.
+    /// </summary>
+    private void RecheckSizeOverNextFrames(int framesLeft)
+    {
+        if (framesLeft <= 0 || _map == null) return;
+        if (_textureView.Width > 0 && _textureView.Height > 0)
+            OnTextureSizeChanged(_textureView.Width, _textureView.Height);
+        _textureView.PostOnAnimation(new Java.Lang.Runnable(() => RecheckSizeOverNextFrames(framesLeft - 1)));
     }
 
     // -- MapLibre init ---------------------------------------------------------
@@ -644,7 +743,8 @@ public class MapLibreMapController : IMapLibreMapController
     private void InitMaplibre(int w, int h)
     {
         _runLoop  = new MbglRunLoop();
-        _frontend = new MbglFrontend(_nativeWindow, IntPtr.Zero, w, h, _pixelRatio, OnRender);
+        _frontend = new MbglFrontend(_nativeWindow, IntPtr.Zero, w, h, _pixelRatio,
+            () => _renderNeedsUpdate = true);
         // Persistent tile/resource cache (mbgl's default is :memory:), shared
         // with MbglOfflineManager via MbglCache.DefaultPath.
         _map      = new MbglMap(_frontend, _runLoop,
@@ -659,13 +759,34 @@ public class MapLibreMapController : IMapLibreMapController
             else                               _map.SetStyleUrl(_styleString);
         }
 
+        StartFrameLoop();
         OnMapReadyReceived?.Invoke(new Map(null));
     }
 
-    private void OnRender()
+    // -- Frame loop --------------------------------------------------------
+    // Pumps the RunLoop and, only if the render callback flagged a pending
+    // frame, renders — once per animation tick, never nested inside mbgl's
+    // own callback dispatch. See _renderNeedsUpdate for why.
+
+    private void StartFrameLoop()
     {
-        _frontend?.Render();
+        if (_frameLoopRunning) return;
+        _frameLoopRunning = true;
+        _textureView.PostOnAnimation(new Java.Lang.Runnable(OnFrameTick));
+    }
+
+    private void StopFrameLoop() => _frameLoopRunning = false;
+
+    private void OnFrameTick()
+    {
+        if (!_frameLoopRunning) return;
         _runLoop?.RunOnce();
+        if (_renderNeedsUpdate && _frontend != null)
+        {
+            _renderNeedsUpdate = false;
+            _frontend.Render();
+        }
+        if (_frameLoopRunning) _textureView.PostOnAnimation(new Java.Lang.Runnable(OnFrameTick));
     }
 
     private void OnMapObserverEvent(string eventName, string? detail)
@@ -675,7 +796,8 @@ public class MapLibreMapController : IMapLibreMapController
             case "onDidFinishLoadingStyle":
                 _styleReady = true;
                 _style = _map?.GetStyle();
-                _attrLoaded = false;  // new style — sources may have different attribution
+                _attrLoaded = false;          // new style — sources may have different attribution
+                _appliedAttribution = null;   // …and the banner should show once for it
                 RefreshAttribution();
                 _locIndLayer = null;               // layer belongs to the old style
                 if (_pendingLocInd.HasValue) ApplyPendingLocationIndicator();
@@ -692,7 +814,7 @@ public class MapLibreMapController : IMapLibreMapController
                 OnDidBecomeIdleReceived?.Invoke();
                 break;
             case "onCameraIsChanging":
-                CollapseAttribution();
+                if (!_attrPinned) CollapseAttribution();   // don't swat a deliberately opened banner
                 UpdateCompassRotation();
                 OnCameraMoveReceived?.Invoke();
                 break;
@@ -762,6 +884,36 @@ public class MapLibreMapController : IMapLibreMapController
         RepositionOverlays();
     }
 
+    public void SetGpsFollowZoom(GpsFollowZoomMode mode, double zoom)
+    {
+        _gpsFollowZoomMode = mode;
+        _gpsFollowZoom     = Math.Clamp(zoom, 1, 22);
+    }
+
+    /// <summary>Zoom to use when Follow mode engages, per the follow-zoom mode.
+    /// Later fixes keep the live zoom so a manual pinch zoom sticks.</summary>
+    private double FollowEntryZoom() => _gpsFollowZoomMode switch
+    {
+        GpsFollowZoomMode.Fixed    => _gpsFollowZoom,
+        GpsFollowZoomMode.Accuracy => AccuracyZoom(),
+        _                          => (_map?.Zoom ?? 0) < 8 ? 14 : _map?.Zoom ?? 14,
+    };
+
+    /// <summary>Zoom at which the fix's accuracy circle spans ~⅓ of the shorter
+    /// viewport side (in dp) → a sharp fix lands at street level (clamped to 17),
+    /// a coarse cell-grade fix stays zoomed out to cover its uncertainty.</summary>
+    private double AccuracyZoom()
+    {
+        double acc     = Math.Max(5, _lastGpsAccuracy);
+        float  density = View?.Context?.Resources?.DisplayMetrics?.Density ?? 2.5f;
+        double minDim  = Math.Min(_textureView?.Width ?? 0, _textureView?.Height ?? 0) / density;
+        if (minDim < 1) minDim = 400;
+        // metres per style pixel at zoom z (512px tiles): 78271.517 * cos(lat) / 2^z
+        double targetMpp = (2 * acc) / (0.33 * minDim);
+        double zoom = Math.Log2(78271.517 * Math.Cos(_lastGpsLat * Math.PI / 180.0) / targetMpp);
+        return Math.Clamp(zoom, 10, 17);
+    }
+
     public void SetNavigationControlPosition(MapControlCorner corner)
     {
         if (_navCorner == corner) return;
@@ -794,13 +946,17 @@ public class MapLibreMapController : IMapLibreMapController
 
         _pendingLocInd = new LocIndParams(lat, lon, bearing, _lastGpsAccuracy);
 
-        if (_gpsMode is GpsTrackingMode.Follow or GpsTrackingMode.FollowBearing && _map != null)
+        if (_gpsMode == GpsTrackingMode.Follow && _map != null)
         {
-            bool useBearing  = _gpsMode == GpsTrackingMode.FollowBearing;
-            double zoom      = _map.Zoom < 8 ? 14 : _map.Zoom;
-            double camBearing = useBearing ? bearing : _map.Bearing;
-            if (isFirstFix) _map.JumpTo(lat, lon, zoom, camBearing, _map.Pitch);
+            double camBearing = CameraBearingForMode();
+            if (isFirstFix) _map.JumpTo(lat, lon, FollowEntryZoom(), camBearing, _map.Pitch);
             else            _map.EaseTo(lat, lon, _map.Zoom, camBearing, _map.Pitch, durationMs: 200);
+        }
+        else if (_gpsMode != GpsTrackingMode.Off && _gpsBearingMode == GpsBearingMode.GpsBearing && _map != null)
+        {
+            // Not following the position, but still tracking the GPS bearing.
+            var (cLat, cLon) = _map.Center;
+            _map.EaseTo(cLat, cLon, _map.Zoom, bearing, _map.Pitch, durationMs: 200);
         }
 
         if (_styleReady && _style != null)
@@ -820,6 +976,8 @@ public class MapLibreMapController : IMapLibreMapController
     private void ResetNorth()
     {
         if (_map == null) return;
+        // A GPS-driven bearing would immediately rotate away from north again — release it.
+        if (_gpsBearingMode == GpsBearingMode.GpsBearing) OnUserRotatedMap();
         var (lat, lon) = _map.Center;
         _map.EaseTo(lat, lon, _map.Zoom, 0, _map.Pitch, durationMs: 200);
     }
@@ -828,6 +986,7 @@ public class MapLibreMapController : IMapLibreMapController
     private void RotateBy(double deltaDeg)
     {
         if (_map == null) return;
+        OnUserRotatedMap();
         var (lat, lon) = _map.Center;
         _map.EaseTo(lat, lon, _map.Zoom, _map.Bearing + deltaDeg, _map.Pitch, durationMs: 200);
     }
@@ -845,10 +1004,9 @@ public class MapLibreMapController : IMapLibreMapController
     {
         _gpsMode = _gpsMode switch
         {
-            GpsTrackingMode.Off           => GpsTrackingMode.Show,
-            GpsTrackingMode.Show          => GpsTrackingMode.Follow,
-            GpsTrackingMode.Follow        => GpsTrackingMode.FollowBearing,
-            _                             => GpsTrackingMode.Off,
+            GpsTrackingMode.Off  => GpsTrackingMode.Show,
+            GpsTrackingMode.Show => GpsTrackingMode.Follow,
+            _                    => GpsTrackingMode.Off,
         };
         RefreshGpsIcons();
 
@@ -858,9 +1016,65 @@ public class MapLibreMapController : IMapLibreMapController
             return;
         }
 
-        // Re-apply the tracking behaviour to the last known fix.
+        // Re-apply the tracking behaviour to the last known fix; entering Follow
+        // eases to the follow-zoom policy's entry zoom.
         if (_hasGpsFix)
-            UpdateGpsLocation(_lastGpsLat, _lastGpsLon, _lastGpsBearing, _lastGpsAccuracy);
+        {
+            if (_gpsMode == GpsTrackingMode.Follow && _map != null)
+                _map.EaseTo(_lastGpsLat, _lastGpsLon, FollowEntryZoom(),
+                            CameraBearingForMode(), _map.Pitch, durationMs: 300);
+            _pendingLocInd = new LocIndParams(_lastGpsLat, _lastGpsLon, _lastGpsBearing, _lastGpsAccuracy);
+            if (_styleReady && _style != null)
+                ApplyPendingLocationIndicator();
+            _map?.TriggerRepaint();
+        }
+    }
+
+    /// <summary>Cycle camera bearing mode: Free → NorthUp → GpsBearing → Free.</summary>
+    private void CycleGpsBearingMode()
+    {
+        _gpsBearingMode = _gpsBearingMode switch
+        {
+            GpsBearingMode.Free    => GpsBearingMode.NorthUp,
+            GpsBearingMode.NorthUp => GpsBearingMode.GpsBearing,
+            _                      => GpsBearingMode.Free,
+        };
+        RefreshGpsIcons();
+
+        // Rotate the camera to the newly selected reference immediately.
+        if (_map != null && _gpsBearingMode != GpsBearingMode.Free
+            && (_gpsBearingMode == GpsBearingMode.NorthUp || _hasGpsFix))
+        {
+            var (lat, lon) = _map.Center;
+            double target = _gpsBearingMode == GpsBearingMode.NorthUp ? 0 : _lastGpsBearing;
+            _map.EaseTo(lat, lon, _map.Zoom, target, _map.Pitch, durationMs: 300);
+        }
+    }
+
+    /// <summary>Camera bearing to use for GPS-driven camera moves, per the bearing mode.</summary>
+    private double CameraBearingForMode() => _gpsBearingMode switch
+    {
+        GpsBearingMode.NorthUp    => 0,
+        GpsBearingMode.GpsBearing => _lastGpsBearing,
+        _                         => _map?.Bearing ?? 0,
+    };
+
+    /// <summary>A user pan gesture moved the map: drop Follow back to Show (the button
+    /// re-enters Follow with one click), matching maplibre-gl-js GeolocateControl.</summary>
+    private void OnUserPannedMap()
+    {
+        if (_gpsMode != GpsTrackingMode.Follow) return;
+        _gpsMode = GpsTrackingMode.Show;
+        OnCameraTrackingDismissedReceived?.Invoke();
+        RefreshGpsIcons();
+    }
+
+    /// <summary>A manual rotation (gesture or d-pad) took over the bearing: drop back to Free.</summary>
+    private void OnUserRotatedMap()
+    {
+        if (_gpsBearingMode == GpsBearingMode.Free) return;
+        _gpsBearingMode = GpsBearingMode.Free;
+        RefreshGpsIcons();
     }
 
     private void RefreshGpsIcons()
@@ -868,13 +1082,22 @@ public class MapLibreMapController : IMapLibreMapController
         if (_gpsTrackingIcon == null) return;
         (string icon, int r, int g, int b) = _gpsMode switch
         {
-            GpsTrackingMode.Show          => ("\u2299", 30, 136, 229),  // ⊙ blue
-            GpsTrackingMode.Follow        => ("\u25CE", 21, 101, 192),  // ◎ deep blue
-            GpsTrackingMode.FollowBearing => ("\u27A4", 245, 124, 0),   // ➤ orange
-            _                             => ("\u25CB", 120, 120, 120), // ○ gray (Off)
+            GpsTrackingMode.Show   => ("\u2299", 30, 136, 229),  // ⊙ blue
+            GpsTrackingMode.Follow => ("\u25CE", 21, 101, 192),  // ◎ deep blue
+            _                      => ("\u25CB", 120, 120, 120), // ○ gray (Off)
         };
         _gpsTrackingIcon.Text = icon;
         _gpsTrackingIcon.SetTextColor(Android.Graphics.Color.Argb(255, r, g, b));
+
+        if (_gpsBearingIcon == null) return;
+        (string bIcon, int br, int bg, int bb) = _gpsBearingMode switch
+        {
+            GpsBearingMode.NorthUp    => ("N", 21, 101, 192),                 // N north-up blue
+            GpsBearingMode.GpsBearing => ("\u27A4", 245, 124, 0),   // ➤ orange
+            _                         => ("\u21BA", 85, 85, 85),    // ↺ gray (Free)
+        };
+        _gpsBearingIcon.Text = bIcon;
+        _gpsBearingIcon.SetTextColor(Android.Graphics.Color.Argb(255, br, bg, bb));
     }
 
     /// <summary>Rotates the compass north tick to reflect the current map bearing.</summary>
@@ -898,11 +1121,11 @@ public class MapLibreMapController : IMapLibreMapController
             _locIndLayer.SetPaintProperty("accuracy-radius-border-color", "\"rgba(30,136,229,0.85)\"");
         }
 
-        bool showBearing = _gpsMode == GpsTrackingMode.FollowBearing;
         _locIndLayer.SetPaintProperty("location",
             $"[{p.Lat.ToString(ic)},{p.Lon.ToString(ic)},0]");
-        _locIndLayer.SetPaintProperty("bearing",
-            (showBearing ? p.Bearing : 0f).ToString(ic));
+        // The dot always points the direction of travel; the camera bearing mode
+        // only controls whether the map rotates with it.
+        _locIndLayer.SetPaintProperty("bearing", p.Bearing.ToString(ic));
         _locIndLayer.SetPaintProperty("accuracy-radius", p.AccuracyM.ToString(ic));
     }
 
@@ -927,6 +1150,7 @@ public class MapLibreMapController : IMapLibreMapController
     {
         if (_style == null)
         {
+            _appliedAttribution    = null;
             _attrView.Visibility   = ViewStates.Gone;
             _attrButton.Visibility = ViewStates.Gone;
             return;
@@ -939,26 +1163,42 @@ public class MapLibreMapController : IMapLibreMapController
 
         if (attributions.Count == 0 || !_showAttrControl)
         {
+            _appliedAttribution    = null;
             _attrView.Visibility   = ViewStates.Gone;
             _attrButton.Visibility = ViewStates.Gone;
             return;
         }
 
         _attrLoaded = true;
+
+        // onSourceChanged fires for every runtime source mutation (e.g. an app
+        // refreshing a GeoJSON source on a timer). Only rewrite the view and
+        // re-expand the banner when the attribution content actually changed —
+        // otherwise a periodic source update keeps popping the banner open.
+        var content = string.Join("", attributions);
+        if (content == _appliedAttribution) return;
+        _appliedAttribution = content;
+
         _attrView.TextFormatted = BuildAttributionSpanned(attributions);
         ExpandAttribution();
     }
 
-    private void ExpandAttribution()
+    private void ExpandAttribution(bool pinned = false)
     {
         if (!_showAttrControl || !_attrLoaded) return;
+        // A deliberate tap on the ⓘ button pins the banner so camera motion can't
+        // instantly collapse it (GPS-follow eases the camera every fix, which
+        // otherwise swats the banner shut before it can be read). The auto-collapse
+        // timer still runs — pinning only shields against camera-motion collapse.
+        _attrPinned            = pinned;
         _attrView.Visibility   = ViewStates.Visible;
         _attrButton.Visibility = ViewStates.Gone;
-        ScheduleAutoCollapse();
+        ScheduleAutoCollapse(pinned ? 10000 : 5000);
     }
 
     private void CollapseAttribution()
     {
+        _attrPinned = false;
         // If neither view is showing, there is nothing to collapse.
         if (_attrView.Visibility   == ViewStates.Gone &&
             _attrButton.Visibility == ViewStates.Gone) return;
@@ -968,7 +1208,7 @@ public class MapLibreMapController : IMapLibreMapController
             ? ViewStates.Visible : ViewStates.Gone;
     }
 
-    private void ScheduleAutoCollapse()
+    private void ScheduleAutoCollapse(int delayMs = 5000)
     {
         int gen = ++_attrCollapseGen;
         // PostDelayed runs on the view's UI thread; generation counter prevents
@@ -976,7 +1216,7 @@ public class MapLibreMapController : IMapLibreMapController
         _attrView.PostDelayed(() =>
         {
             if (_attrCollapseGen == gen) CollapseAttribution();
-        }, 5000);
+        }, delayMs);
     }
 
     private static ISpanned BuildAttributionSpanned(
@@ -1401,9 +1641,25 @@ public class MapLibreMapController : IMapLibreMapController
         var ctx = Android.App.Application.Context!;
         var gl  = new MapGestureListener(this);
         _gestureDetector = new GestureDetector(ctx, gl);
-        _scaleDetector   = new ScaleGestureDetector(ctx, new MapScaleListener(this));
         _textureView.SetOnTouchListener(new MapTouchListener(this));
     }
+
+    // Ported from maplibre-gl-js src/ui/handler/two_fingers_touch.ts.
+    private const double TpZoomRate           = 1.0;
+    private const double TpZoomThreshold      = 0.1;   // log2 zoom units
+    private const double TpRotationThresholdPx = 25.0; // px along touch-circle circumference
+    private const double TpPitchMoveThresholdPx = 2.0;
+    private const long   TpAllowedSingleTouchTimeMs = 100;
+    private const double TpDegreesPerPixelMoved = -0.5;
+
+    private static double TpDist(double ax, double ay, double bx, double by)
+        => System.Math.Sqrt((ax - bx) * (ax - bx) + (ay - by) * (ay - by));
+
+    /// <summary>Signed angle (degrees) to rotate vector (ax,ay) onto vector (bx,by).</summary>
+    private static double TpAngleDeg(double ax, double ay, double bx, double by)
+        => System.Math.Atan2(ax * by - ay * bx, ax * bx + ay * by) * 180.0 / System.Math.PI;
+
+    private static bool TpIsVertical(double x, double y) => System.Math.Abs(y) > System.Math.Abs(x);
 
     private class MapTouchListener : Java.Lang.Object, Android.Views.View.IOnTouchListener
     {
@@ -1413,92 +1669,176 @@ public class MapLibreMapController : IMapLibreMapController
         public bool OnTouch(Android.Views.View? v, MotionEvent? e)
         {
             if (e == null) return false;
+            var c = _ctrl;
 
-            // Feed every event to both detectors.
-            _ctrl._gestureDetector.OnTouchEvent(e);
-            _ctrl._scaleDetector.OnTouchEvent(e);
+            // The map sits inside a ViewPager2-backed Shell tab bar (and may sit
+            // inside other scrolling containers too). Without this, any gesture
+            // with real movement — pinch, two-finger rotate/tilt, even a drag —
+            // can be stolen/cancelled by an ancestor's own swipe/scroll detection
+            // once it exceeds touch slop; only near-stationary taps (e.g. the
+            // +/- buttons) are unaffected. Claim the touch stream for the
+            // duration of the gesture and release it once all pointers are up.
+            v?.Parent?.RequestDisallowInterceptTouchEvent(
+                e.ActionMasked != MotionEventActions.Up &&
+                e.ActionMasked != MotionEventActions.Cancel);
+
+            // Feed every event to the single-finger detector (pan/fling/tap/double-tap).
+            c._gestureDetector.OnTouchEvent(e);
 
             switch (e.ActionMasked)
             {
                 case MotionEventActions.Down:
-                    _ctrl._map?.SetGestureInProgress(true);
-                    _ctrl._map?.CancelTransitions();
-                    _ctrl._tpActive = false;
+                    c._map?.SetGestureInProgress(true);
+                    c._map?.CancelTransitions();
+                    c._tpActive = false;
                     break;
 
                 case MotionEventActions.PointerDown:
-                    if (e.PointerCount == 2 &&
-                        (_ctrl._rotateGesturesEnabled || _ctrl._tiltGesturesEnabled))
+                    if (e.PointerCount == 2)
                     {
-                        _ctrl._tpActive    = true;
-                        _ctrl._tpPrevAngle = TwoFingerAngle(e);
-                        _ctrl._tpPrevMidY  = TwoFingerMidY(e);
+                        double p0x = e.GetX(0), p0y = e.GetY(0);
+                        double p1x = e.GetX(1), p1y = e.GetY(1);
+
+                        c._tpActive       = true;
+                        c._tpStartDistance = c._tpDistance = TpDist(p0x, p0y, p1x, p1y);
+                        c._tpStartVecX = c._tpVecX = p0x - p1x;
+                        c._tpStartVecY = c._tpVecY = p0y - p1y;
+                        c._tpMinDiameter  = c._tpStartDistance;
+                        c._tpZoomActive   = false;
+                        c._tpRotateActive = false;
+                        c._tpLastP0X = p0x; c._tpLastP0Y = p0y;
+                        c._tpLastP1X = p1x; c._tpLastP1Y = p1y;
+                        c._tpPitchValid    = null;
+                        c._tpFirstMoveTime = null;
                     }
                     break;
 
                 case MotionEventActions.Move:
-                    if (_ctrl._tpActive && e.PointerCount >= 2)
-                    {
-                        float pr = _ctrl._pixelRatio;
-
-                        if (_ctrl._rotateGesturesEnabled)
-                        {
-                            float newAngle = TwoFingerAngle(e);
-                            float delta    = newAngle - _ctrl._tpPrevAngle;
-                            while (delta >  180f) delta -= 360f;
-                            while (delta < -180f) delta += 360f;
-                            if (System.Math.Abs(delta) > 0.15f)
-                            {
-                                double rad = delta * System.Math.PI / 180.0;
-                                double cx  = _ctrl._textureView.Width  / (2.0 * pr);
-                                double cy  = _ctrl._textureView.Height / (2.0 * pr);
-                                const double r = 100.0;
-                                _ctrl._map?.RotateBy(
-                                    cx + r, cy,
-                                    cx + r * System.Math.Cos(rad),
-                                    cy + r * System.Math.Sin(rad));
-                                _ctrl._tpPrevAngle = newAngle;
-                            }
-                        }
-
-                        if (_ctrl._tiltGesturesEnabled)
-                        {
-                            float newMidY = TwoFingerMidY(e);
-                            float deltaY  = newMidY - _ctrl._tpPrevMidY;
-                            if (System.Math.Abs(deltaY) > 0.5f)
-                            {
-                                // Fingers moving up (negative deltaY) increases pitch.
-                                _ctrl._map?.PitchBy(-deltaY / _ctrl._pixelRatio * 0.4);
-                                _ctrl._tpPrevMidY = newMidY;
-                            }
-                        }
-                    }
+                    if (c._tpActive && e.PointerCount >= 2)
+                        HandleTwoFingerMove(c, e);
                     break;
 
                 case MotionEventActions.PointerUp:
                     if (e.PointerCount <= 2)
-                        _ctrl._tpActive = false;
+                        c._tpActive = false;
                     break;
 
                 case MotionEventActions.Up:
-                    _ctrl._map?.SetGestureInProgress(false);
-                    _ctrl._tpActive = false;
+                    c._map?.SetGestureInProgress(false);
+                    c._tpActive = false;
                     break;
 
                 case MotionEventActions.Cancel:
-                    _ctrl._map?.SetGestureInProgress(false);
-                    _ctrl._tpActive = false;
+                    c._map?.SetGestureInProgress(false);
+                    c._tpActive = false;
                     break;
             }
             return true;
         }
 
-        private static float TwoFingerAngle(MotionEvent e) =>
-            (float)(System.Math.Atan2(e.GetY(1) - e.GetY(0), e.GetX(1) - e.GetX(0))
-                    * 180.0 / System.Math.PI);
+        private static void HandleTwoFingerMove(MapLibreMapController c, MotionEvent e)
+        {
+            // Screen-coordinate values (focus point, rotate pivot) are fed to the
+            // native map in the same raw device-pixel space as Map::setSize() —
+            // NOT divided by pixelRatio, which only scales style-spec units
+            // (line widths, icon/text sizes), not the screen-coordinate space.
+            float pr = c._pixelRatio;
+            double p0x = e.GetX(0), p0y = e.GetY(0);
+            double p1x = e.GetX(1), p1y = e.GetY(1);
+            double focusX = (p0x + p1x) * 0.5;
+            double focusY = (p0y + p1y) * 0.5;
 
-        private static float TwoFingerMidY(MotionEvent e) =>
-            (e.GetY(0) + e.GetY(1)) * 0.5f;
+            // -- Zoom -----------------------------------------------------------
+            double currDistance = TpDist(p0x, p0y, p1x, p1y);
+            if (c._zoomGesturesEnabled && currDistance > 0 && c._tpDistance > 0)
+            {
+                double zoomSinceStart = System.Math.Log(currDistance / c._tpStartDistance) / System.Math.Log(2.0);
+                if (c._tpZoomActive || System.Math.Abs(zoomSinceStart) >= TpZoomThreshold)
+                {
+                    c._tpZoomActive = true;
+                    double scaleFactor = currDistance / c._tpDistance;
+                    c._map?.OnPinch(System.Math.Pow(scaleFactor, TpZoomRate), focusX, focusY);
+                }
+            }
+            c._tpDistance = currDistance;
+
+            // -- Rotate -----------------------------------------------------------
+            if (c._rotateGesturesEnabled)
+            {
+                double currVecX = p0x - p1x, currVecY = p0y - p1y;
+                double mag = TpDist(currVecX, currVecY, 0, 0);
+                c._tpMinDiameter = System.Math.Min(c._tpMinDiameter, mag);
+                double circumference = System.Math.PI * c._tpMinDiameter;
+
+                if (circumference > 0.001)
+                {
+                    double thresholdDeg = TpRotationThresholdPx / circumference * 360.0;
+                    double sinceStartDeg = TpAngleDeg(currVecX, currVecY, c._tpStartVecX, c._tpStartVecY);
+
+                    if (c._tpRotateActive || System.Math.Abs(sinceStartDeg) >= thresholdDeg)
+                    {
+                        // _tpVecX/Y tracks every frame regardless of activation (updated
+                        // below), so this is always a small frame-to-frame delta — never
+                        // a "catch up" jump for whatever rotation happened before threshold.
+                        double frameDeltaDeg = TpAngleDeg(currVecX, currVecY, c._tpVecX, c._tpVecY);
+                        c._tpRotateActive = true;
+                        c.OnUserRotatedMap();
+
+                        // Negated: RotateBy's synthetic-point construction otherwise
+                        // turns the map opposite to the physical two-finger twist.
+                        double rad = -frameDeltaDeg * System.Math.PI / 180.0;
+                        double cx  = c._textureView.Width  / 2.0;
+                        double cy  = c._textureView.Height / 2.0;
+                        const double r = 100.0;
+                        c._map?.RotateBy(
+                            cx + r, cy,
+                            cx + r * System.Math.Cos(rad),
+                            cy + r * System.Math.Sin(rad));
+                    }
+                    c._tpVecX = currVecX;
+                    c._tpVecY = currVecY;
+                }
+            }
+
+            // -- Tilt (pitch) -----------------------------------------------------
+            if (c._tiltGesturesEnabled && c._tpPitchValid != false)
+            {
+                double vecAx = (p0x - c._tpLastP0X) / pr, vecAy = (p0y - c._tpLastP0Y) / pr;
+                double vecBx = (p1x - c._tpLastP1X) / pr, vecBy = (p1y - c._tpLastP1Y) / pr;
+
+                if (c._tpPitchValid == null)
+                    c._tpPitchValid = GestureBeginsVertically(c, vecAx, vecAy, vecBx, vecBy, e.EventTime);
+
+                if (c._tpPitchValid == true)
+                {
+                    double yDeltaAverage = (vecAy + vecBy) / 2.0;
+                    c._map?.PitchBy(yDeltaAverage * TpDegreesPerPixelMoved);
+                    c._tpLastP0X = p0x; c._tpLastP0Y = p0y;
+                    c._tpLastP1X = p1x; c._tpLastP1Y = p1y;
+                }
+            }
+        }
+
+        /// <returns>true = pitch gesture confirmed, false = ruled out, null = still waiting on the second finger.</returns>
+        private static bool? GestureBeginsVertically(MapLibreMapController c,
+            double vecAx, double vecAy, double vecBx, double vecBy, long timeStamp)
+        {
+            bool movedA = TpDist(vecAx, vecAy, 0, 0) >= TpPitchMoveThresholdPx;
+            bool movedB = TpDist(vecBx, vecBy, 0, 0) >= TpPitchMoveThresholdPx;
+
+            if (!movedA && !movedB) return null; // neither finger has moved enough yet
+
+            if (!movedA || !movedB)
+            {
+                c._tpFirstMoveTime ??= timeStamp;
+                return (timeStamp - c._tpFirstMoveTime.Value < TpAllowedSingleTouchTimeMs)
+                    ? (bool?)null   // still waiting for the second finger
+                    : false;
+            }
+
+            bool sameDirection = (vecAy > 0) == (vecBy > 0);
+            return TpIsVertical(vecAx, vecAy) && TpIsVertical(vecBx, vecBy) && sameDirection;
+        }
     }
 
     private class MapGestureListener : GestureDetector.SimpleOnGestureListener
@@ -1506,14 +1846,18 @@ public class MapLibreMapController : IMapLibreMapController
         private readonly MapLibreMapController _ctrl;
         public MapGestureListener(MapLibreMapController ctrl) => _ctrl = ctrl;
 
+        // Screen-coordinate values below are fed to the native map in raw
+        // device-pixel space, matching Map::setSize() — see the comment in
+        // HandleTwoFingerMove. pixelRatio does not enter into any of this.
+
         public override bool OnScroll(MotionEvent? e1, MotionEvent? e2,
                                       float distanceX, float distanceY)
         {
             // Suppress single-finger scroll while two pointers are active
             // (scale/rotate/tilt are handled by MapTouchListener directly).
             if (!_ctrl._scrollGesturesEnabled || _ctrl._tpActive) return false;
-            float pr = _ctrl._pixelRatio;
-            _ctrl._map?.MoveBy(-distanceX / pr, -distanceY / pr);
+            _ctrl._map?.MoveBy(-distanceX, -distanceY);
+            _ctrl.OnUserPannedMap();
             return true;
         }
 
@@ -1521,22 +1865,21 @@ public class MapLibreMapController : IMapLibreMapController
                                      float velocityX, float velocityY)
         {
             if (!_ctrl._scrollGesturesEnabled) return false;
-            double pr    = _ctrl._pixelRatio;
-            double velXY = System.Math.Sqrt(velocityX * velocityX + velocityY * velocityY) / pr;
+            double velXY = System.Math.Sqrt(velocityX * velocityX + velocityY * velocityY);
             if (velXY < 200) return false;   // too slow to fling
             long animTime  = (long)System.Math.Min(velXY / 7.0 + 400, 1500);
-            double offsetX = velocityX * animTime * 0.00028 / pr;
-            double offsetY = velocityY * animTime * 0.00028 / pr;
+            double offsetX = velocityX * animTime * 0.00028;
+            double offsetY = velocityY * animTime * 0.00028;
             _ctrl._map?.MoveBy(offsetX, offsetY, animTime);
+            _ctrl.OnUserPannedMap();
             return true;
         }
 
         public override void OnLongPress(MotionEvent e)
         {
             if (_ctrl._tpActive || _ctrl._map == null) return;
-            float pr       = _ctrl._pixelRatio;
-            double sx      = e.GetX() / pr;
-            double sy      = e.GetY() / pr;
+            double sx      = e.GetX();
+            double sy      = e.GetY();
             var (lat, lon) = _ctrl._map.LatLngForPixel(sx, sy);
             _ctrl.OnMapLongClickReceived?.Invoke(new LatLng(lat, lon), sx, sy);
         }
@@ -1544,9 +1887,8 @@ public class MapLibreMapController : IMapLibreMapController
         public override bool OnSingleTapConfirmed(MotionEvent e)
         {
             if (_ctrl._map == null) return false;
-            float pr       = _ctrl._pixelRatio;
-            double sx      = e.GetX() / pr;
-            double sy      = e.GetY() / pr;
+            double sx      = e.GetX();
+            double sy      = e.GetY();
             var (lat, lon) = _ctrl._map.LatLngForPixel(sx, sy);
             _ctrl.OnMapClickReceived?.Invoke(new LatLng(lat, lon), sx, sy);
             return true;
@@ -1555,24 +1897,7 @@ public class MapLibreMapController : IMapLibreMapController
         public override bool OnDoubleTap(MotionEvent e)
         {
             if (!_ctrl._zoomGesturesEnabled) return false;
-            float pr = _ctrl._pixelRatio;
-            _ctrl._map?.OnDoubleTap(e.GetX() / pr, e.GetY() / pr);
-            return true;
-        }
-    }
-
-    private class MapScaleListener : ScaleGestureDetector.SimpleOnScaleGestureListener
-    {
-        private readonly MapLibreMapController _ctrl;
-        public MapScaleListener(MapLibreMapController ctrl) => _ctrl = ctrl;
-
-        public override bool OnScale(ScaleGestureDetector detector)
-        {
-            if (!_ctrl._zoomGesturesEnabled) return false;
-            float pr     = _ctrl._pixelRatio;
-            float focusX = detector.FocusX / pr;
-            float focusY = detector.FocusY / pr;
-            _ctrl._map?.OnPinch(detector.ScaleFactor, focusX, focusY);
+            _ctrl._map?.OnDoubleTap(e.GetX(), e.GetY());
             return true;
         }
     }
@@ -1581,6 +1906,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     private void DisposeNative()
     {
+        StopFrameLoop();
         _style    = null;
         _map?.Dispose();      _map      = null;
         // Drain pending libuv tasks scheduled by Map destruction.
@@ -1600,6 +1926,64 @@ public class MapLibreMapController : IMapLibreMapController
         _textureSurface?.Dispose();
         _textureSurface = null;
         _styleReady = false;
+    }
+}
+
+// -- Dpad arrow drawing ----------------------------------------------------
+
+internal enum ArrowDir { Up, Down, Left, Right }
+
+/// <summary>Draws a plain filled triangle — used instead of Unicode ▲◀▶▼
+/// glyphs, which render with clipped/notched shapes at small sizes on some
+/// devices/fonts.</summary>
+internal sealed class TriangleView : Android.Views.View
+{
+    private readonly ArrowDir _dir;
+    private readonly Android.Graphics.Paint _paint;
+
+    public TriangleView(global::Android.Content.Context ctx, ArrowDir dir) : base(ctx)
+    {
+        _dir = dir;
+        _paint = new Android.Graphics.Paint(Android.Graphics.PaintFlags.AntiAlias)
+        {
+            Color = Android.Graphics.Color.Argb(255, 20, 20, 20),
+        };
+        _paint.SetStyle(Android.Graphics.Paint.Style.Fill);
+    }
+
+    protected override void OnDraw(Android.Graphics.Canvas? canvas)
+    {
+        base.OnDraw(canvas);
+        if (canvas == null) return;
+
+        float w = Width, h = Height;
+        float inset = System.Math.Min(w, h) * 0.3f;
+        using var path = new Android.Graphics.Path();
+        switch (_dir)
+        {
+            case ArrowDir.Up:
+                path.MoveTo(w / 2, inset);
+                path.LineTo(w - inset, h - inset);
+                path.LineTo(inset, h - inset);
+                break;
+            case ArrowDir.Down:
+                path.MoveTo(w / 2, h - inset);
+                path.LineTo(inset, inset);
+                path.LineTo(w - inset, inset);
+                break;
+            case ArrowDir.Left:
+                path.MoveTo(inset, h / 2);
+                path.LineTo(w - inset, inset);
+                path.LineTo(w - inset, h - inset);
+                break;
+            case ArrowDir.Right:
+                path.MoveTo(w - inset, h / 2);
+                path.LineTo(inset, inset);
+                path.LineTo(inset, h - inset);
+                break;
+        }
+        path.Close();
+        canvas.DrawPath(path, _paint);
     }
 }
 
@@ -1624,5 +2008,13 @@ internal sealed class TextureSurfaceListener : Java.Lang.Object, TextureView.ISu
     }
 
     public void OnSurfaceTextureUpdated(Android.Graphics.SurfaceTexture surface) { }
+}
+
+internal sealed class TextureAttachStateListener : Java.Lang.Object, Android.Views.View.IOnAttachStateChangeListener
+{
+    public Action? Attached;
+
+    public void OnViewAttachedToWindow(Android.Views.View attachedView) => Attached?.Invoke();
+    public void OnViewDetachedFromWindow(Android.Views.View detachedView) { }
 }
 #endif

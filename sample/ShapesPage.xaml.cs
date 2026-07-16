@@ -37,6 +37,12 @@ public partial class ShapesPage : ContentPage
         RadiusCircle.Radius = Distance.FromMeters(_radiusMeters);
     }
 
+    protected override void OnSizeAllocated(double width, double height)
+    {
+        base.OnSizeAllocated(width, height);
+        Map.SizeToViewport(height);
+    }
+
     private void OnMapReady(object? sender, EventArgs e)
     {
         _vm.Status = "Map ready — polyline, polygon and a 3 km circle";

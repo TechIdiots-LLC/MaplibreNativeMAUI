@@ -831,6 +831,26 @@ MLN_CABI_API void mbgl_set_http_provider(mbgl_http_provider_fn fn,
                                            void*                 userdata) MLN_CABI_NOEXCEPT;
 
 /**
+ * Callback invoked when the native layer no longer needs a previously-started
+ * request (mbgl superseded or dropped the tile, e.g. while zooming/panning).
+ * The host must abort the corresponding in-flight fetch so its connection is
+ * freed for requests that are still needed — without this, superseded requests
+ * run to completion and can starve the tiles at the current zoom.
+ *
+ * @param request_id  The ID that was supplied to mbgl_http_provider_fn.
+ * @param userdata    Opaque pointer supplied to mbgl_set_http_cancel_provider().
+ */
+typedef void (*mbgl_http_cancel_fn)(uint64_t request_id, void* userdata);
+
+/**
+ * Register the request-cancellation callback (optional but strongly
+ * recommended). Must be called before the first map is created. Pass NULL to
+ * remove it.
+ */
+MLN_CABI_API void mbgl_set_http_cancel_provider(mbgl_http_cancel_fn fn,
+                                                void*               userdata) MLN_CABI_NOEXCEPT;
+
+/**
  * Deliver a completed HTTP response back to the native layer.
  * Must be called exactly once per request unless mbgl_http_cancel() was already
  * called for the same request_id.  Safe to call from any thread.

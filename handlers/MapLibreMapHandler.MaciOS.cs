@@ -15,6 +15,7 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, UIView>
     protected override UIView CreatePlatformView()
     {
         var scale = (float)UIScreen.MainScreen.Scale;
+        scale *= (float)(VirtualView?.UiScale ?? 1.0);   // app-requested extra scaling (e.g. OS font scale)
         _controller = MapLibreMapFactory.Create(scale, VirtualView?.StyleUrl);
 
         _controller.OnMapReadyReceived              += VirtualView.OnMapReady;
@@ -49,6 +50,7 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, UIView>
     public void UpdateShowNavigationControls(bool show) => _controller.SetShowNavigationControls(show);
     public void UpdateShowAttributionControl(bool show, string? customAttribution) => _controller.SetShowAttributionControl(show, customAttribution);
     public void UpdateShowGpsControl(bool show)         => _controller.SetShowGpsControl(show);
+    public void UpdateGpsFollowZoom(GpsFollowZoomMode mode, double zoom) => _controller.SetGpsFollowZoom(mode, zoom);
     public void UpdateNavigationControlPosition(MapControlCorner corner)  => _controller.SetNavigationControlPosition(corner);
     public void UpdateGpsControlPosition(MapControlCorner corner)         => _controller.SetGpsControlPosition(corner);
     public void UpdateAttributionControlPosition(MapControlCorner corner) => _controller.SetAttributionControlPosition(corner);

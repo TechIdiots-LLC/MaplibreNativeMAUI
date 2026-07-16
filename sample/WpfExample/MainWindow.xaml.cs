@@ -335,10 +335,11 @@ public partial class MainWindow : Window
         // MapLibre demotiles basemap vector source ("maplibre"), source-layer
         // "centroids" (one point per country) — no external/private tile server.
         //
-        // Before the mln_cabi setSourceLayer relayout fix this rendered zero features
-        // (the source-layer change after addLayer never triggered a tile relayout);
-        // after the fix both the literal control and the data-driven (match on the
-        // string field NAME) layers render one circle per country centroid.
+        // Before the upstream setSourceLayer relayout fix (maplibre-native #4372)
+        // this rendered zero features (the source-layer change after addLayer never
+        // triggered a tile relayout); after the fix both the literal control and the
+        // data-driven (match on the string field NAME) layers render one circle per
+        // country centroid.
         try
         {
             MapHost.AddCircleLayer(

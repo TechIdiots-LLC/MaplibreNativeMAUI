@@ -15,11 +15,11 @@ public partial class MapLibreMap : StackLayout
     public static readonly BindableProperty StyleUrlProperty = BindableProperty.Create(nameof(StyleUrl), typeof(string), typeof(MapLibreMap));
     public static readonly BindableProperty MinZoomProperty = BindableProperty.Create(nameof(MinZoom), typeof(float), typeof(MapLibreMap));
     public static readonly BindableProperty MaxZoomProperty = BindableProperty.Create(nameof(MaxZoom), typeof(float), typeof(MapLibreMap));
-    public static readonly BindableProperty RotateGesturesEnabledProperty = BindableProperty.Create(nameof(RotateGesturesEnabled), typeof(bool), typeof(MapLibreMap));
-    public static readonly BindableProperty ScrollGesturesEnabledProperty = BindableProperty.Create(nameof(ScrollGesturesEnabled), typeof(bool), typeof(MapLibreMap));
-    public static readonly BindableProperty TiltGesturesEnabledProperty = BindableProperty.Create(nameof(TiltGesturesEnabled), typeof(bool), typeof(MapLibreMap));
+    public static readonly BindableProperty RotateGesturesEnabledProperty = BindableProperty.Create(nameof(RotateGesturesEnabled), typeof(bool), typeof(MapLibreMap), defaultValue: true);
+    public static readonly BindableProperty ScrollGesturesEnabledProperty = BindableProperty.Create(nameof(ScrollGesturesEnabled), typeof(bool), typeof(MapLibreMap), defaultValue: true);
+    public static readonly BindableProperty TiltGesturesEnabledProperty = BindableProperty.Create(nameof(TiltGesturesEnabled), typeof(bool), typeof(MapLibreMap), defaultValue: true);
     public static readonly BindableProperty TrackCameraPositionProperty = BindableProperty.Create(nameof(TrackCameraPosition), typeof(bool), typeof(MapLibreMap));
-    public static readonly BindableProperty ZoomGesturesEnabledProperty = BindableProperty.Create(nameof(ZoomGesturesEnabled), typeof(bool), typeof(MapLibreMap));
+    public static readonly BindableProperty ZoomGesturesEnabledProperty = BindableProperty.Create(nameof(ZoomGesturesEnabled), typeof(bool), typeof(MapLibreMap), defaultValue: true);
     public static readonly BindableProperty MyLocationEnabledProperty = BindableProperty.Create(nameof(MyLocationEnabled), typeof(bool), typeof(MapLibreMap));
     public static readonly BindableProperty MyLocationTrackingModeProperty = BindableProperty.Create(nameof(MyLocationTrackingMode), typeof(int), typeof(MapLibreMap));
     public static readonly BindableProperty MyLocationRenderModeProperty = BindableProperty.Create(nameof(MyLocationRenderMode), typeof(int), typeof(MapLibreMap));
@@ -56,6 +56,22 @@ public partial class MapLibreMap : StackLayout
     /// <summary>Corner the attribution control is anchored to. Default <see cref="MapControlCorner.BottomLeft"/>.</summary>
     public static readonly BindableProperty AttributionControlPositionProperty =
         BindableProperty.Create(nameof(AttributionControlPosition), typeof(MapControlCorner), typeof(MapLibreMap), defaultValue: MapControlCorner.BottomLeft);
+    /// <summary>How the GPS control picks the camera zoom when Follow mode engages. Default <see cref="Maui.GpsFollowZoomMode.KeepCurrent"/>.</summary>
+    public static readonly BindableProperty GpsFollowZoomModeProperty =
+        BindableProperty.Create(nameof(GpsFollowZoomMode), typeof(GpsFollowZoomMode), typeof(MapLibreMap), defaultValue: GpsFollowZoomMode.KeepCurrent);
+    /// <summary>Zoom level applied when <see cref="GpsFollowZoomMode"/> is <see cref="Maui.GpsFollowZoomMode.Fixed"/>. Default <c>16</c>.</summary>
+    public static readonly BindableProperty GpsFollowZoomProperty =
+        BindableProperty.Create(nameof(GpsFollowZoom), typeof(double), typeof(MapLibreMap), defaultValue: 16.0);
+    /// <summary>
+    /// Extra multiplier applied to the platform pixel ratio (display density) when the
+    /// native map is created. Default <c>1.0</c>. Everything sized in style pixels —
+    /// text, icons, circles, line widths — scales by it, so apps can honour the OS
+    /// font-scale / accessibility setting (which MapLibre otherwise ignores), e.g. by
+    /// setting it to the system font scale on Android.
+    /// Read once at platform-view creation; changing it on a live map has no effect.
+    /// </summary>
+    public static readonly BindableProperty UiScaleProperty =
+        BindableProperty.Create(nameof(UiScale), typeof(double), typeof(MapLibreMap), defaultValue: 1.0);
 
     public static readonly BindableProperty MapReadyCommandProperty = BindableProperty.Create(nameof(MapReadyCommand), typeof(ICommand), typeof(MapLibreMap));
     public static readonly BindableProperty StyleLoadedCommandProperty = BindableProperty.Create(nameof(StyleLoadedCommand), typeof(ICommand), typeof(MapLibreMap));
@@ -256,6 +272,17 @@ public partial class MapLibreMap : StackLayout
     }
 
     /// <summary>
+    /// Extra multiplier applied to the platform pixel ratio at map creation (scales
+    /// all style-pixel sizes: text, icons, circles, line widths). Default 1.0.
+    /// Set before the map is displayed — read once when the platform view is created.
+    /// </summary>
+    public double UiScale
+    {
+        get => (double)GetValue(UiScaleProperty);
+        set => SetValue(UiScaleProperty, value);
+    }
+
+    /// <summary>
     /// Corner the navigation control is anchored to. When multiple controls share
     /// a corner they stack (navigation, then GPS, then attribution).
     /// </summary>
@@ -283,6 +310,26 @@ public partial class MapLibreMap : StackLayout
     {
         get => (MapControlCorner)GetValue(AttributionControlPositionProperty);
         set => SetValue(AttributionControlPositionProperty, value);
+    }
+
+    /// <summary>
+    /// How the GPS control picks the camera zoom when Follow mode engages (the
+    /// on-map GPS button, or the first fix while following). KeepCurrent preserves
+    /// the historical behaviour; Accuracy zooms so the fix's accuracy circle is
+    /// comfortably visible; Fixed always uses <see cref="GpsFollowZoom"/>.
+    /// Later fixes never change the zoom, so a manual pinch zoom sticks.
+    /// </summary>
+    public GpsFollowZoomMode GpsFollowZoomMode
+    {
+        get => (GpsFollowZoomMode)GetValue(GpsFollowZoomModeProperty);
+        set => SetValue(GpsFollowZoomModeProperty, value);
+    }
+
+    /// <summary>Zoom level applied when <see cref="GpsFollowZoomMode"/> is <see cref="Maui.GpsFollowZoomMode.Fixed"/>. Default <c>16</c>.</summary>
+    public double GpsFollowZoom
+    {
+        get => (double)GetValue(GpsFollowZoomProperty);
+        set => SetValue(GpsFollowZoomProperty, value);
     }
 
     public void AddGeoJsonSource(string sourceName, FeatureCollection collection)

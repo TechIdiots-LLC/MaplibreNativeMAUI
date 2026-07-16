@@ -16,6 +16,12 @@ public partial class BasicMapPage : ContentPage
         Map.StyleLoaded += (_, e) => _vm.OnStyleLoaded(e.Style);
     }
 
+    protected override void OnSizeAllocated(double width, double height)
+    {
+        base.OnSizeAllocated(width, height);
+        Map.SizeToViewport(height);
+    }
+
     private void OnCityClicked(object sender, EventArgs e)
     {
         if (sender is not Button btn) return;

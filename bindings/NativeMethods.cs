@@ -709,6 +709,20 @@ public static partial class NativeMethods
         IntPtr                userdata);
 
     /// <summary>
+    /// Invoked when the native layer cancels a previously-started request
+    /// (mbgl superseded/dropped the tile). The host must abort the matching
+    /// in-flight fetch so its connection is freed. Keep the delegate alive for
+    /// the map's lifetime.
+    /// </summary>
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    public delegate void HttpCancelDelegate(ulong requestId, IntPtr userdata);
+
+    [DllImport(Lib, EntryPoint = "mbgl_set_http_cancel_provider")]
+    public static extern void SetHttpCancelProvider(
+        HttpCancelDelegate? fn,
+        IntPtr              userdata);
+
+    /// <summary>
     /// Deliver a completed HTTP response to the native layer.
     /// Safe to call from any thread.  All string parameters may be IntPtr.Zero.
     /// </summary>
