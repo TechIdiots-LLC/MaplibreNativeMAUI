@@ -78,6 +78,13 @@
 
             <Separator Margin="4,0" />
 
+            <Label Content="Terrain source:" VerticalAlignment="Center" />
+            <ComboBox x:Name="TerrainPicker" Width="220" Margin="2,0" IsEditable="True"
+                      VerticalAlignment="Center"
+                      ToolTip="Pick a preset raster-dem source or type a custom tilejson/tiles URL, then use Toggle 3D Terrain. Works on whatever style is loaded." />
+
+            <Separator Margin="4,0" />
+
             <Label Content="Custom URL:" VerticalAlignment="Center" />
             <TextBox x:Name="UrlEntry" Width="310" Margin="2,0"
                      VerticalAlignment="Center" VerticalContentAlignment="Center"

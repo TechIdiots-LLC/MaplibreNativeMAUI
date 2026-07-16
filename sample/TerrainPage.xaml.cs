@@ -1,23 +1,52 @@
 namespace MauiSample;
 
 /// <summary>
-/// Demonstrates the runtime 3D terrain toggle (MapLibreMap.ToggleTerrain). The
-/// style carries an OSM raster basemap and a hillshade layer over a Mapterhorn
-/// raster-dem source but no terrain, so the map starts flat; the button drapes
-/// it over 3D terrain using that same DEM source. Mirrors the maplibre-gl-js
-/// TerrainControl (a button that flips setTerrain on/off).
+/// Demonstrates toggling 3D terrain on any style with a configurable raster-dem
+/// source. Pick a base style and a terrain source (preset or a custom URL), then
+/// the button adds that raster-dem source to the current style and toggles terrain
+/// (MapLibreMap.ToggleTerrain). This is the pattern an app would use to offer a
+/// terrain source setting; terrain works over whatever style is loaded.
 /// </summary>
 public partial class TerrainPage : ContentPage
 {
-    // The raster-dem source ID the toggle enables terrain from. It is already in
-    // the style below and shared with the hillshade layer.
-    private const string TerrainSourceId = "mapterhorn";
+    // Internal source ID the picked raster-dem is added under.
+    private const string TerrainSourceId = "__terrain-dem";
     private const float Exaggeration = 1.0f;
+
+    private static readonly Dictionary<string, string> Styles = new()
+    {
+        ["MapLibre Demo"]    = "https://demotiles.maplibre.org/style.json",
+        ["OpenFreeMap Liberty"]  = "https://tiles.openfreemap.org/styles/liberty",
+        ["OpenFreeMap Positron"] = "https://tiles.openfreemap.org/styles/positron",
+        ["OpenFreeMap Bright"]   = "https://tiles.openfreemap.org/styles/bright",
+    };
+
+    // Preset raster-dem (terrain) sources. The custom-URL entry overrides these,
+    // mirroring how an app might offer preset or custom terrain sources in settings.
+    private static readonly Dictionary<string, string> TerrainSources = new()
+    {
+        ["Matterhorn (Mapterhorn)"] = "https://tiles.mapterhorn.com/tilejson.json",
+    };
+
+    // Whether the picked DEM source has been added to the currently loaded style.
+    // Reset on every style load, since reloading the style drops runtime sources.
+    private bool _demAdded;
 
     public TerrainPage()
     {
         InitializeComponent();
-        Map.StyleUrl = StyleJson; // StyleUrl accepts a JSON string (routed to SetStyleJson)
+
+        StylePicker.ItemsSource = Styles.Keys.ToList();
+        TerrainPicker.ItemsSource = TerrainSources.Keys.ToList();
+        TerrainPicker.SelectedIndex = 0;
+
+        Map.StyleLoaded += (_, _) =>
+        {
+            _demAdded = false; // the reloaded style has no runtime DEM source or terrain
+            UpdateStatus();
+        };
+
+        StylePicker.SelectedIndex = 0; // triggers OnStyleChanged -> loads the first style
     }
 
     protected override void OnSizeAllocated(double width, double height)
@@ -26,46 +55,52 @@ public partial class TerrainPage : ContentPage
         Map.SizeToViewport(height);
     }
 
-    private void OnToggleTerrain(object? sender, EventArgs e)
+    private void OnStyleChanged(object? sender, EventArgs e)
     {
-        Map.ToggleTerrain(TerrainSourceId, Exaggeration);
-
-        bool on = Map.IsTerrainEnabled;
-        ToggleButton.Text = on ? "Disable 3D Terrain" : "Enable 3D Terrain";
-        StatusLabel.Text = on ? $"Terrain: on (exaggeration {Exaggeration})" : "Terrain: off";
+        if (StylePicker.SelectedItem is string name && Styles.TryGetValue(name, out var url))
+            Map.StyleUrl = url;
     }
 
-    // OSM raster + hillshade over the Mapterhorn DEM, pitched over Innsbruck. No
-    // "terrain" root property: the map starts flat and the button toggles it.
-    private const string StyleJson = """
+    private void OnToggleTerrain(object? sender, EventArgs e)
+    {
+        // Turning terrain ON: add the picked raster-dem source to the current style
+        // first (once per style load), so terrain works on whatever style is loaded.
+        if (!Map.IsTerrainEnabled)
         {
-          "version": 8,
-          "center": [11.39085, 47.27574],
-          "zoom": 12,
-          "pitch": 60,
-          "sources": {
-            "osm": {
-              "type": "raster",
-              "tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-              "tileSize": 256,
-              "attribution": "© OpenStreetMap Contributors",
-              "maxzoom": 19
-            },
-            "mapterhorn": {
-              "type": "raster-dem",
-              "url": "https://tiles.mapterhorn.com/tilejson.json",
-              "encoding": "terrarium"
-            }
-          },
-          "layers": [
-            { "id": "osm", "type": "raster", "source": "osm" },
+            var url = SelectedTerrainUrl();
+            if (string.IsNullOrWhiteSpace(url))
             {
-              "id": "hills",
-              "type": "hillshade",
-              "source": "mapterhorn",
-              "paint": { "hillshade-shadow-color": "#473B24" }
+                StatusLabel.Text = "Pick or type a terrain source URL first.";
+                return;
             }
-          ]
+            if (!_demAdded)
+            {
+                Map.AddRasterDemSource(TerrainSourceId, url, tileUrlTemplates: null,
+                                       tileSize: 256, minZoom: 0, maxZoom: 15);
+                _demAdded = true;
+            }
         }
-        """;
+
+        Map.ToggleTerrain(TerrainSourceId, Exaggeration);
+        UpdateStatus();
+    }
+
+    private void UpdateStatus()
+    {
+        bool on = Map.IsTerrainEnabled;
+        ToggleButton.Text = on ? "Disable 3D Terrain" : "Enable 3D Terrain";
+        StatusLabel.Text = on
+            ? $"Terrain: on (exaggeration {Exaggeration}) — navigate to the source's coverage and tilt to see it."
+            : "Terrain: off";
+    }
+
+    // The selected terrain URL: the custom entry wins if non-empty, otherwise the
+    // preset picked in TerrainPicker.
+    private string? SelectedTerrainUrl()
+    {
+        var custom = CustomTerrainEntry.Text?.Trim();
+        if (!string.IsNullOrWhiteSpace(custom)) return custom;
+        return TerrainPicker.SelectedItem is string name && TerrainSources.TryGetValue(name, out var url)
+            ? url : null;
+    }
 }

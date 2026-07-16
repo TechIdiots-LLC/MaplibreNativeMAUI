@@ -78,47 +78,20 @@ public partial class MainWindow : Window
         ["OpenFreeMap Lib."] = "https://tiles.openfreemap.org/styles/liberty",
         ["OpenFreeMap Pos."] = "https://tiles.openfreemap.org/styles/positron",
         ["OpenFreeMap Brt."] = "https://tiles.openfreemap.org/styles/bright",
-        ["3D Terrain"]       = TerrainStyleJson,
     };
 
-    // The terrain source ID used by the Toggle 3D Terrain button (present in the
-    // "3D Terrain" style below, shared with the hillshade layer).
-    const string TerrainSourceId = "mapterhorn";
+    // ── Preset terrain (raster-dem) sources ────────────────────────────────────
+    // The terrain picker is editable, so a custom tilejson/tiles URL can be typed
+    // too. This mirrors how a consuming app (e.g. Vistumbler) might offer preset or
+    // custom terrain sources in its settings, and lets terrain be toggled on top of
+    // whatever style is loaded rather than a dedicated terrain style.
+    private static readonly Dictionary<string, string> TerrainSources = new()
+    {
+        ["Matterhorn (Mapterhorn)"] = "https://tiles.mapterhorn.com/tilejson.json",
+    };
 
-    // OSM raster + hillshade over the Mapterhorn DEM, pitched over Innsbruck via
-    // the style-spec root camera. No "terrain" property: the map starts flat and
-    // the Toggle 3D Terrain button enables terrain through the API.
-    const string TerrainStyleJson = """
-        {
-          "version": 8,
-          "center": [11.39085, 47.27574],
-          "zoom": 12,
-          "pitch": 60,
-          "sources": {
-            "osm": {
-              "type": "raster",
-              "tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-              "tileSize": 256,
-              "attribution": "© OpenStreetMap Contributors",
-              "maxzoom": 19
-            },
-            "mapterhorn": {
-              "type": "raster-dem",
-              "url": "https://tiles.mapterhorn.com/tilejson.json",
-              "encoding": "terrarium"
-            }
-          },
-          "layers": [
-            { "id": "osm", "type": "raster", "source": "osm" },
-            {
-              "id": "hills",
-              "type": "hillshade",
-              "source": "mapterhorn",
-              "paint": { "hillshade-shadow-color": "#473B24" }
-            }
-          ]
-        }
-        """;
+    // Internal source ID the toggle adds the picked raster-dem under.
+    const string TerrainSourceId = "__terrain-dem";
 
     const string MarkerSourceId = "example-marker";
     const string MarkerLayerId  = "example-marker-layer";
@@ -142,6 +115,8 @@ public partial class MainWindow : Window
         InitializeComponent();
         StylePicker.ItemsSource   = Styles.Keys;
         StylePicker.SelectedIndex = 0;
+        TerrainPicker.ItemsSource   = TerrainSources.Keys;
+        TerrainPicker.SelectedIndex = 0;
 
         // Data-bound markers: bind an ObservableCollection<MlnMapMarker> to ItemsSource once; the
         // Add City Pins / Clear Pins buttons mutate it and the map updates live.
@@ -235,10 +210,31 @@ public partial class MainWindow : Window
 
     private void BtnToggleTerrain_Click(object sender, RoutedEventArgs e)
     {
+        // Turning terrain ON: add the picked raster-dem source to the current style
+        // first (if not already there), so terrain works on whatever style is loaded.
+        if (!MapHost.IsTerrainEnabled)
+        {
+            var url = SelectedTerrainUrl();
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                StatusText.Text = "Pick or type a terrain source URL first.";
+                return;
+            }
+            MapHost.AddRasterDemSource(TerrainSourceId, url);
+        }
+
         MapHost.ToggleTerrain(TerrainSourceId, 1.0f);
         StatusText.Text = MapHost.IsTerrainEnabled
-            ? "3D terrain on (pick the '3D Terrain' style if the map is flat)."
+            ? "3D terrain on — navigate to the source's coverage (e.g. the Alps) and tilt to see relief."
             : "3D terrain off.";
+    }
+
+    // The selected terrain URL: a preset name maps to its URL; otherwise the typed
+    // text is treated as a custom tilejson/tiles URL.
+    private string SelectedTerrainUrl()
+    {
+        var text = TerrainPicker.Text?.Trim() ?? "";
+        return TerrainSources.TryGetValue(text, out var url) ? url : text;
     }
 
     // ── Data-bound pins (ItemsSource of MlnMapMarker) ──────────────────────

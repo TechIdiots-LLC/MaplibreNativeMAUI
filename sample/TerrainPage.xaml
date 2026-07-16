@@ -5,8 +5,8 @@
              x:Class="MauiSample.TerrainPage"
              Title="3D Terrain">
 
-    <!-- Same single-scroll layout as the other demos: the map has a bounded
-         height (set in code-behind) with the controls flowing beneath it. -->
+    <!-- Single-scroll layout: the map has a bounded height (set in code-behind)
+         with the controls flowing beneath it. -->
     <ScrollView>
         <VerticalStackLayout Spacing="0">
 
@@ -22,7 +22,16 @@
                 <Label FontAttributes="Bold" FontSize="16" Text="3D Terrain Toggle" />
 
                 <Label TextColor="Gray" FontSize="12" Text=
-                    "OSM raster with a hillshade layer over the Mapterhorn DEM (Innsbruck). Tap the button to drape the map over 3D terrain; tilt with two fingers to see the relief." />
+                    "Toggle 3D terrain on any style using a preset or custom raster-dem source. Enable terrain, then navigate to the source's coverage (e.g. the Alps) and tilt with two fingers to see the relief." />
+
+                <Label Text="Style:" FontAttributes="Bold" />
+                <Picker x:Name="StylePicker" SelectedIndexChanged="OnStyleChanged" />
+
+                <Label Text="Terrain source:" FontAttributes="Bold" />
+                <Picker x:Name="TerrainPicker" />
+                <Entry x:Name="CustomTerrainEntry"
+                       Placeholder="…or paste a custom tilejson/tiles URL (overrides the picker)"
+                       Keyboard="Url" />
 
                 <Button x:Name="ToggleButton"
                         Text="Enable 3D Terrain"
