@@ -107,10 +107,15 @@ public static partial class NativeMethods
         IntPtr userdata);
 
     // ── Diagnostics ───────────────────────────────────────────────────────────
-    /// <summary>Returns a thread-local string describing the most recent non-OK status.</summary>
+    // Native returns s_last_error.c_str() from a thread_local std::string it owns —
+    // marshalling the return as `string` would free that pointer (FreeCoTaskMem) and
+    // corrupt the heap. Return the raw pointer and copy it without freeing.
     [LibraryImport(Lib, EntryPoint = "mbgl_get_last_error")]
-    [return: MarshalAs(UnmanagedType.LPUTF8Str)]
-    public static partial string GetLastError();
+    private static partial IntPtr GetLastErrorPtr();
+
+    /// <summary>Returns a thread-local string describing the most recent non-OK status.</summary>
+    public static string GetLastError()
+        => Marshal.PtrToStringUTF8(GetLastErrorPtr()) ?? string.Empty;
 
     /// <summary>Install a process-global log callback. Pass null to restore default logging.</summary>
     [LibraryImport(Lib, EntryPoint = "mbgl_install_log_callback")]
@@ -137,10 +142,16 @@ public static partial class NativeMethods
     public static partial MbglStatus RunLoopRunOnce(IntPtr rl);
 
     // ── Render backend ────────────────────────────────────────────────────────
-    /// <summary>Returns the renderer this native build uses: "opengl", "vulkan", or "metal".</summary>
+    // The native returns a pointer to a STATIC string literal it owns. Marshalling the
+    // return as a `string` makes the generated marshaller free that pointer with
+    // FreeCoTaskMem, which corrupts the heap (0xC0000374 on the first call at startup).
+    // Return the raw pointer and copy it without freeing.
     [LibraryImport(Lib, EntryPoint = "mbgl_get_render_backend")]
-    [return: MarshalAs(UnmanagedType.LPUTF8Str)]
-    public static partial string GetRenderBackend();
+    private static partial IntPtr GetRenderBackendPtr();
+
+    /// <summary>Returns the renderer this native build uses: "opengl", "vulkan", or "metal".</summary>
+    public static string GetRenderBackend()
+        => Marshal.PtrToStringUTF8(GetRenderBackendPtr()) ?? "opengl";
 
     // ── Frontend ──────────────────────────────────────────────────────────────
     /// <summary>Backend-agnostic frontend factory (surface_handle meaning depends on backend).</summary>
