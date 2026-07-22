@@ -16,6 +16,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stddef.h>  /* size_t */
 
 #ifdef __cplusplus
 extern "C" {
@@ -139,7 +140,30 @@ MLN_CABI_API mbgl_runloop_t* mbgl_runloop_create(void) MLN_CABI_NOEXCEPT;
 MLN_CABI_API mbgl_status_t   mbgl_runloop_destroy(mbgl_runloop_t* rl) MLN_CABI_NOEXCEPT;
 MLN_CABI_API mbgl_status_t   mbgl_runloop_run_once(mbgl_runloop_t* rl) MLN_CABI_NOEXCEPT;
 
+/* ── Render backend ────────────────────────────────────────────────────────── */
+/** Returns the renderer this build of mln-cabi was compiled against:
+ *  "opengl", "vulkan", or "metal". Never NULL. Lets the (shared) managed layer
+ *  pick the correct surface handshake at runtime — the GL and Vulkan packages
+ *  ship the same C# but different native libraries under the same name. */
+MLN_CABI_API const char* mbgl_get_render_backend(void) MLN_CABI_NOEXCEPT;
+
 /* ── Frontend ──────────────────────────────────────────────────────────────── */
+/** Backend-agnostic frontend factory. The meaning of surface_handle depends on
+ *  the compiled backend and platform:
+ *    OpenGL  (Windows): HDC              + gl_context = HGLRC
+ *    Vulkan  (Windows): ignored (offscreen render + read-back via mbgl_frontend_read_pixels)
+ *    Vulkan/GL (Android): ANativeWindow* + gl_context = NULL
+ *    Metal/Vulkan (Apple): NULL          + gl_context = NULL (view is created internally;
+ *                                          retrieve it via mbgl_frontend_get_native_view) */
+MLN_CABI_API mbgl_frontend_t* mbgl_frontend_create(
+    void*          surface_handle,
+    void*          gl_context,
+    int            width_px,
+    int            height_px,
+    float          pixel_ratio,
+    mbgl_render_fn render_callback,
+    void*          render_userdata) MLN_CABI_NOEXCEPT;
+/** Deprecated alias for mbgl_frontend_create, kept for ABI/source compatibility. */
 MLN_CABI_API mbgl_frontend_t* mbgl_frontend_create_gl(
     void*          surface_handle,
     void*          gl_context,
@@ -152,6 +176,14 @@ MLN_CABI_API mbgl_status_t    mbgl_frontend_destroy(mbgl_frontend_t* fe) MLN_CAB
 MLN_CABI_API mbgl_status_t    mbgl_frontend_render(mbgl_frontend_t* fe) MLN_CABI_NOEXCEPT;
 MLN_CABI_API mbgl_status_t    mbgl_frontend_set_size(mbgl_frontend_t* fe, int width_px, int height_px) MLN_CABI_NOEXCEPT;
 MLN_CABI_API void*            mbgl_frontend_get_native_view(mbgl_frontend_t* fe) MLN_CABI_NOEXCEPT;
+/** Copies the most recently rendered frame as tightly-packed premultiplied RGBA
+ *  (width*height*4 bytes, top-down) into out_buf. Used by the offscreen (Vulkan
+ *  Windows) path to blit into the in-tree bitmap surface. Returns MBGL_UNSUPPORTED
+ *  for frontends that present directly (GL Windows read back GL-side; Android/Apple
+ *  present to their own surface/view). buf_len must be >= width*height*4. */
+MLN_CABI_API mbgl_status_t    mbgl_frontend_read_pixels(mbgl_frontend_t* fe,
+                                                        uint8_t* out_buf,
+                                                        size_t   buf_len) MLN_CABI_NOEXCEPT;
 
 /* ── Map ───────────────────────────────────────────────────────────────────── */
 MLN_CABI_API mbgl_map_t*     mbgl_map_create(
@@ -555,6 +587,23 @@ MLN_CABI_API mbgl_status_t   mbgl_style_add_source_json(mbgl_style_t* st,
 MLN_CABI_API mbgl_layer_t*   mbgl_style_add_layer_json(mbgl_style_t* st,
                                                          const char* layer_json,
                                                          const char* before_id) MLN_CABI_NOEXCEPT;
+
+/* ── Style – 3D terrain ──────────────────────────────────────────────────────
+ *
+ * Terrain is a style root property, not a source or layer: it drapes the map
+ * over elevation from an existing raster-dem source. Add that source first with
+ * mbgl_style_add_source_json (or include it in the style JSON); it may be the
+ * same source a hillshade layer uses. */
+/** Enable 3D terrain from an existing raster-dem source.
+ *  @param source_id     ID of a raster-dem source already in the style.
+ *  @param exaggeration  Vertical exaggeration multiplier (1.0 = true scale). */
+MLN_CABI_API mbgl_status_t   mbgl_style_set_terrain(mbgl_style_t* st,
+                                                     const char* source_id,
+                                                     float exaggeration) MLN_CABI_NOEXCEPT;
+/** Disable 3D terrain (the map renders flat again). */
+MLN_CABI_API mbgl_status_t   mbgl_style_remove_terrain(mbgl_style_t* st) MLN_CABI_NOEXCEPT;
+/** Returns 1 when 3D terrain is currently enabled, 0 otherwise. */
+MLN_CABI_API int             mbgl_style_is_terrain_enabled(mbgl_style_t* st) MLN_CABI_NOEXCEPT;
 
 /* ── Offline regions + ambient cache ─────────────────────────────────────────
  *

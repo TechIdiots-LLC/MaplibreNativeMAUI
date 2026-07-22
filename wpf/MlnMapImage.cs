@@ -98,6 +98,52 @@ public partial class MlnMapImage : Grid
                     m._attrBorder.Visibility = (bool)e.NewValue ? Visibility.Visible : Visibility.Collapsed;
             }));
 
+    /// <summary>
+    /// Show an on-map 3D-terrain toggle button (like the navigation and GPS controls).
+    /// Clicking it toggles terrain on <see cref="TerrainControlSourceId"/>: enable if off,
+    /// disable if on — mirroring maplibre-gl-js's TerrainControl. The raster-dem source must
+    /// already exist in the style; the control does not add sources or hillshade. Default <c>false</c>.
+    /// </summary>
+    public bool ShowTerrainControl
+    {
+        get => (bool)GetValue(ShowTerrainControlProperty);
+        set => SetValue(ShowTerrainControlProperty, value);
+    }
+    public static readonly DependencyProperty ShowTerrainControlProperty =
+        DependencyProperty.Register(nameof(ShowTerrainControl), typeof(bool), typeof(MlnMapImage),
+            new PropertyMetadata(false, (d, e) =>
+            {
+                if (d is MlnMapImage m && m._terrainPanel != null)
+                {
+                    m._terrainPanel.Visibility = (bool)e.NewValue ? Visibility.Visible : Visibility.Collapsed;
+                    m.RepositionControls();
+                }
+            }));
+
+    /// <summary>
+    /// ID of the raster-dem source the terrain control toggles. Must already be in the style.
+    /// Defaults to app-specific <c>"mln-terrain-dem"</c> (not a generic name like "terrain")
+    /// so it does not collide with a real style source; set it to your dem source id.
+    /// </summary>
+    public string TerrainControlSourceId
+    {
+        get => (string)GetValue(TerrainControlSourceIdProperty);
+        set => SetValue(TerrainControlSourceIdProperty, value);
+    }
+    public static readonly DependencyProperty TerrainControlSourceIdProperty =
+        DependencyProperty.Register(nameof(TerrainControlSourceId), typeof(string), typeof(MlnMapImage),
+            new PropertyMetadata("mln-terrain-dem"));
+
+    /// <summary>Vertical exaggeration the terrain control applies when enabling terrain. Default <c>1.0</c>.</summary>
+    public float TerrainControlExaggeration
+    {
+        get => (float)GetValue(TerrainControlExaggerationProperty);
+        set => SetValue(TerrainControlExaggerationProperty, value);
+    }
+    public static readonly DependencyProperty TerrainControlExaggerationProperty =
+        DependencyProperty.Register(nameof(TerrainControlExaggeration), typeof(float), typeof(MlnMapImage),
+            new PropertyMetadata(1.0f));
+
     public bool ShowNavigationControls
     {
         get => (bool)GetValue(ShowNavigationControlsProperty);
@@ -140,6 +186,16 @@ public partial class MlnMapImage : Grid
     public static readonly DependencyProperty AttributionControlPositionProperty =
         DependencyProperty.Register(nameof(AttributionControlPosition), typeof(MapControlCorner), typeof(MlnMapImage),
             new PropertyMetadata(MapControlCorner.BottomLeft, OnControlPositionChanged));
+
+    /// <summary>Corner the terrain control is anchored to. Default <see cref="MapControlCorner.TopRight"/>.</summary>
+    public MapControlCorner TerrainControlPosition
+    {
+        get => (MapControlCorner)GetValue(TerrainControlPositionProperty);
+        set => SetValue(TerrainControlPositionProperty, value);
+    }
+    public static readonly DependencyProperty TerrainControlPositionProperty =
+        DependencyProperty.Register(nameof(TerrainControlPosition), typeof(MapControlCorner), typeof(MlnMapImage),
+            new PropertyMetadata(MapControlCorner.TopRight, OnControlPositionChanged));
 
     private static void OnControlPositionChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
@@ -237,6 +293,9 @@ public partial class MlnMapImage : Grid
     private DispatcherTimer? _renderTimer;
 
     private bool _initialized, _renderNeedsUpdate = true, _styleReady;
+    // Vulkan builds render off-screen (headless) and read pixels back through the
+    // frontend; OpenGL builds render into a WGL FBO and read back via glReadPixels.
+    private static readonly bool _vulkan = MbglFrontend.RenderBackend == MbglRenderBackend.Vulkan;
     private float _dpi = 1f;
     private int _physW = 1, _physH = 1;
 
@@ -256,11 +315,13 @@ public partial class MlnMapImage : Grid
         // is resolved first for every TextBlock in this subtree.
         Resources.Add(typeof(TextBlock), new Style(typeof(TextBlock)));
 
-        // GL renders bottom-left origin; WPF WriteableBitmap is top-left → flip vertically.
+        // GL renders bottom-left origin so it flips vertically; the Vulkan headless
+        // read-back is already top-down, so no flip there.
         _image.RenderTransformOrigin = new Point(0.5, 0.5);
-        _image.RenderTransform = new ScaleTransform(1, -1);
+        _image.RenderTransform = new ScaleTransform(1, _vulkan ? 1 : -1);
         Children.Add(_image);
 
+        BuildTerrainOverlay();
         BuildNavOverlay();
         BuildGpsOverlay();
         BuildAttributionOverlay();
@@ -284,9 +345,13 @@ public partial class MlnMapImage : Grid
         _physW = Math.Max(1, (int)Math.Round(ActualWidth * _dpi));
         _physH = Math.Max(1, (int)Math.Round(ActualHeight * _dpi));
 
-        _interop = new HiddenWglContext();
-        _interop.Initialize();
-        _interop.Resize(_physW, _physH);
+        if (!_vulkan)
+        {
+            // OpenGL: off-screen WGL context we glReadPixels from each frame.
+            _interop = new HiddenWglContext();
+            _interop.Initialize();
+            _interop.Resize(_physW, _physH);
+        }
         CreateBitmap(_physW, _physH);
 
         // UiScale multiplies only the style-unit pixel ratio (text/icon/circle/line
@@ -294,8 +359,13 @@ public partial class MlnMapImage : Grid
         float pixelRatio = _dpi * (float)UiScale;
 
         _runLoop = new MbglRunLoop();
-        _frontend = new MbglFrontend(_interop.Hdc, _interop.GlContext, _physW, _physH, pixelRatio,
-            () => _renderNeedsUpdate = true);
+        // Vulkan renders headless (no surface handle); OpenGL needs the WGL HDC + context.
+        // pixelRatio (= _dpi * UiScale) scales style-unit sizes; the surface dims above stay physical.
+        _frontend = _vulkan
+            ? new MbglFrontend(IntPtr.Zero, IntPtr.Zero, _physW, _physH, pixelRatio,
+                () => _renderNeedsUpdate = true)
+            : new MbglFrontend(_interop!.Hdc, _interop.GlContext, _physW, _physH, pixelRatio,
+                () => _renderNeedsUpdate = true);
         // Persistent tile/resource cache (mbgl's default is :memory:), shared
         // with MbglOfflineManager via MbglCache.DefaultPath.
         _map = new MbglMap(_frontend, _runLoop, cachePath: MbglCache.DefaultPath,
@@ -319,15 +389,14 @@ public partial class MlnMapImage : Grid
 
     private void UpdateSize()
     {
-        if (!_initialized || _interop == null || _map == null || _frontend == null) return;
+        if (!_initialized || _map == null || _frontend == null) return;
         if (ActualWidth < 1 || ActualHeight < 1) return;
         _dpi = (float)GetDpiScale();
         int w = Math.Max(1, (int)Math.Round(ActualWidth * _dpi));
         int h = Math.Max(1, (int)Math.Round(ActualHeight * _dpi));
         if (w == _physW && h == _physH) return;
         _physW = w; _physH = h;
-        _interop.MakeCurrent();
-        _interop.Resize(w, h);
+        if (_interop != null) { _interop.MakeCurrent(); _interop.Resize(w, h); }  // OpenGL only
         CreateBitmap(w, h);
         _frontend.SetSize(w, h);
         _map.SetSize(w, h);
@@ -344,18 +413,47 @@ public partial class MlnMapImage : Grid
     private void OnRenderTick(object? sender, EventArgs e)
     {
         _runLoop?.RunOnce();
-        if (!_renderNeedsUpdate || _interop == null || _frontend == null || _bitmap == null) return;
+        if (!_renderNeedsUpdate || _frontend == null || _bitmap == null) return;
         _renderNeedsUpdate = false;
 
-        _interop.MakeCurrent();
-        glViewport(0, 0, _interop.Width, _interop.Height);
-        try { _frontend.Render(); } catch { return; /* swallow per-frame render faults */ }
+        if (_vulkan)
+        {
+            // Headless Vulkan: render off-screen, then copy the frame into the bitmap.
+            try { _frontend.Render(); } catch { return; /* swallow per-frame render faults */ }
+            _bitmap.Lock();
+            _frontend.ReadPixels(_bitmap.BackBuffer, (nuint)((long)_physW * _physH * 4));
+            _bitmap.AddDirtyRect(new Int32Rect(0, 0, _physW, _physH));
+            _bitmap.Unlock();
+        }
+        else
+        {
+            if (_interop == null) return;
+            _interop.MakeCurrent();
+            glViewport(0, 0, _interop.Width, _interop.Height);
+            try { _frontend.Render(); } catch { return; /* swallow per-frame render faults */ }
 
-        // Read pixels (GL bottom-left → WPF top-left; _image has ScaleTransform(1,-1) to compensate).
-        _bitmap.Lock();
-        _interop.ReadPixels(_bitmap.BackBuffer);
-        _bitmap.AddDirtyRect(new Int32Rect(0, 0, _physW, _physH));
-        _bitmap.Unlock();
+            // Read pixels (GL bottom-left → WPF top-left; _image has ScaleTransform(1,-1) to compensate).
+            _bitmap.Lock();
+            _interop.ReadPixels(_bitmap.BackBuffer);
+            _bitmap.AddDirtyRect(new Int32Rect(0, 0, _physW, _physH));
+            _bitmap.Unlock();
+        }
+    }
+
+    /// <summary>
+    /// Returns a frozen copy of the current rendered frame (BGRA32), or null if no
+    /// frame has been produced yet. Test/diagnostic hook — lets a headless harness
+    /// inspect what the map actually drew (e.g. to verify terrain draping changes
+    /// the output). The GL framebuffer is bottom-left origin, so the returned image
+    /// is vertically flipped relative to on-screen (the live view applies a
+    /// ScaleTransform(1,-1) to compensate); pixel content/statistics are unaffected.
+    /// </summary>
+    public BitmapSource? SnapshotBitmap()
+    {
+        if (_bitmap == null) return null;
+        var clone = _bitmap.Clone();
+        clone.Freeze();
+        return clone;
     }
 
     // ── Camera API ────────────────────────────────────────────────────────────
@@ -527,6 +625,36 @@ public partial class MlnMapImage : Grid
         _renderNeedsUpdate = true;
     }
 
+    // ── 3D terrain ────────────────────────────────────────────────────────────
+
+    /// <summary>Enables 3D terrain from an existing raster-dem source in the style.</summary>
+    public void SetTerrain(string sourceId, float exaggeration = 1.0f)
+    {
+        if (_style == null) return;
+        _style.SetTerrain(sourceId, exaggeration);
+        _renderNeedsUpdate = true;
+    }
+
+    /// <summary>Disables 3D terrain; the map renders flat again.</summary>
+    public void RemoveTerrain()
+    {
+        if (_style == null) return;
+        _style.RemoveTerrain();
+        _renderNeedsUpdate = true;
+    }
+
+    /// <summary>Turns 3D terrain on if it is off, or off if it is on.</summary>
+    public void ToggleTerrain(string sourceId, float exaggeration = 1.0f)
+    {
+        if (_style == null) return;
+        if (_style.IsTerrainEnabled) _style.RemoveTerrain();
+        else _style.SetTerrain(sourceId, exaggeration);
+        _renderNeedsUpdate = true;
+    }
+
+    /// <summary>Whether 3D terrain is currently enabled.</summary>
+    public bool IsTerrainEnabled => _style != null && _style.IsTerrainEnabled;
+
     public void AddRasterSource(string sourceId, string url, int tileSize = 512)
     {
         if (_style == null) return;
@@ -632,6 +760,20 @@ public partial class MlnMapImage : Grid
         if (minZoom > 0) layer.SetMinZoom(minZoom);
         if (maxZoom > 0) layer.SetMaxZoom(maxZoom);
         if (sourceLayer != null) layer.SetSourceLayer(sourceLayer);
+        _renderNeedsUpdate = true;
+    }
+
+    /// <summary>
+    /// Adds a hillshade layer over a raster-dem source. Terrain draping displaces
+    /// map geometry by DEM height but that is nearly invisible over flat-coloured
+    /// fills; a hillshade layer from the same DEM shades the relief so 3D terrain
+    /// reads clearly. No-op if the layer already exists or there is no style.
+    /// </summary>
+    public void AddHillshadeLayer(string layerName, string sourceName, string? belowLayerId = null)
+    {
+        if (_style == null) return;
+        if (_style.HasLayer(layerName)) return;
+        _style.AddHillshadeLayer(layerName, sourceName, belowLayerId);
         _renderNeedsUpdate = true;
     }
 
@@ -964,18 +1106,33 @@ public partial class MlnMapImage : Grid
     private const double NavDpadH            = 29;          // round d-pad height (square with panel width)
     private const double NavPanelH           = NavDpadH + 29 * 2 + 2;  // d-pad + 2 zoom buttons + 2 separator px
     private const double GpsPanelH           = 29 * 2 + 1;  // 2 buttons + 1 separator
+    private const double TerrainPanelH       = 30;          // single toggle button
 
     private void RepositionControls()
     {
+        // Terrain sits at the top of its corner column (above navigation), so it anchors
+        // at offset 0; nav and GPS shift inward by the visible controls stacked above them.
+        bool terrainVis = ShowTerrainControl && _terrainPanel?.Visibility == Visibility.Visible;
+
+        if (_terrainPanel != null)
+            ApplyCorner(_terrainPanel, TerrainControlPosition, 0);
+
         if (_navPanel != null)
-            ApplyCorner(_navPanel, NavigationControlPosition, 0);
+        {
+            double off = terrainVis && NavigationControlPosition == TerrainControlPosition
+                ? TerrainPanelH + ControlStackGap : 0;
+            ApplyCorner(_navPanel, NavigationControlPosition, off);
+        }
 
         if (_gpsPanel != null)
         {
-            // Stack the GPS panel inward from the nav panel when they share a corner.
-            bool sharesNav = ShowNavigationControls && _navPanel?.Visibility == Visibility.Visible
-                             && GpsControlPosition == NavigationControlPosition;
-            double off = sharesNav ? NavPanelH + ControlStackGap : 0;
+            // Stack the GPS panel inward from the terrain + nav panels when they share a corner.
+            double off = 0;
+            if (terrainVis && GpsControlPosition == TerrainControlPosition)
+                off += TerrainPanelH + ControlStackGap;
+            if (ShowNavigationControls && _navPanel?.Visibility == Visibility.Visible
+                && GpsControlPosition == NavigationControlPosition)
+                off += NavPanelH + ControlStackGap;
             ApplyCorner(_gpsPanel, GpsControlPosition, off);
         }
 
@@ -1015,6 +1172,7 @@ public partial class MlnMapImage : Grid
                     if (_pendingLocInd.HasValue) ApplyPendingLocationIndicator();
                     RefreshAttribution();
                     RebuildItemsLayer();
+                    RefreshTerrainButton();   // terrain state resets with the new style
                     StyleLoaded?.Invoke(this, EventArgs.Empty);
                 });
                 break;
@@ -1325,6 +1483,65 @@ public partial class MlnMapImage : Grid
         _gpsPanel.Children.Add(_gpsBtnTracking);
         _gpsPanel.Children.Add(_gpsBtnBearing);
         Children.Add(_gpsPanel);
+    }
+
+    private StackPanel? _terrainPanel;
+    private TextBlock? _terrainIcon;
+    private Border? _terrainBtn;
+
+    private void BuildTerrainOverlay()
+    {
+        _terrainPanel = new StackPanel
+        {
+            Width = NavPanelW,
+            Visibility = ShowTerrainControl ? Visibility.Visible : Visibility.Collapsed,
+        };
+        _terrainIcon = new TextBlock
+        {
+            Text = "⛰",
+            FontSize = 15,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        _terrainBtn = MakeSoloButton(_terrainIcon, ToggleTerrainControl);
+        _terrainPanel.Children.Add(_terrainBtn);
+        Children.Add(_terrainPanel);
+        RefreshTerrainButton();
+    }
+
+    /// <summary>Toggles terrain on the configured source (enable if off, disable if on), then refreshes the button.</summary>
+    private void ToggleTerrainControl()
+    {
+        ToggleTerrain(TerrainControlSourceId, TerrainControlExaggeration);
+        RefreshTerrainButton();
+    }
+
+    /// <summary>Colours the terrain button to reflect whether terrain is currently enabled.</summary>
+    private void RefreshTerrainButton()
+    {
+        if (_terrainIcon == null || _terrainBtn == null) return;
+        bool on = IsTerrainEnabled;
+        _terrainIcon.Foreground = new SolidColorBrush(on ? Color.FromRgb(0x00, 0x70, 0xC5) : Color.FromRgb(0x55, 0x55, 0x55));
+        _terrainBtn.Background = on ? new SolidColorBrush(Color.FromRgb(0xE3, 0xF2, 0xFF)) : Brushes.White;
+        _terrainBtn.ToolTip = on ? "Disable 3D terrain" : "Enable 3D terrain";
+    }
+
+    // A standalone rounded icon button (all four corners), for single-button panels.
+    private static Border MakeSoloButton(TextBlock icon, Action onClick)
+    {
+        var b = new Border
+        {
+            Height = 30,
+            Background = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.FromRgb(218, 218, 218)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Cursor = Cursors.Hand,
+            Child = icon,
+        };
+        b.MouseLeftButtonUp += (_, e) => { onClick(); e.Handled = true; };
+        return b;
     }
 
     private static Border MakeIconButton(TextBlock icon, Action onClick, bool top)

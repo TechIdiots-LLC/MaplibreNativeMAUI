@@ -163,18 +163,123 @@ PlatformFrontend* createPlatformFrontend(
     );
 }
 
-#else  // non-OpenGL build (e.g. Vulkan) — stub until a Vulkan frontend is implemented
+#else  // Vulkan build — offscreen (headless) render + CPU read-back into the in-tree bitmap
 
-#include <stdexcept>
+#include "null_map_observer.hpp"
+
+#include <mbgl/vulkan/headless_backend.hpp>
+#include <mbgl/renderer/renderer.hpp>
+#include <mbgl/renderer/update_parameters.hpp>
+#include <mbgl/gfx/backend_scope.hpp>
+#include <mbgl/util/image.hpp>
+
+#include <cstring>
+#include <memory>
+#include <mutex>
+#include <vector>
+#include <fstream>
+#include <string>
+
+// Lifecycle tracing to localise the Vulkan-Windows crash. Writes (and flushes) each
+// step to %TEMP%\mln_vulkan_diag.log so the last line survives a hard crash. Cheap;
+// remove once the offscreen path is stable.
+static void VkDiag(const char* msg) {
+    char dir[MAX_PATH];
+    DWORD n = GetTempPathA(MAX_PATH, dir);
+    try {
+        std::ofstream f(std::string(dir, n) + "mln_vulkan_diag.log", std::ios::app);
+        f << msg << "\n";
+    } catch (...) { /* ignore */ }
+}
+
+/* Offscreen Vulkan frontend. There is no HWND / window surface: the map renders
+ * into a headless color texture and the managed layer pulls the pixels back via
+ * mbgl_frontend_read_pixels() and blits them into the WriteableBitmap. Same
+ * airspace-free, in-tree model as the WGL path (which reads back GL-side). */
+class VulkanOffscreenFrontend : public PlatformFrontend {
+public:
+    VulkanOffscreenFrontend(mbgl::Size sz, float pixelRatio, mbgl_render_fn cb, void* ud)
+        : _size(sz)
+        , _backend(sz, mbgl::gfx::Renderable::SwapBehaviour::NoFlush, mbgl::gfx::ContextMode::Unique)
+        , _renderer(std::make_unique<mbgl::Renderer>(_backend, pixelRatio))
+        , _renderCb(cb), _renderUd(ud)
+    { VkDiag("ctor: backend+renderer constructed"); }
+
+    ~VulkanOffscreenFrontend() override {
+        VkDiag("dtor: begin");
+        mbgl::gfx::BackendScope guard(_backend, mbgl::gfx::BackendScope::ScopeType::Implicit);
+        _renderer.reset();
+        VkDiag("dtor: end");
+    }
+
+    /* RendererFrontend */
+    void reset() override { _renderer.reset(); }
+    void setObserver(mbgl::RendererObserver& obs) override { _renderer->setObserver(&obs); }
+    void update(std::shared_ptr<mbgl::UpdateParameters> params) override {
+        VkDiag("update");
+        { std::unique_lock<std::mutex> lock(_mutex); _updateParams = std::move(params); }
+        if (_renderCb) _renderCb(_renderUd);
+    }
+    const mbgl::TaggedScheduler& getThreadPool() const override {
+        return const_cast<mbgl::vulkan::HeadlessBackend&>(_backend).getThreadPool();
+    }
+
+    /* PlatformFrontend */
+    void render() override {
+        std::shared_ptr<mbgl::UpdateParameters> params;
+        { std::unique_lock<std::mutex> lock(_mutex); params = std::move(_updateParams); }
+        if (!params) return;
+        // Default (Explicit) scope: the headless backend's activate() creates its impl
+        // and validates the Vulkan context — Implicit would skip that. Read the frame
+        // back inside the SAME scope, while the just-rendered image + context are still
+        // live; reading it in a separate scope tears frame resources down first and
+        // corrupts the heap. readStillImage() waits for the frame and copies the image.
+        VkDiag("render: begin");
+        mbgl::gfx::BackendScope guard(_backend);
+        _renderer->render(params);
+        VkDiag("render: renderer->render done");
+        try {
+            mbgl::PremultipliedImage img = _backend.readStillImage();
+            VkDiag("render: readStillImage done");
+            _lastImage.assign(img.data.get(), img.data.get() + img.bytes());
+            VkDiag("render: cached frame");
+        } catch (...) { VkDiag("render: readStillImage threw"); }
+        VkDiag("render: end");
+    }
+
+    void setSize(mbgl::Size sz) override { VkDiag("setSize"); _size = sz; _backend.setSize(sz); }
+    mbgl::Size getSize() const override { return _size; }
+    mbgl::MapObserver& getObserver() override { return _nullObserver; }
+    mbgl::Renderer* getRenderer() override { return _renderer.get(); }
+
+    bool readPixels(uint8_t* out, size_t len) override {
+        const size_t need = static_cast<size_t>(_size.width) * _size.height * 4u;
+        if (!out || len < need || _lastImage.size() < need) return false;
+        std::memcpy(out, _lastImage.data(), need);
+        return true;
+    }
+
+private:
+    mbgl::Size                               _size;
+    mbgl::vulkan::HeadlessBackend            _backend;
+    std::unique_ptr<mbgl::Renderer>          _renderer;
+    std::vector<uint8_t>                     _lastImage;   // most recent frame, RGBA
+    mbgl_render_fn                           _renderCb;
+    void*                                    _renderUd;
+    std::shared_ptr<mbgl::UpdateParameters>  _updateParams;
+    std::mutex                               _mutex;
+    NullMapObserver                          _nullObserver;
+};
 
 PlatformFrontend* createPlatformFrontend(
     void* /*surface_handle*/, void* /*gl_context*/,
-    mbgl::Size /*sz*/, float /*pixelRatio*/,
-    mbgl_render_fn /*renderCb*/, void* /*renderUd*/)
+    mbgl::Size sz, float pixelRatio,
+    mbgl_render_fn renderCb, void* renderUd)
 {
-    throw std::runtime_error(
-        "Windows Vulkan frontend is not yet implemented. "
-        "This build was compiled without MLN_RENDER_BACKEND_OPENGL.");
+    VkDiag("create: begin");
+    auto* fe = new VulkanOffscreenFrontend(sz, pixelRatio, renderCb, renderUd);
+    VkDiag("create: end ok");
+    return fe;
 }
 
 #endif  // MLN_RENDER_BACKEND_OPENGL

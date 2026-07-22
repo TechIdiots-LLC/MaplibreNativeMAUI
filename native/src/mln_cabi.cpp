@@ -20,6 +20,7 @@
 #include <mbgl/style/sources/raster_source.hpp>
 #include <mbgl/style/sources/raster_dem_source.hpp>
 #include <mbgl/style/sources/image_source.hpp>
+#include <mbgl/style/terrain.hpp>
 #include <mbgl/style/layers/fill_layer.hpp>
 #include <mbgl/style/layers/line_layer.hpp>
 #include <mbgl/style/layers/circle_layer.hpp>
@@ -279,7 +280,17 @@ mbgl_status_t mbgl_runloop_run_once(mbgl_runloop_t* rl) noexcept {
 
 /* ─── Frontend ──────────────────────────────────────────────────────────────── */
 
-mbgl_frontend_t* mbgl_frontend_create_gl(
+const char* mbgl_get_render_backend() noexcept {
+#if defined(MLN_RENDER_BACKEND_VULKAN)
+    return "vulkan";
+#elif defined(MLN_RENDER_BACKEND_METAL)
+    return "metal";
+#else
+    return "opengl";
+#endif
+}
+
+mbgl_frontend_t* mbgl_frontend_create(
     void*  surface_handle,
     void*  gl_context,
     int    width_px,
@@ -295,6 +306,19 @@ mbgl_frontend_t* mbgl_frontend_create_gl(
             pixel_ratio,
             render_callback, render_userdata));
     } catch (const std::exception& e) { set_native_error(e); return nullptr; }
+}
+
+mbgl_frontend_t* mbgl_frontend_create_gl(
+    void*  surface_handle,
+    void*  gl_context,
+    int    width_px,
+    int    height_px,
+    float  pixel_ratio,
+    mbgl_render_fn render_callback,
+    void*  render_userdata) noexcept
+{
+    return mbgl_frontend_create(surface_handle, gl_context, width_px, height_px,
+                                pixel_ratio, render_callback, render_userdata);
 }
 
 mbgl_status_t mbgl_frontend_destroy(mbgl_frontend_t* fe) noexcept {
@@ -320,6 +344,15 @@ mbgl_status_t mbgl_frontend_set_size(mbgl_frontend_t* fe, int width_px, int heig
 void* mbgl_frontend_get_native_view(mbgl_frontend_t* fe) noexcept {
     if (!fe) return nullptr;
     return fe_ptr(fe)->getNativeView();
+}
+
+mbgl_status_t mbgl_frontend_read_pixels(mbgl_frontend_t* fe, uint8_t* out_buf, size_t buf_len) noexcept {
+    if (!fe || !out_buf) return set_error(MBGL_INVALID_ARG, "mbgl_frontend_read_pixels: null arg");
+    try {
+        return fe_ptr(fe)->readPixels(out_buf, buf_len)
+            ? MBGL_OK
+            : set_error(MBGL_UNSUPPORTED, "mbgl_frontend_read_pixels: frontend has no CPU read-back");
+    } catch (const std::exception& e) { return set_native_error(e); }
 }
 
 /* ─── Map ───────────────────────────────────────────────────────────────────── */
@@ -1466,6 +1499,31 @@ mbgl_layer_t* mbgl_style_add_layer_json(mbgl_style_t* st,
         else                         style_ref(st).addLayer(std::move(*layer));
         return reinterpret_cast<mbgl_layer_t*>(raw);
     } catch (const std::exception& e) { set_native_error(e); return nullptr; }
+}
+
+/* ─── 3D terrain ────────────────────────────────────────────────────────────── */
+
+mbgl_status_t mbgl_style_set_terrain(mbgl_style_t* st, const char* source_id, float exaggeration) noexcept {
+    if (!st || !source_id) return set_error(MBGL_INVALID_ARG, "mbgl_style_set_terrain: null arg");
+    try {
+        style_ref(st).setTerrain(std::make_unique<mbgl::style::Terrain>(safe_str(source_id), exaggeration));
+        return MBGL_OK;
+    } catch (const std::exception& e) { return set_native_error(e); }
+}
+
+mbgl_status_t mbgl_style_remove_terrain(mbgl_style_t* st) noexcept {
+    if (!st) return set_error(MBGL_INVALID_ARG, "mbgl_style_remove_terrain: null handle");
+    try {
+        style_ref(st).setTerrain(nullptr);
+        return MBGL_OK;
+    } catch (const std::exception& e) { return set_native_error(e); }
+}
+
+int mbgl_style_is_terrain_enabled(mbgl_style_t* st) noexcept {
+    if (!st) return 0;
+    try {
+        return style_ref(st).getTerrain() ? 1 : 0;
+    } catch (const std::exception&) { return 0; }
 }
 
 /* ─── Gesture helpers ───────────────────────────────────────────────────────── */

@@ -107,10 +107,15 @@ public static partial class NativeMethods
         IntPtr userdata);
 
     // ── Diagnostics ───────────────────────────────────────────────────────────
-    /// <summary>Returns a thread-local string describing the most recent non-OK status.</summary>
+    // Native returns s_last_error.c_str() from a thread_local std::string it owns —
+    // marshalling the return as `string` would free that pointer (FreeCoTaskMem) and
+    // corrupt the heap. Return the raw pointer and copy it without freeing.
     [LibraryImport(Lib, EntryPoint = "mbgl_get_last_error")]
-    [return: MarshalAs(UnmanagedType.LPUTF8Str)]
-    public static partial string GetLastError();
+    private static partial IntPtr GetLastErrorPtr();
+
+    /// <summary>Returns a thread-local string describing the most recent non-OK status.</summary>
+    public static string GetLastError()
+        => Marshal.PtrToStringUTF8(GetLastErrorPtr()) ?? string.Empty;
 
     /// <summary>Install a process-global log callback. Pass null to restore default logging.</summary>
     [LibraryImport(Lib, EntryPoint = "mbgl_install_log_callback")]
@@ -136,7 +141,31 @@ public static partial class NativeMethods
     [LibraryImport(Lib, EntryPoint = "mbgl_runloop_run_once")]
     public static partial MbglStatus RunLoopRunOnce(IntPtr rl);
 
+    // ── Render backend ────────────────────────────────────────────────────────
+    // The native returns a pointer to a STATIC string literal it owns. Marshalling the
+    // return as a `string` makes the generated marshaller free that pointer with
+    // FreeCoTaskMem, which corrupts the heap (0xC0000374 on the first call at startup).
+    // Return the raw pointer and copy it without freeing.
+    [LibraryImport(Lib, EntryPoint = "mbgl_get_render_backend")]
+    private static partial IntPtr GetRenderBackendPtr();
+
+    /// <summary>Returns the renderer this native build uses: "opengl", "vulkan", or "metal".</summary>
+    public static string GetRenderBackend()
+        => Marshal.PtrToStringUTF8(GetRenderBackendPtr()) ?? "opengl";
+
     // ── Frontend ──────────────────────────────────────────────────────────────
+    /// <summary>Backend-agnostic frontend factory (surface_handle meaning depends on backend).</summary>
+    [LibraryImport(Lib, EntryPoint = "mbgl_frontend_create")]
+    public static partial IntPtr FrontendCreate(
+        IntPtr surfaceHandle,
+        IntPtr glContext,
+        int    widthPx,
+        int    heightPx,
+        float  pixelRatio,
+        RenderFn renderCallback,
+        IntPtr   renderUserdata);
+
+    /// <summary>Deprecated alias for <see cref="FrontendCreate"/>.</summary>
     [LibraryImport(Lib, EntryPoint = "mbgl_frontend_create_gl")]
     public static partial IntPtr FrontendCreateGl(
         IntPtr surfaceHandle,
@@ -146,6 +175,10 @@ public static partial class NativeMethods
         float  pixelRatio,
         RenderFn renderCallback,
         IntPtr   renderUserdata);
+
+    /// <summary>Copies the last rendered frame as premultiplied RGBA into outBuf (offscreen/Vulkan).</summary>
+    [LibraryImport(Lib, EntryPoint = "mbgl_frontend_read_pixels")]
+    public static partial MbglStatus FrontendReadPixels(IntPtr fe, IntPtr outBuf, nuint bufLen);
 
     [LibraryImport(Lib, EntryPoint = "mbgl_frontend_destroy")]
     public static partial MbglStatus FrontendDestroy(IntPtr fe);
@@ -641,6 +674,17 @@ public static partial class NativeMethods
     [LibraryImport(Lib, EntryPoint = "mbgl_style_add_layer_json",
         StringMarshalling = StringMarshalling.Utf8)]
     public static partial IntPtr StyleAddLayerJson(IntPtr style, string layerJson, string? beforeLayerId);
+
+    // ── Style – 3D terrain ─────────────────────────────────────────────────────
+    [LibraryImport(Lib, EntryPoint = "mbgl_style_set_terrain",
+        StringMarshalling = StringMarshalling.Utf8)]
+    public static partial MbglStatus StyleSetTerrain(IntPtr style, string sourceId, float exaggeration);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_style_remove_terrain")]
+    public static partial MbglStatus StyleRemoveTerrain(IntPtr style);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_style_is_terrain_enabled")]
+    public static partial int StyleIsTerrainEnabled(IntPtr style);
 
 #if ANDROID
     // ── Android ANativeWindow helpers ──────────────────────────────────────────
