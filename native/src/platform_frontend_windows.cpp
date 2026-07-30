@@ -21,6 +21,7 @@
 
 #include <mbgl/gl/renderable_resource.hpp>
 #include <mbgl/gl/renderer_backend.hpp>
+#include <mbgl/gl/context.hpp>
 #include <mbgl/renderer/renderer.hpp>
 #include <mbgl/renderer/update_parameters.hpp>
 #include <mbgl/gfx/backend_scope.hpp>
@@ -44,7 +45,15 @@ class WGLBackend : public mbgl::gl::RendererBackend,
 public:
     WGLBackend(HDC hDC, HGLRC hGLRC, mbgl::Size sz)
         : mbgl::gfx::Renderable(sz, std::make_unique<WGLRenderableResource>(*this))
-        , mbgl::gl::RendererBackend(mbgl::gfx::ContextMode::Shared)
+        // Unique (not Shared): our WGL context is a private off-screen surface, not
+        // actually shared with host-drawn content, so mbgl's own per-frame clear
+        // pass (renderer_impl.cpp's commonClearPass) should run normally. Shared
+        // mode makes mbgl skip that clear entirely (it assumes the host owns
+        // clearing), which left stale pixels from the previous frame on screen
+        // whenever the new frame didn't fully repaint the viewport (e.g. right
+        // after zooming out). We still need the state re-sync Shared mode gave us
+        // for free (see render() below).
+        , mbgl::gl::RendererBackend(mbgl::gfx::ContextMode::Unique)
         , _hDC(hDC), _hGLRC(hGLRC)
     {}
 
@@ -58,21 +67,8 @@ protected:
         return reinterpret_cast<mbgl::gl::ProcAddress>(wglGetProcAddress(name));
     }
     // Re-sync mbgl's cached GL state to match what is actually current on the
-    // context. The host (.NET MAUI/WPF controller) calls glBindFramebuffer(0),
-    // glViewport, glClearColor, and glClear before each Render() call, so we
-    // must tell mbgl to treat those values as unknown.
-    //
-    // Using ContextMode::Shared (above) causes Context::createCommandEncoder()
-    // to call setDirtyState() automatically, which marks ALL GL state (blend,
-    // stencil, program, textures, etc.) as dirty so mbgl re-applies each one
-    // unconditionally. This prevents stale cached state from causing incorrect
-    // rendering of multi-pass effects like hillshade (which is the root cause
-    // of grey/white artifacts in hillshade and color-relief layers).
-    //
-    // We still call assumeFramebufferBinding and assumeViewport here because
-    // setDirtyState() explicitly skips those (see the comment in context.cpp:
-    // "does not set viewport/bindFramebuffer to dirty since they are handled
-    // separately in the view object").
+    // context, since our host toggles other GL contexts current on the same
+    // thread between frames.
     void updateAssumedState() override {
         assumeFramebufferBinding(ImplicitFramebufferBinding);
         assumeViewport(0, 0, size);
@@ -127,6 +123,13 @@ public:
         }
         if (!params) return;
         mbgl::gfx::BackendScope guard(_backend, mbgl::gfx::BackendScope::ScopeType::Implicit);
+        // Mark all cached GL state dirty so mbgl re-applies it unconditionally this
+        // frame, rather than trusting values it cached from a previous frame on a
+        // context another WGL surface may have made current in between. This is
+        // what ContextMode::Shared used to trigger for us automatically via
+        // Context::createCommandEncoder(); doing it explicitly lets the backend use
+        // ContextMode::Unique instead, so mbgl's per-frame clear pass isn't skipped.
+        _backend.getContext<mbgl::gl::Context>().setDirtyState();
         _renderer->render(params);
     }
 
@@ -241,7 +244,21 @@ public:
         try {
             mbgl::PremultipliedImage img = _backend.readStillImage();
             VkDiag("render: readStillImage done");
-            _lastImage.assign(img.data.get(), img.data.get() + img.bytes());
+            // The offscreen color attachment is R8G8B8A8 (see texture2d.cpp), so
+            // readStillImage() hands back RGBA bytes. The managed side blits this
+            // straight into a WPF WriteableBitmap created as Bgra32 (the format the
+            // OpenGL path fills by explicitly requesting GL_BGRA from glReadPixels)
+            // — without swapping R and B here, red and blue channels come out
+            // swapped on screen. Swap in place while copying into the cache.
+            const uint8_t* src = img.data.get();
+            const size_t n = img.bytes();
+            _lastImage.resize(n);
+            for (size_t i = 0; i + 4 <= n; i += 4) {
+                _lastImage[i + 0] = src[i + 2]; // B
+                _lastImage[i + 1] = src[i + 1]; // G
+                _lastImage[i + 2] = src[i + 0]; // R
+                _lastImage[i + 3] = src[i + 3]; // A
+            }
             VkDiag("render: cached frame");
         } catch (...) { VkDiag("render: readStillImage threw"); }
         VkDiag("render: end");

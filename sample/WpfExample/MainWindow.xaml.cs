@@ -193,41 +193,38 @@ public partial class MainWindow : Window
         DdLog("--- RunTerrainSmokeTestAsync start ---");
         string dir = Path.GetDirectoryName(_autoTestLogPath)!;
 
-        // Matterhorn — the Mapterhorn DEM's showcase area; strong relief to drape over.
-        const double lat = 45.976, lon = 7.658;
+        // Replicate the maplibre-native "planet vector" terrain test (TerrainVectorMapActivity):
+        // OpenFreeMap Liberty + Mapterhorn DEM over Innsbruck (the Alps — heavy green
+        // landcover, so opaque fill draping is visible). It works on Android at z12/tilt60;
+        // we test the SAME config on the Windows C ABI, plus a wide flat view, to isolate
+        // whether the opaque-fill drop is zoom-related or platform-related.
+        const double lat = 47.26475, lon = 11.40416; // Innsbruck
         const string demUrl = "https://tiles.mapterhorn.com/tilejson.json";
 
         try
         {
-            // Tilt hard so draping (which displaces geometry by terrain height) is
-            // visually distinct from the flat map. 60° is the pitch cap.
-            MapHost.JumpTo(lat, lon, zoom: 12, bearing: 0, pitch: 60);
-            DdLog($"camera → Matterhorn ({lat},{lon}) z12 pitch60");
-            await Task.Delay(3500); // let base tiles load + a few frames render
-
-            SnapshotTo(Path.Combine(dir, "terrain_before.png"), "before (flat, tilted)");
+            MapHost.StyleUrl = "https://tiles.openfreemap.org/styles/liberty";
+            DdLog("style → OpenFreeMap Liberty");
+            await Task.Delay(5000);
 
             MapHost.AddRasterDemSource(TerrainSourceId, demUrl);
-            DdLog($"AddRasterDemSource({TerrainSourceId}, {demUrl})");
-            // Hillshade from the same DEM so the relief is actually visible — draping
-            // alone displaces geometry but reads as almost nothing over flat fills.
-            MapHost.AddHillshadeLayer("__terrain-hillshade", TerrainSourceId);
-            DdLog("AddHillshadeLayer(__terrain-hillshade) from DEM source");
-            await Task.Delay(2000); // let DEM tilejson + first DEM tiles fetch
+            DdLog("added DEM (no hillshade yet)");
 
-            SnapshotTo(Path.Combine(dir, "terrain_hillshade.png"), "hillshade only (flat, tilted)");
+            MapHost.JumpTo(lat, lon, zoom: 12, bearing: 20, pitch: 60);
+            await Task.Delay(4000);
+            SnapshotTo(Path.Combine(dir, "pv_z12_noterrain.png"), "Innsbruck z12 tilt60, terrain OFF, no hillshade");
 
-            DdLog($"pre-setTerrain IsTerrainEnabled={MapHost.IsTerrainEnabled}");
-            MapHost.ToggleTerrain(TerrainSourceId, 1.5f);
-            DdLog($"post-setTerrain IsTerrainEnabled={MapHost.IsTerrainEnabled} (survived the call)");
-            await Task.Delay(4000); // let DEM tiles load + drape render
-
-            SnapshotTo(Path.Combine(dir, "terrain_after.png"), "after (hillshade + terrain drape, tilted)");
-
-            // Toggle back off to confirm remove-terrain also survives.
+            // (1) Terrain ON with NO hillshade — do the green landcover fills drape on their own?
             MapHost.ToggleTerrain(TerrainSourceId, 1.0f);
-            DdLog($"after remove IsTerrainEnabled={MapHost.IsTerrainEnabled}");
-            await Task.Delay(1500);
+            DdLog($"terrain ON (no hillshade), enabled={MapHost.IsTerrainEnabled}");
+            await Task.Delay(4500);
+            SnapshotTo(Path.Combine(dir, "pv_z12_terrain_nohs.png"), "z12 terrain ON, NO hillshade (fills drape?)");
+
+            // (2) Now add hillshade on top (as the sample does) — does it change the fills?
+            MapHost.AddHillshadeLayer("__terrain-hillshade", TerrainSourceId);
+            DdLog("added hillshade on top");
+            await Task.Delay(3000);
+            SnapshotTo(Path.Combine(dir, "pv_z12_terrain_hs.png"), "z12 terrain ON + hillshade on top");
         }
         catch (Exception ex)
         {
