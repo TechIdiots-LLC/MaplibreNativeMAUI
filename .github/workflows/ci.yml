@@ -93,12 +93,13 @@ jobs:
         run: |
           N=bindings/native
           mkdir -p $N/win-x64 $N/win-arm64
-          mkdir -p $N/android-arm64 $N/android-x64
+          mkdir -p $N/android-arm64 $N/android-arm $N/android-x64
           mkdir -p $N/ios-arm64 $N/iossimulator-arm64 $N/maccatalyst
 
             find native-artifacts/native-windows-x64 -name "mln-cabi.dll" -exec cp {} $N/win-x64/ \;
             find native-artifacts/native-windows-arm64 -name "mln-cabi.dll" -exec cp {} $N/win-arm64/ \;
             find native-artifacts/native-android-arm64-v8a -name "libmln-cabi.so" -exec cp {} $N/android-arm64/ \;
+            find native-artifacts/native-android-armeabi-v7a -name "libmln-cabi.so" -exec cp {} $N/android-arm/ \;
             find native-artifacts/native-android-x86_64 -name "libmln-cabi.so" -exec cp {} $N/android-x64/ \;
             find native-artifacts/native-ios-arm64 -name "libmln-cabi.a" -exec cp {} $N/ios-arm64/ \;
             find native-artifacts/native-iossimulator-arm64 -name "libmln-cabi.a" -exec cp {} $N/iossimulator-arm64/ \;
@@ -442,12 +443,13 @@ jobs:
         run: |
           N=bindings/native-vulkan
           mkdir -p $N/win-x64 $N/win-arm64
-          mkdir -p $N/android-arm64 $N/android-x64
+          mkdir -p $N/android-arm64 $N/android-arm $N/android-x64
           mkdir -p $N/ios-arm64 $N/iossimulator-arm64 $N/maccatalyst
 
           find mln-artifacts/native-mln-windows-x64-vulkan       -name "mln-cabi.dll"    -exec cp {} $N/win-x64/           \; 2>/dev/null || true
           find mln-artifacts/native-mln-windows-arm64-vulkan     -name "mln-cabi.dll"    -exec cp {} $N/win-arm64/         \; 2>/dev/null || true
           find mln-artifacts/native-mln-android-arm64-v8a        -name "libmln-cabi.so"  -exec cp {} $N/android-arm64/     \; 2>/dev/null || true
+          find mln-artifacts/native-mln-android-armeabi-v7a      -name "libmln-cabi.so"  -exec cp {} $N/android-arm/      \; 2>/dev/null || true
           find mln-artifacts/native-mln-android-x86_64           -name "libmln-cabi.so"  -exec cp {} $N/android-x64/      \; 2>/dev/null || true
           find mln-artifacts/native-mln-ios-arm64-vulkan          -name "libmln-cabi.a"   -exec cp {} $N/ios-arm64/          \; 2>/dev/null || true
           find mln-artifacts/native-mln-iossimulator-arm64-vulkan -name "libmln-cabi.a"   -exec cp {} $N/iossimulator-arm64/ \; 2>/dev/null || true

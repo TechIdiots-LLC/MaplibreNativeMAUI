@@ -13,7 +13,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        abi: [arm64-v8a, x86_64]
+        # armeabi-v7a covers 32-bit ARM devices and 64-bit devices running a
+        # 32-bit userland (older/budget tablets); arm64-v8a covers modern ones.
+        abi: [arm64-v8a, armeabi-v7a, x86_64]
 
     steps:
       - name: Enable Git long paths
