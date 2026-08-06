@@ -127,6 +127,14 @@ endif()
 # Preferred: add_subdirectory(maplibre-native) before this or use find_package.
 if(TARGET mbgl-core)
     target_link_libraries(mln-cabi PRIVATE mbgl-core)
+    # mbgl-core links its vendored header-only deps PRIVATE, so their include
+    # directories are not propagated to us. The platform frontends include
+    # headers out of maplibre-native's src/ tree directly (mbgl/gl/context.hpp
+    # -> mbgl/gl/object.hpp -> <unique_resource.hpp>), so we need that one
+    # explicitly.
+    if(TARGET mbgl-vendor-unique_resource)
+        target_link_libraries(mln-cabi PRIVATE mbgl-vendor-unique_resource)
+    endif()
 else()
     message(WARNING "mbgl-core target not found — link maplibre-native before this project")
 endif()
