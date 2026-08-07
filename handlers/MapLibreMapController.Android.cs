@@ -586,7 +586,7 @@ public class MapLibreMapController : IMapLibreMapController
             LayoutParameters = new FrameLayout.LayoutParams(btn, btn),
         };
         grid.AddView(Row(Cell(null, null),               Arrow(ArrowDir.Up, () => PitchBy(10)),  Cell(null, null)));                // ▲ up
-        grid.AddView(Row(Arrow(ArrowDir.Left, () => RotateBy(-15)), Cell(null, ResetNorth),         Arrow(ArrowDir.Right, () => RotateBy(15))));  // ◀ reset ▶
+        grid.AddView(Row(Arrow(ArrowDir.Left, () => RotateBy(-15)), Cell(null, ResetNorthPitch),    Arrow(ArrowDir.Right, () => RotateBy(15))));  // ◀ reset ▶
         grid.AddView(Row(Cell(null, null),               Arrow(ArrowDir.Down, () => PitchBy(-10)), Cell(null, null)));                // ▼ down
         host.AddView(grid);
 
@@ -1047,13 +1047,14 @@ public class MapLibreMapController : IMapLibreMapController
         _map.EaseTo(lat, lon, _map.Zoom + delta, _map.Bearing, _map.Pitch, durationMs: 200);
     }
 
-    private void ResetNorth()
+    /// <summary>Reset the map back to north and flat (bearing 0, pitch 0) — the compass button.</summary>
+    private void ResetNorthPitch()
     {
         if (_map == null) return;
         // A GPS-driven bearing would immediately rotate away from north again — release it.
         if (_gpsBearingMode == GpsBearingMode.GpsBearing) OnUserRotatedMap();
         var (lat, lon) = _map.Center;
-        _map.EaseTo(lat, lon, _map.Zoom, 0, _map.Pitch, durationMs: 200);
+        _map.EaseTo(lat, lon, _map.Zoom, bearing: 0, pitch: 0, durationMs: 200);
     }
 
     /// <summary>Rotate the map by <paramref name="deltaDeg"/> (positive = clockwise).</summary>

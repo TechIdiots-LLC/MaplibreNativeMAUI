@@ -287,7 +287,7 @@ public class MapLibreMapController : IMapLibreMapController
         host.AddSubview(Arrow("\u25BC", () => PitchBy(-10), s / 2,        s - cell / 2)); // ▼ down
         host.AddSubview(Arrow("\u25C0", () => RotateBy(-15), cell / 2,    s / 2));       // ◀ left
         host.AddSubview(Arrow("\u25B6", () => RotateBy(15), s - cell / 2, s / 2));       // ▶ right
-        host.AddSubview(Arrow(null,      ResetNorth,        s / 2,        s / 2));       // centre reset
+        host.AddSubview(Arrow(null,      ResetNorthPitch,   s / 2,        s / 2));       // centre reset
 
         // Hollow compass ring (non-interactive).
         float ring = s * 0.80f;
@@ -681,13 +681,14 @@ public class MapLibreMapController : IMapLibreMapController
         _map.EaseTo(lat, lon, _map.Zoom + delta, _map.Bearing, _map.Pitch, durationMs: 200);
     }
 
-    private void ResetNorth()
+    /// <summary>Reset the map back to north and flat (bearing 0, pitch 0) — the compass button.</summary>
+    private void ResetNorthPitch()
     {
         if (_map == null) return;
         // A GPS-driven bearing would immediately rotate away from north again — release it.
         if (_gpsBearingMode == GpsBearingMode.GpsBearing) OnUserRotatedMap();
         var (lat, lon) = _map.Center;
-        _map.EaseTo(lat, lon, _map.Zoom, 0, _map.Pitch, durationMs: 200);
+        _map.EaseTo(lat, lon, _map.Zoom, bearing: 0, pitch: 0, durationMs: 200);
     }
 
     /// <summary>Rotate the map by <paramref name="deltaDeg"/> (positive = clockwise).</summary>

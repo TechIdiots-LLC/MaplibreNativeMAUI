@@ -94,7 +94,7 @@ public partial class MainWindow : Window
     // whatever style is loaded rather than a dedicated terrain style.
     private static readonly Dictionary<string, string> TerrainSources = new()
     {
-        ["Matterhorn (Mapterhorn)"] = "https://tiles.mapterhorn.com/tilejson.json",
+        ["Mapterhorn"] = "https://tiles.mapterhorn.com/tilejson.json",
     };
 
     // Internal source ID the toggle adds the picked raster-dem under.
@@ -325,7 +325,7 @@ public partial class MainWindow : Window
 
     private void BtnZoomIn_Click(object sender, RoutedEventArgs e)  => MapHost.ZoomIn();
     private void BtnZoomOut_Click(object sender, RoutedEventArgs e) => MapHost.ZoomOut();
-    private void BtnNorth_Click(object sender, RoutedEventArgs e)   => MapHost.ResetNorth();
+    private void BtnNorth_Click(object sender, RoutedEventArgs e)   => MapHost.ResetNorthPitch();
 
     // Hillshade layer id added alongside terrain so the relief is visible — draping
     // displaces geometry by DEM height but reads as almost nothing over flat fills, so

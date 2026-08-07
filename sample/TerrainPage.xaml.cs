@@ -28,7 +28,7 @@ public partial class TerrainPage : ContentPage
     // mirroring how an app might offer preset or custom terrain sources in settings.
     private static readonly Dictionary<string, string> TerrainSources = new()
     {
-        ["Matterhorn (Mapterhorn)"] = "https://tiles.mapterhorn.com/tilejson.json",
+        ["Mapterhorn"] = "https://tiles.mapterhorn.com/tilejson.json",
     };
 
     // Whether the picked DEM source has been added to the currently loaded style.

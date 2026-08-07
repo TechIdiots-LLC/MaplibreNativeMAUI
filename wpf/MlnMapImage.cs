@@ -992,7 +992,7 @@ public partial class MlnMapImage : Grid
 
         Add(MakeDpadArrow("\u25B2", () => PitchBy(10)),  0, 1);  // ▲ up    → more tilt
         Add(MakeDpadArrow("\u25C0", () => RotateBy(-15)), 1, 0);  // ◀ left  → rotate ccw
-        Add(MakeDpadArrow(null,      ResetNorth),         1, 1);  // centre  → reset north
+        Add(MakeDpadArrow(null,      ResetNorthPitch),    1, 1);  // centre  → reset north + pitch
         Add(MakeDpadArrow("\u25B6", () => RotateBy(15)),  1, 2);  // ▶ right → rotate cw
         Add(MakeDpadArrow("\u25BC", () => PitchBy(-10)), 2, 1);  // ▼ down  → less tilt
         root.Children.Add(grid);
@@ -1199,7 +1199,7 @@ public partial class MlnMapImage : Grid
 
     // ── Extra camera helpers ───────────────────────────────────────────────────
 
-    /// <summary>Rotate the map back to north (bearing 0).</summary>
+    /// <summary>Rotate the map back to north (bearing 0), keeping the current pitch.</summary>
     public void ResetNorth()
     {
         if (_map == null) return;
@@ -1207,6 +1207,17 @@ public partial class MlnMapImage : Grid
         if (_gpsBearingMode == GpsBearingMode.GpsBearing) OnUserRotatedMap();
         var (lat, lon) = _map.Center;
         _map.EaseTo(lat, lon, _map.Zoom, bearing: 0, _map.Pitch, durationMs: 300);
+        _renderNeedsUpdate = true;
+    }
+
+    /// <summary>Reset the map back to north and flat (bearing 0, pitch 0) — the compass button.</summary>
+    public void ResetNorthPitch()
+    {
+        if (_map == null) return;
+        // A GPS-driven bearing would immediately rotate away from north again — release it.
+        if (_gpsBearingMode == GpsBearingMode.GpsBearing) OnUserRotatedMap();
+        var (lat, lon) = _map.Center;
+        _map.EaseTo(lat, lon, _map.Zoom, bearing: 0, pitch: 0, durationMs: 300);
         _renderNeedsUpdate = true;
     }
 

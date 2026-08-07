@@ -386,7 +386,7 @@ public class MapLibreMapController : IMapLibreMapController
         void Add(WUX.FrameworkElement el, int row, int col) { WUXC.Grid.SetRow(el, row); WUXC.Grid.SetColumn(el, col); grid.Children.Add(el); }
         Add(MakeDpadArrow("▲", () => PitchBy(10)),  0, 1);  // ▲ up    → more tilt
         Add(MakeDpadArrow("◀", () => RotateBy(-15)), 1, 0);  // ◀ left  → rotate ccw
-        Add(MakeDpadArrow(null,      ResetNorth),         1, 1);  // centre  → reset north
+        Add(MakeDpadArrow(null,      ResetNorthPitch),    1, 1);  // centre  → reset north + pitch
         Add(MakeDpadArrow("▶", () => RotateBy(15)),  1, 2);  // ▶ right → rotate cw
         Add(MakeDpadArrow("▼", () => PitchBy(-10)), 2, 1);  // ▼ down  → less tilt
         root.Children.Add(grid);
@@ -971,17 +971,14 @@ public class MapLibreMapController : IMapLibreMapController
         EaseTo(center.Latitude, center.Longitude, GetZoom() - 1, GetBearing(), GetPitch(), durationMs: 250);
     }
 
-    private void ResetNorth()
+    /// <summary>Reset the map back to north and flat (bearing 0, pitch 0) — the compass button.</summary>
+    private void ResetNorthPitch()
     {
         if (_map == null) return;
         // A GPS-driven bearing would immediately rotate away from north again — release it.
         if (_gpsBearingMode == GpsBearingMode.GpsBearing) OnUserRotatedMap();
         var center = GetCenter();
-        // Match maplibre-gl-js: first click resets bearing to 0 (keeping pitch);
-        // if bearing is already ~0, also reset pitch to 0.
-        double currentBearing = GetBearing();
-        double newPitch = Math.Abs(currentBearing) < 0.5 ? 0 : GetPitch();
-        EaseTo(center.Latitude, center.Longitude, GetZoom(), bearing: 0, pitch: newPitch, durationMs: 300);
+        EaseTo(center.Latitude, center.Longitude, GetZoom(), bearing: 0, pitch: 0, durationMs: 300);
     }
 
     /// <summary>Rotate the map by <paramref name="deltaDeg"/> (positive = clockwise).</summary>
