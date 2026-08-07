@@ -92,9 +92,28 @@ public partial class MainWindow : Window
     // too. This mirrors how a consuming app (e.g. Vistumbler) might offer preset or
     // custom terrain sources in its settings, and lets terrain be toggled on top of
     // whatever style is loaded rather than a dedicated terrain style.
-    private static readonly Dictionary<string, string> TerrainSources = new()
+    /// <summary>
+    /// A preset DEM: either a TileJSON <paramref name="TileJsonUrl"/>, or explicit
+    /// <c>{z}/{x}/{y}</c> templates plus the <paramref name="Encoding"/> they use
+    /// (terrarium DEMs decode differently from the default mapbox encoding).
+    /// </summary>
+    private sealed record TerrainSource(
+        string? TileJsonUrl,
+        string[]? TileUrlTemplates = null,
+        string? Encoding           = null,
+        string? Attribution        = null,
+        int TileSize               = 256,
+        int MaxZoom                = 15);
+
+    private static readonly Dictionary<string, TerrainSource> TerrainSources = new()
     {
-        ["Mapterhorn"] = "https://tiles.mapterhorn.com/tilejson.json",
+        ["Mapterhorn"] = new("https://tiles.mapterhorn.com/tilejson.json"),
+        // AWS Open Data terrain-tiles (Mapzen) — no TileJSON, terrarium-encoded, global to z15.
+        ["AWS Terrarium (Mapzen)"] = new(
+            TileJsonUrl:      null,
+            TileUrlTemplates: ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],
+            Encoding:         "terrarium",
+            Attribution:      "<a href=\"https://registry.opendata.aws/terrain-tiles/\">Open Data</a>"),
     };
 
     // Internal source ID the toggle adds the picked raster-dem under.
@@ -225,6 +244,22 @@ public partial class MainWindow : Window
             DdLog("added hillshade on top");
             await Task.Delay(3000);
             SnapshotTo(Path.Combine(dir, "pv_z12_terrain_hs.png"), "z12 terrain ON + hillshade on top");
+
+            // (3) Same view on the other preset: AWS/Mapzen terrarium tiles, which take the
+            // tile-template + encoding path instead of TileJSON. Relief should look comparable;
+            // a flat or garbage frame means the terrarium encoding did not take.
+            MapHost.RemoveTerrain();
+            MapHost.RemoveLayer("__terrain-hillshade");
+            MapHost.RemoveSource(TerrainSourceId);
+            var terrarium = TerrainSources["AWS Terrarium (Mapzen)"];
+            MapHost.AddRasterDemTilesSource(TerrainSourceId, terrarium.TileUrlTemplates!, terrarium.TileSize,
+                                            minZoom: 0, maxZoom: terrarium.MaxZoom,
+                                            encoding: terrarium.Encoding, attribution: terrarium.Attribution);
+            MapHost.AddHillshadeLayer("__terrain-hillshade", TerrainSourceId);
+            MapHost.SetTerrain(TerrainSourceId, 1.0f);
+            DdLog($"terrarium DEM + hillshade, terrain enabled={MapHost.IsTerrainEnabled}");
+            await Task.Delay(6000);
+            SnapshotTo(Path.Combine(dir, "pv_z12_terrarium_hs.png"), "z12 terrain ON + hillshade, AWS terrarium DEM");
         }
         catch (Exception ex)
         {
@@ -339,11 +374,29 @@ public partial class MainWindow : Window
     private void EnsureTerrainDemAndHillshade()
     {
         if (_terrainDemAdded) return;
-        var url = SelectedTerrainUrl();
-        if (string.IsNullOrWhiteSpace(url)) return;
-        MapHost.AddRasterDemSource(TerrainSourceId, url);
+        var src = SelectedTerrainSource();
+        if (src == null) return;
+        if (src.TileUrlTemplates is { Length: > 0 })
+            MapHost.AddRasterDemTilesSource(TerrainSourceId, src.TileUrlTemplates, src.TileSize,
+                                            minZoom: 0, maxZoom: src.MaxZoom,
+                                            encoding: src.Encoding, attribution: src.Attribution);
+        else if (!string.IsNullOrWhiteSpace(src.TileJsonUrl))
+            MapHost.AddRasterDemSource(TerrainSourceId, src.TileJsonUrl);
+        else
+            return;
         MapHost.AddHillshadeLayer(TerrainHillshadeLayerId, TerrainSourceId);
         _terrainDemAdded = true;
+    }
+
+    // Re-add the DEM under the newly picked source so the terrain control uses it.
+    private void TerrainPicker_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        if (MapHost.IsTerrainEnabled) MapHost.RemoveTerrain();
+        MapHost.RemoveLayer(TerrainHillshadeLayerId);
+        MapHost.RemoveSource(TerrainSourceId);
+        _terrainDemAdded = false;
+        EnsureTerrainDemAndHillshade();
     }
 
     // The toolbar button is the programmatic equivalent of the on-map ⛰ terrain control:
@@ -362,12 +415,14 @@ public partial class MainWindow : Window
             : "3D terrain off.";
     }
 
-    // The selected terrain URL: a preset name maps to its URL; otherwise the typed
-    // text is treated as a custom tilejson/tiles URL.
-    private string SelectedTerrainUrl()
+    // The selected terrain source: a preset name maps to its entry; otherwise the typed
+    // text is a custom URL — a {z}/{x}/{y} template if it looks like one, else TileJSON.
+    private TerrainSource? SelectedTerrainSource()
     {
         var text = TerrainPicker.Text?.Trim() ?? "";
-        return TerrainSources.TryGetValue(text, out var url) ? url : text;
+        if (TerrainSources.TryGetValue(text, out var preset)) return preset;
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        return text.Contains("{z}") ? new TerrainSource(null, [text]) : new TerrainSource(text);
     }
 
     // ── Data-bound pins (ItemsSource of MlnMapMarker) ──────────────────────

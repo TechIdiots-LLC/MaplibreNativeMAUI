@@ -24,11 +24,30 @@ public partial class TerrainPage : ContentPage
         ["OpenFreeMap Bright"]   = "https://tiles.openfreemap.org/styles/bright",
     };
 
+    /// <summary>
+    /// A preset DEM: either a TileJSON <paramref name="TileJsonUrl"/>, or explicit
+    /// <c>{z}/{x}/{y}</c> templates plus the <paramref name="Encoding"/> they use
+    /// (terrarium DEMs decode differently from the default mapbox encoding).
+    /// </summary>
+    private sealed record TerrainSource(
+        string? TileJsonUrl,
+        string[]? TileUrlTemplates = null,
+        string? Encoding           = null,
+        string? Attribution        = null,
+        int TileSize               = 256,
+        int MaxZoom                = 15);
+
     // Preset raster-dem (terrain) sources. The custom-URL entry overrides these,
     // mirroring how an app might offer preset or custom terrain sources in settings.
-    private static readonly Dictionary<string, string> TerrainSources = new()
+    private static readonly Dictionary<string, TerrainSource> TerrainSources = new()
     {
-        ["Mapterhorn"] = "https://tiles.mapterhorn.com/tilejson.json",
+        ["Mapterhorn"] = new("https://tiles.mapterhorn.com/tilejson.json"),
+        // AWS Open Data terrain-tiles (Mapzen) — no TileJSON, terrarium-encoded, global to z15.
+        ["AWS Terrarium (Mapzen)"] = new(
+            TileJsonUrl:      null,
+            TileUrlTemplates: ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],
+            Encoding:         "terrarium",
+            Attribution:      "<a href=\"https://registry.opendata.aws/terrain-tiles/\">Open Data</a>"),
     };
 
     // Whether the picked DEM source has been added to the currently loaded style.
@@ -62,10 +81,11 @@ public partial class TerrainPage : ContentPage
     private void EnsureDemAndHillshade()
     {
         if (_demAdded) return;
-        var url = SelectedTerrainUrl();
-        if (string.IsNullOrWhiteSpace(url)) return;
-        Map.AddRasterDemSource(TerrainSourceId, url, tileUrlTemplates: null,
-                               tileSize: 256, minZoom: 0, maxZoom: 15);
+        var src = SelectedTerrainSource();
+        if (src == null) return;
+        Map.AddRasterDemSource(TerrainSourceId, src.TileJsonUrl, src.TileUrlTemplates,
+                               src.TileSize, minZoom: 0, maxZoom: src.MaxZoom,
+                               encoding: src.Encoding, attribution: src.Attribution);
         Map.AddHillshadeLayer(TerrainHillshadeLayerId, TerrainSourceId);
         _demAdded = true;
     }
@@ -116,13 +136,14 @@ public partial class TerrainPage : ContentPage
             : "Terrain: off";
     }
 
-    // The selected terrain URL: the custom entry wins if non-empty, otherwise the
-    // preset picked in TerrainPicker.
-    private string? SelectedTerrainUrl()
+    // The selected terrain source: the custom entry wins if non-empty (a {z}/{x}/{y}
+    // template if it looks like one, else TileJSON), otherwise the picked preset.
+    private TerrainSource? SelectedTerrainSource()
     {
         var custom = CustomTerrainEntry.Text?.Trim();
-        if (!string.IsNullOrWhiteSpace(custom)) return custom;
-        return TerrainPicker.SelectedItem is string name && TerrainSources.TryGetValue(name, out var url)
-            ? url : null;
+        if (!string.IsNullOrWhiteSpace(custom))
+            return custom.Contains("{z}") ? new TerrainSource(null, [custom]) : new TerrainSource(custom);
+        return TerrainPicker.SelectedItem is string name && TerrainSources.TryGetValue(name, out var preset)
+            ? preset : null;
     }
 }

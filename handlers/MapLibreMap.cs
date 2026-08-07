@@ -431,19 +431,38 @@ public partial class MapLibreMap : StackLayout
         controller.AddImageSource(sourceName, imageUri, coordinates);
     }
 
+    /// <summary>
+    /// Adds a raster source, from either a TileJSON <paramref name="tileUrl"/> or explicit
+    /// <c>{z}/{x}/{y}</c> <paramref name="tileUrlTemplates"/>.
+    /// </summary>
+    /// <param name="attribution">
+    /// Attribution HTML for the source, shown by the attribution control. Only honoured with
+    /// <paramref name="tileUrlTemplates"/>; a TileJSON source carries its own attribution.
+    /// </param>
     public void AddRasterSource(string sourceName, string? tileUrl, string[]? tileUrlTemplates, int tileSize,
-        int minZoom, int maxZoom)
+        int minZoom, int maxZoom, string? attribution = null)
     {
         if (Handler is not MapLibreMapHandler handler) return;
         var controller = handler.Controller;
-        controller.AddRasterSource(sourceName, tileUrl, tileUrlTemplates, tileSize, minZoom, maxZoom);
+        controller.AddRasterSource(sourceName, tileUrl, tileUrlTemplates, tileSize, minZoom, maxZoom, attribution);
     }
 
-    public void AddRasterDemSource(string sourceName, string? tileUrl, string[]? tileUrlTemplates, int tileSize, int minZoom, int maxZoom)
+    /// <summary>
+    /// Adds a raster-dem (elevation) source for terrain/hillshade, from either a TileJSON
+    /// <paramref name="tileUrl"/> or explicit <c>{z}/{x}/{y}</c> <paramref name="tileUrlTemplates"/>.
+    /// </summary>
+    /// <param name="encoding">
+    /// DEM encoding — <c>"terrarium"</c> (AWS/Mapzen terrain-tiles) or <c>"mapbox"</c> (the
+    /// default when null). Only honoured with <paramref name="tileUrlTemplates"/>; a TileJSON
+    /// source declares its own encoding.
+    /// </param>
+    /// <param name="attribution">Attribution HTML for the source, shown by the attribution control.</param>
+    public void AddRasterDemSource(string sourceName, string? tileUrl, string[]? tileUrlTemplates, int tileSize, int minZoom, int maxZoom,
+        string? encoding = null, string? attribution = null)
     {
         if (Handler is not MapLibreMapHandler handler) return;
         var controller = handler.Controller;
-        controller.AddRasterDemSource(sourceName, tileUrl, tileUrlTemplates, tileSize, minZoom, maxZoom);
+        controller.AddRasterDemSource(sourceName, tileUrl, tileUrlTemplates, tileSize, minZoom, maxZoom, encoding, attribution);
     }
 
     /// <summary>
@@ -493,12 +512,20 @@ public partial class MapLibreMap : StackLayout
     public bool IsTerrainEnabled
         => Handler is MapLibreMapHandler handler && handler.Controller.IsTerrainEnabled;
 
+    /// <summary>
+    /// Adds a vector source, from either a TileJSON <paramref name="tileUrl"/> or explicit
+    /// <c>{z}/{x}/{y}</c> <paramref name="tileUrlTemplates"/>.
+    /// </summary>
+    /// <param name="attribution">
+    /// Attribution HTML for the source, shown by the attribution control. Only honoured with
+    /// <paramref name="tileUrlTemplates"/>; a TileJSON source carries its own attribution.
+    /// </param>
     public void AddVectorSource(string sourceName, string? tileUrl, string[]? tileUrlTemplates,
-        int minZoom, int maxZoom)
+        int minZoom, int maxZoom, string? attribution = null)
     {
         if (Handler is not MapLibreMapHandler handler) return;
         var controller = handler.Controller;
-        controller.AddVectorSource(sourceName, tileUrl, tileUrlTemplates, minZoom, maxZoom);
+        controller.AddVectorSource(sourceName, tileUrl, tileUrlTemplates, minZoom, maxZoom, attribution);
     }
 
     public void AddLineLayer(

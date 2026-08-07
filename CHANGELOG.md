@@ -2,10 +2,11 @@
 
 ## master
 ### ✨ Features and improvements
-- _...Add new stuff here..._
+- **Tile-template sources now work, and can declare an attribution** — `AddRasterSource`, `AddRasterDemSource` and `AddVectorSource` (MAUI `MapLibreMap` and all four platform controllers) now actually honour `tileUrlTemplates`, and take a new optional `attribution`. Templates previously fell back to being passed as the TileJSON URL (`tileUrl ?? tileUrlTemplates?.FirstOrDefault()`), so a source declared with `{z}/{x}/{y}` templates — including `<RasterSource TileUrlTemplates="…"/>` in XAML — silently never loaded: the engine fetched the template string as if it were TileJSON. A template source now goes in as source-spec JSON, which is also the only path carrying `attribution` (a TileJSON source reads its own from the fetched metadata, so the argument applies to templates only). `AddRasterDemSource` additionally takes `encoding`: `"terrarium"` (AWS/Mapzen terrain-tiles) decodes differently from the default `"mapbox"`, so a terrarium DEM added without it renders garbage elevation. The declarative `TileSource` view gains an `Attribution` bindable property (inherited by `RasterSource`/`RasterDemSource`/`VectorSource`) and `RasterDemSource` an `Encoding` one; `MbglStyle` and the WPF `MlnMapImage` gain `AddRasterTilesSource`/`AddVectorTilesSource`/`AddRasterDemTilesSource`. No native change — this uses the existing `mbgl_style_add_source_json` entry point.
+- **Sample apps: a second terrain source (AWS Terrarium / Mapzen)** — the terrain-source pickers in the MAUI and WPF samples now offer the [AWS Open Data terrain-tiles](https://registry.opendata.aws/terrain-tiles/) DEM alongside Mapterhorn, demonstrating the terrarium encoding and the tile-template path. Changing the picked source in the WPF sample re-adds the DEM (previously it only took effect on the next style load), and a custom URL containing `{z}` is treated as a tile template rather than TileJSON in both samples. The Mapterhorn preset is now labelled just "Mapterhorn".
 
 ### 🐞 Bug fixes
-- _...Add new stuff here..._
+- **Nav control compass button now resets pitch as well as bearing** — the centre button of the navigation d-pad eased the camera to bearing 0 while passing the *current* pitch straight back in, so a tilted map stayed tilted no matter how many times it was clicked (the WinUI controller had a two-stage variant that needed a second click). All four platforms now ease to bearing 0 **and** pitch 0 in a single animation, via a new `ResetNorthPitch()`; WPF's public `ResetNorth()` keeps its bearing-only behaviour.
 
 ## 4.5.0
 ### ✨ Features and improvements

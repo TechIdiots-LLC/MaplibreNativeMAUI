@@ -49,6 +49,59 @@ public sealed class MbglStyle
         => new(NativeMethods.StyleAddRasterDemSource(Handle, sourceId, url, tileSize));
 
     /// <summary>
+    /// Add a vector source from explicit <c>{z}/{x}/{y}</c> tile URL templates rather than
+    /// a TileJSON URL, optionally with an <paramref name="attribution"/>. A TileJSON source
+    /// carries its own attribution; templates have nowhere else to declare one.
+    /// </summary>
+    public void AddVectorTilesSource(string sourceId, IEnumerable<string> tileUrlTemplates,
+        int minZoom = 0, int maxZoom = 22, string? attribution = null)
+        => AddTileSourceJson("vector", sourceId, tileUrlTemplates, tileSize: null,
+                             minZoom, maxZoom, encoding: null, attribution);
+
+    /// <summary>
+    /// Add a raster source from explicit <c>{z}/{x}/{y}</c> tile URL templates rather than
+    /// a TileJSON URL, optionally with an <paramref name="attribution"/>. A TileJSON source
+    /// carries its own attribution; templates have nowhere else to declare one.
+    /// </summary>
+    public void AddRasterTilesSource(string sourceId, IEnumerable<string> tileUrlTemplates,
+        int tileSize = 512, int minZoom = 0, int maxZoom = 22, string? attribution = null)
+        => AddTileSourceJson("raster", sourceId, tileUrlTemplates, tileSize,
+                             minZoom, maxZoom, encoding: null, attribution);
+
+    /// <summary>
+    /// Add a raster-dem source from explicit <c>{z}/{x}/{y}</c> tile URL templates rather
+    /// than a TileJSON URL. Use this when the DEM has no TileJSON, or when the elevation
+    /// <paramref name="encoding"/> must be declared — <c>"terrarium"</c> (AWS/Mapzen
+    /// terrain-tiles) decodes differently from the default <c>"mapbox"</c> encoding, and
+    /// mis-declaring it renders garbage elevation.
+    /// </summary>
+    /// <param name="attribution">Attribution HTML for the source, shown by the attribution control.</param>
+    public void AddRasterDemTilesSource(string sourceId, IEnumerable<string> tileUrlTemplates,
+        int tileSize = 512, int minZoom = 0, int maxZoom = 15,
+        string? encoding = null, string? attribution = null)
+        => AddTileSourceJson("raster-dem", sourceId, tileUrlTemplates, tileSize,
+                             minZoom, maxZoom, encoding, attribution);
+
+    // Tile-template sources go in as source-spec JSON: the typed C ABI entry points take a
+    // TileJSON URL only, which is a different thing — and `attribution`/`encoding` live in
+    // the TileJSON a template source does not have.
+    private void AddTileSourceJson(string type, string sourceId, IEnumerable<string> tileUrlTemplates,
+        int? tileSize, int minZoom, int maxZoom, string? encoding, string? attribution)
+    {
+        var spec = new Dictionary<string, object?>
+        {
+            ["type"]    = type,
+            ["tiles"]   = tileUrlTemplates.ToArray(),
+            ["minzoom"] = minZoom,
+            ["maxzoom"] = maxZoom,
+        };
+        if (tileSize is int size)                    spec["tileSize"]    = size;
+        if (!string.IsNullOrWhiteSpace(encoding))    spec["encoding"]    = encoding;
+        if (!string.IsNullOrWhiteSpace(attribution)) spec["attribution"] = attribution;
+        AddSourceJson(sourceId, JsonSerializer.Serialize(spec));
+    }
+
+    /// <summary>
     /// Add an image source with an explicit lat/lng quad defining the four corners.
     /// Corner order: top-right, top-left, bottom-right, bottom-left (matches MapLibre style spec).
     /// </summary>

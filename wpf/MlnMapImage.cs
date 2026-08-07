@@ -625,6 +625,19 @@ public partial class MlnMapImage : Grid
         _renderNeedsUpdate = true;
     }
 
+    /// <summary>
+    /// Adds a vector source from explicit <c>{z}/{x}/{y}</c> tile URL templates, optionally
+    /// with an <paramref name="attribution"/> (a TileJSON source carries its own).
+    /// </summary>
+    public void AddVectorTilesSource(string sourceId, string[] tileUrlTemplates,
+        int minZoom = 0, int maxZoom = 22, string? attribution = null)
+    {
+        if (_style == null || tileUrlTemplates.Length == 0) return;
+        if (!_style.HasSource(sourceId))
+            _style.AddVectorTilesSource(sourceId, tileUrlTemplates, minZoom, maxZoom, attribution);
+        _renderNeedsUpdate = true;
+    }
+
     // ── 3D terrain ────────────────────────────────────────────────────────────
 
     /// <summary>Enables 3D terrain from an existing raster-dem source in the style.</summary>
@@ -662,10 +675,39 @@ public partial class MlnMapImage : Grid
         _renderNeedsUpdate = true;
     }
 
+    /// <summary>
+    /// Adds a raster source from explicit <c>{z}/{x}/{y}</c> tile URL templates, optionally
+    /// with an <paramref name="attribution"/> (a TileJSON source carries its own).
+    /// </summary>
+    public void AddRasterTilesSource(string sourceId, string[] tileUrlTemplates, int tileSize = 512,
+        int minZoom = 0, int maxZoom = 22, string? attribution = null)
+    {
+        if (_style == null || tileUrlTemplates.Length == 0) return;
+        if (!_style.HasSource(sourceId))
+            _style.AddRasterTilesSource(sourceId, tileUrlTemplates, tileSize, minZoom, maxZoom, attribution);
+        _renderNeedsUpdate = true;
+    }
+
     public void AddRasterDemSource(string sourceId, string url, int tileSize = 512)
     {
         if (_style == null) return;
         if (!_style.HasSource(sourceId)) _style.AddRasterDemSource(sourceId, url, tileSize);
+        _renderNeedsUpdate = true;
+    }
+
+    /// <summary>
+    /// Adds a raster-dem source from explicit <c>{z}/{x}/{y}</c> tile URL templates, for DEMs
+    /// with no TileJSON or with a non-default <paramref name="encoding"/> (<c>"terrarium"</c>,
+    /// as used by the AWS/Mapzen terrain-tiles, vs. the default <c>"mapbox"</c>).
+    /// </summary>
+    /// <param name="attribution">Attribution HTML for the source, shown by the attribution control.</param>
+    public void AddRasterDemTilesSource(string sourceId, string[] tileUrlTemplates, int tileSize = 512,
+        int minZoom = 0, int maxZoom = 15, string? encoding = null, string? attribution = null)
+    {
+        if (_style == null || tileUrlTemplates.Length == 0) return;
+        if (!_style.HasSource(sourceId))
+            _style.AddRasterDemTilesSource(sourceId, tileUrlTemplates, tileSize, minZoom, maxZoom,
+                                           encoding, attribution);
         _renderNeedsUpdate = true;
     }
 

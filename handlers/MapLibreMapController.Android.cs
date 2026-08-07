@@ -1401,27 +1401,43 @@ public class MapLibreMapController : IMapLibreMapController
     }
 
     public void AddRasterSource(string sourceName, string? tileUrl,
-        string[]? tileUrlTemplates, int tileSize, int minZoom, int maxZoom)
+        string[]? tileUrlTemplates, int tileSize, int minZoom, int maxZoom, string? attribution = null)
     {
         if (!_styleReady || _style == null) return;
-        var url = tileUrl ?? tileUrlTemplates?.FirstOrDefault();
-        if (url != null) _style.AddRasterSource(sourceName, url, tileSize);
+        if (tileUrl == null && tileUrlTemplates is { Length: > 0 })
+        {
+            _style.AddRasterTilesSource(sourceName, tileUrlTemplates, tileSize, minZoom, maxZoom, attribution);
+            return;
+        }
+        if (tileUrl != null) _style.AddRasterSource(sourceName, tileUrl, tileSize);
     }
 
     public void AddRasterDemSource(string sourceName, string? tileUrl,
-        string[]? tileUrlTemplates, int tileSize, int minZoom, int maxZoom)
+        string[]? tileUrlTemplates, int tileSize, int minZoom, int maxZoom,
+        string? encoding = null, string? attribution = null)
     {
         if (!_styleReady || _style == null) return;
-        var url = tileUrl ?? tileUrlTemplates?.FirstOrDefault();
-        if (url != null) _style.AddRasterDemSource(sourceName, url, tileSize);
+        // Tile templates go through the source-spec JSON path: it is the only one that
+        // carries the DEM encoding, and templates are not a TileJSON URL.
+        if (tileUrl == null && tileUrlTemplates is { Length: > 0 })
+        {
+            _style.AddRasterDemTilesSource(sourceName, tileUrlTemplates, tileSize, minZoom, maxZoom,
+                                           encoding, attribution);
+            return;
+        }
+        if (tileUrl != null) _style.AddRasterDemSource(sourceName, tileUrl, tileSize);
     }
 
     public void AddVectorSource(string sourceName, string? tileUrl,
-        string[]? tileUrlTemplates, int minZoom, int maxZoom)
+        string[]? tileUrlTemplates, int minZoom, int maxZoom, string? attribution = null)
     {
         if (!_styleReady || _style == null) return;
-        var url = tileUrl ?? tileUrlTemplates?.FirstOrDefault();
-        if (url != null) _style.AddVectorSource(sourceName, url);
+        if (tileUrl == null && tileUrlTemplates is { Length: > 0 })
+        {
+            _style.AddVectorTilesSource(sourceName, tileUrlTemplates, minZoom, maxZoom, attribution);
+            return;
+        }
+        if (tileUrl != null) _style.AddVectorSource(sourceName, tileUrl);
     }
 
     public void AddImageSource(string sourceName, string url, LatLngQuad? coordinates)
