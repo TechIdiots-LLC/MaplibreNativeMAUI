@@ -30,9 +30,19 @@ public sealed class TorrentByteSourceOptions
 
     /// <summary>
     /// How many pieces to hold when <see cref="CacheBytes"/> is not given.
-    /// The effective budget is <c>max(16 MiB, CachePieces × pieceLength)</c>.
     /// </summary>
-    public int CachePieces { get; init; } = 8;
+    public int CachePieces { get; init; } = 4;
+
+    /// <summary>
+    /// Ceiling on a derived budget.
+    /// </summary>
+    /// <remarks>
+    /// Large map torrents are routinely cut at 16 MiB per piece, so a piece
+    /// count alone is a trap on a device: four of those is already 64 MiB of
+    /// managed heap, and eight would be 128 MiB. The count sizes the cache
+    /// relative to the piece length; this stops that arithmetic running away.
+    /// </remarks>
+    public long MaxCacheBytes { get; init; } = 64L * 1024 * 1024;
 }
 
 /// <summary>
@@ -209,9 +219,10 @@ public sealed class TorrentByteSource : IByteRangeSource, IAsyncDisposable
             // byte budget holds too few pieces to be worth having.
             if (_options.CacheBytes is null)
             {
-                _cache.Resize(Math.Max(
+                long derived = Math.Max(
                     MinimumCacheBytes,
-                    _options.CachePieces * info.PieceLength));
+                    _options.CachePieces * info.PieceLength);
+                _cache.Resize(Math.Min(derived, _options.MaxCacheBytes));
             }
 
             _info = info;

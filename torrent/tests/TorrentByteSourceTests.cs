@@ -321,12 +321,31 @@ public class TorrentByteSourceTests
         // one 16 MiB piece, so the cache never helps.
         var engine = new FakeEngine(Ramp(1000), pieceLength: 8L * 1024 * 1024);
         var source = new TorrentByteSource(
-            engine, new TorrentByteSourceOptions { CachePieces = 4 });
+            engine,
+            new TorrentByteSourceOptions
+            {
+                CachePieces = 4,
+                MaxCacheBytes = 256L * 1024 * 1024,
+            });
 
         await source.ReadAsync(0, 10);
 
         // 4 x 8 MiB beats the 16 MiB floor.
         Assert.Equal(32L * 1024 * 1024, GetCacheBudget(source));
+    }
+
+    [Fact]
+    public async Task KeepsTheCacheWithinBoundsOnADeviceSizedBudget()
+    {
+        // The real case: 16 MiB pieces, which is what large map torrents use.
+        // Without a ceiling the derived budget would be 64 MiB by default and
+        // 128 MiB at the old default piece count — far too much on a phone.
+        var engine = new FakeEngine(Ramp(1000), pieceLength: 16L * 1024 * 1024);
+        var source = new TorrentByteSource(engine);
+
+        await source.ReadAsync(0, 10);
+
+        Assert.Equal(64L * 1024 * 1024, GetCacheBudget(source));
     }
 
     [Fact]
