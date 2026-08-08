@@ -932,6 +932,29 @@ MLN_CABI_API void mbgl_http_respond(
  */
 MLN_CABI_API void mbgl_http_cancel(uint64_t request_id) MLN_CABI_NOEXCEPT;
 
+/**
+ * Claim a URL prefix, so only matching requests reach the provider.
+ *
+ * Without any claim the provider receives everything, which means the host owns
+ * the whole network stack — including retry and backoff, since mbgl's
+ * OnlineFileSource is then out of the picture (see the note above).
+ *
+ * Claiming instead lets a host serve a handful of URLs from somewhere unusual —
+ * an archive held in a BitTorrent swarm, say — while every other request is
+ * still handled by maplibre's own network stack, with its retry, rate-limit
+ * handling and queueing intact. Prefer this: the blast radius is a few URLs
+ * rather than every resource the map fetches.
+ *
+ * Matching is a plain prefix comparison, deliberately: this runs for every
+ * resource the map requests, so it must stay cheap. Call before the first map
+ * is created, alongside mbgl_set_http_provider. Has no effect on Android, where
+ * the provider sits beneath OnlineFileSource and necessarily sees all traffic.
+ */
+MLN_CABI_API void mbgl_http_provider_claim_prefix(const char* url_prefix) MLN_CABI_NOEXCEPT;
+
+/** Drop every claimed prefix, returning the provider to handling all requests. */
+MLN_CABI_API void mbgl_http_provider_clear_claims(void) MLN_CABI_NOEXCEPT;
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

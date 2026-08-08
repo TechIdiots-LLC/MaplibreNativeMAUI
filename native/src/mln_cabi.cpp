@@ -1868,6 +1868,8 @@ void mbgl_android_release_window(void* window) noexcept {
 // ── Host HTTP provider (implemented in http_provider.cpp) ────────────────────
 extern "C" void mbgl_set_http_provider_impl(mbgl_http_provider_fn fn, void* userdata) noexcept;
 extern "C" void mbgl_set_http_cancel_provider_impl(mbgl_http_cancel_fn fn, void* userdata) noexcept;
+extern "C" void mbgl_http_provider_claim_prefix_impl(const char* url_prefix) noexcept;
+extern "C" void mbgl_http_provider_clear_claims_impl(void) noexcept;
 extern "C" void mbgl_http_respond_impl(uint64_t request_id,
                                    mbgl_http_error_t error,
                                    const char* error_message,
@@ -1887,6 +1889,14 @@ void mbgl_set_http_provider(mbgl_http_provider_fn fn, void* userdata) noexcept {
 
 void mbgl_set_http_cancel_provider(mbgl_http_cancel_fn fn, void* userdata) noexcept {
     mbgl_set_http_cancel_provider_impl(fn, userdata);
+}
+
+void mbgl_http_provider_claim_prefix(const char* url_prefix) noexcept {
+    mbgl_http_provider_claim_prefix_impl(url_prefix);
+}
+
+void mbgl_http_provider_clear_claims(void) noexcept {
+    mbgl_http_provider_clear_claims_impl();
 }
 
 void mbgl_http_respond(uint64_t request_id,

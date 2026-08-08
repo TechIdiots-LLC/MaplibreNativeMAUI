@@ -36,6 +36,7 @@
 #include <mbgl/storage/file_source.hpp>
 #include <mbgl/storage/file_source_manager.hpp>
 #include <mbgl/storage/http_file_source.hpp>
+#include <mbgl/storage/online_file_source.hpp>
 #include <mbgl/storage/resource.hpp>
 #include <mbgl/storage/resource_options.hpp>
 #include <mbgl/storage/response.hpp>
@@ -52,6 +53,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 // ── Shared state ─────────────────────────────────────────────────────────────
 
@@ -71,6 +73,9 @@ struct HttpProviderState {
     void*                                         cancelUserdata = nullptr;
     std::atomic<uint64_t>                         nextId{1};
     std::unordered_map<uint64_t, std::shared_ptr<PendingRequest>> pending;
+    /// URL prefixes the host has claimed. Empty means "claim everything",
+    /// which is what a host replacing the network stack outright wants.
+    std::vector<std::string>                      claims;
 };
 
 HttpProviderState& state() {
@@ -110,6 +115,19 @@ void mbgl_set_http_provider_impl(mbgl_http_provider_fn fn, void* userdata) noexc
         mbgl_install_provider_file_source();
     }
 #endif
+}
+
+void mbgl_http_provider_claim_prefix_impl(const char* url_prefix) noexcept {
+    if (!url_prefix || !*url_prefix) return;
+    auto& s = state();
+    std::lock_guard<std::mutex> lock(s.mutex);
+    s.claims.emplace_back(url_prefix);
+}
+
+void mbgl_http_provider_clear_claims_impl() noexcept {
+    auto& s = state();
+    std::lock_guard<std::mutex> lock(s.mutex);
+    s.claims.clear();
 }
 
 void mbgl_set_http_cancel_provider_impl(mbgl_http_cancel_fn fn, void* userdata) noexcept {
@@ -371,23 +389,61 @@ ClientOptions HTTPFileSource::getClientOptions() {
 namespace mbgl {
 namespace {
 
-/// A FileSource that hands every request to the host application.
+/// Routes requests either to the host or to maplibre's own network stack.
+///
+/// The important part is what it does *not* intercept. A host that only wants
+/// to serve a couple of archives from somewhere unusual should not have to
+/// reimplement HTTP for the whole map — and replacing OnlineFileSource means
+/// losing its retry with backoff, rate-limit handling and queueing, which the
+/// host would then owe everyone. So the host claims URL prefixes it can
+/// satisfy, and everything else is delegated to a wrapped OnlineFileSource,
+/// exactly as if no provider had been registered.
+///
+/// A host that genuinely wants to own all networking simply claims nothing,
+/// which is read as "claim everything".
 class ProviderFileSource final : public FileSource {
 public:
+    ProviderFileSource(const ResourceOptions& resourceOptions_, const ClientOptions& clientOptions_)
+        : resourceOptions(resourceOptions_.clone()),
+          clientOptions(clientOptions_.clone()),
+          fallback(std::make_unique<OnlineFileSource>(resourceOptions_, clientOptions_)) {}
+
     std::unique_ptr<AsyncRequest> request(const Resource& resource, Callback callback) override {
-        return dispatchToProvider(resource, std::move(callback));
+        if (hostClaims(resource.url)) {
+            return dispatchToProvider(resource, std::move(callback));
+        }
+        return fallback->request(resource, std::move(callback));
     }
 
-    bool canRequest(const Resource& resource) const override {
-        // Same contract as the built-in network source: anything addressed over
-        // HTTP. What the host does to satisfy it is the host's business.
-        return 0 == resource.url.rfind("http://", 0) ||
-               0 == resource.url.rfind("https://", 0);
+    bool canRequest(const Resource& resource) const override { return fallback->canRequest(resource); }
+
+    bool supportsCacheOnlyRequests() const override { return fallback->supportsCacheOnlyRequests(); }
+
+    void forward(const Resource& resource, const Response& response, std::function<void()> callback) override {
+        fallback->forward(resource, response, std::move(callback));
+    }
+
+    void pause() override { fallback->pause(); }
+    void resume() override { fallback->resume(); }
+
+    void setProperty(const std::string& key, const mapbox::base::Value& value) override {
+        fallback->setProperty(key, value);
+    }
+
+    mapbox::base::Value getProperty(const std::string& key) const override {
+        return fallback->getProperty(key);
+    }
+
+    void setResourceTransform(ResourceTransform transform) override {
+        fallback->setResourceTransform(std::move(transform));
     }
 
     void setResourceOptions(ResourceOptions options) override {
-        std::lock_guard<std::mutex> lock(optionsMutex);
-        resourceOptions = options.clone();
+        {
+            std::lock_guard<std::mutex> lock(optionsMutex);
+            resourceOptions = options.clone();
+        }
+        fallback->setResourceOptions(options.clone());
     }
 
     ResourceOptions getResourceOptions() override {
@@ -396,8 +452,11 @@ public:
     }
 
     void setClientOptions(ClientOptions options) override {
-        std::lock_guard<std::mutex> lock(optionsMutex);
-        clientOptions = options.clone();
+        {
+            std::lock_guard<std::mutex> lock(optionsMutex);
+            clientOptions = options.clone();
+        }
+        fallback->setClientOptions(options.clone());
     }
 
     ClientOptions getClientOptions() override {
@@ -406,9 +465,26 @@ public:
     }
 
 private:
-    std::mutex      optionsMutex;
-    ResourceOptions resourceOptions;
-    ClientOptions   clientOptions;
+    /// Prefix match rather than a callback into the host: this runs for every
+    /// resource the map fetches, and a reverse P/Invoke per tile would be a
+    /// poor trade for what is a handful of known archive URLs.
+    static bool hostClaims(const std::string& url) {
+        auto& s = state();
+        std::lock_guard<std::mutex> lock(s.mutex);
+        if (!s.fn) return false;
+        if (s.claims.empty()) return true;
+        for (const auto& prefix : s.claims) {
+            if (0 == url.rfind(prefix, 0)) return true;
+        }
+        return false;
+    }
+
+    std::mutex                        optionsMutex;
+    ResourceOptions                   resourceOptions;
+    ClientOptions                     clientOptions;
+    // Held as the base type on purpose: OnlineFileSource declares its
+    // overrides private, so they are only reachable through FileSource.
+    std::unique_ptr<FileSource>       fallback;
 };
 
 } // namespace
@@ -432,9 +508,9 @@ void mbgl_install_provider_file_source() noexcept {
     std::call_once(once, [] {
         mbgl::FileSourceManager::get()->registerFileSourceFactory(
             mbgl::FileSourceType::Network,
-            [](const mbgl::ResourceOptions&, const mbgl::ClientOptions&)
+            [](const mbgl::ResourceOptions& resourceOptions, const mbgl::ClientOptions& clientOptions)
                 -> std::unique_ptr<mbgl::FileSource> {
-                return std::make_unique<mbgl::ProviderFileSource>();
+                return std::make_unique<mbgl::ProviderFileSource>(resourceOptions, clientOptions);
             });
     });
 }
