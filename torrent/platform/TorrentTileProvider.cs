@@ -30,6 +30,16 @@ public sealed class TorrentTileProviderOptions
     /// <summary>Cap on peer connections per archive.</summary>
     public int MaxConnections { get; init; } = 30;
 
+    /// <summary>
+    /// What a missing tile answers with: true for 404, false for 204.
+    /// </summary>
+    /// <remarks>
+    /// Leave null to decide by tile type — 404 for raster so a sparse dataset
+    /// overzooms its parent, 204 for vector. Set it only when an archive needs
+    /// the opposite of its format's default.
+    /// </remarks>
+    public bool? Sparse { get; init; }
+
     /// <summary>Called with diagnostics, if you want them.</summary>
     public Action<string>? Log { get; init; }
 }
@@ -125,7 +135,10 @@ public static class TorrentTileProvider
         });
 
         var source = new TorrentByteSource(engine);
-        var entry = new ArchiveEntry(descriptor, new PMTilesArchive(source), source);
+        var entry = new ArchiveEntry(descriptor, new PMTilesArchive(source), source)
+        {
+            Sparse = options.Sparse,
+        };
         s_archives[descriptor.InfoHash.ToLowerInvariant()] = entry;
 
         Register(descriptor, tileJsonUrl, options);
@@ -290,9 +303,16 @@ public static class TorrentTileProvider
 
                 if (bytes is null)
                 {
-                    // A sparse archive genuinely has no tile here. That is an
-                    // answer, not a reason to go and ask HTTP the same thing.
-                    RespondNoContent(requestId);
+                    // The archive genuinely has no tile here, which is an
+                    // answer rather than a reason to ask HTTP the same thing.
+                    //
+                    // Which status says so matters. MapLibre only overzooms a
+                    // parent tile when the child 404s, so a sparse raster-dem
+                    // answered with 204 renders as holes wherever the data was
+                    // never built — most of a terrain set covering only land.
+                    // Vector is the reverse: an empty tile means no features
+                    // here, and 404 makes the map log errors past coverage.
+                    RespondMissing(requestId, await entry.IsSparseAsync());
                     return;
                 }
 
@@ -395,12 +415,32 @@ public static class TorrentTileProvider
         }
     }
 
-    private static void RespondNoContent(ulong requestId) =>
+    /// <summary>
+    /// Answers a tile the archive does not hold.
+    /// </summary>
+    /// <param name="requestId">The request being answered.</param>
+    /// <param name="sparse">
+    /// True to answer 404, which lets MapLibre overzoom the parent tile; false
+    /// to answer 204, which tells it the tile is empty but present.
+    /// </param>
+    private static void RespondMissing(ulong requestId, bool sparse)
+    {
+        if (sparse)
+        {
+            RespondError(
+                requestId, NativeMethods.MbglHttpError.NotFound, "no tile here");
+            return;
+        }
+
         NativeMethods.HttpRespond(
             requestId, NativeMethods.MbglHttpError.None,
             IntPtr.Zero, 204, IntPtr.Zero, 0,
             IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero,
             1, 0, 0);
+    }
+
+    private static void RespondNoContent(ulong requestId) =>
+        RespondMissing(requestId, sparse: false);
 
     private static void RespondError(
         ulong requestId,
@@ -447,5 +487,29 @@ public static class TorrentTileProvider
     {
         /// <summary>Whether the swarm has produced the header yet.</summary>
         public bool Ready { get; set; }
+
+        /// <summary>Overrides the format-based default for missing tiles.</summary>
+        public bool? Sparse { get; init; }
+
+        /// <summary>
+        /// Whether a missing tile should answer 404 rather than 204.
+        /// </summary>
+        /// <remarks>
+        /// Defaults by tile type: raster 404 so a sparse dataset overzooms,
+        /// vector 204. PMTiles cannot say whether raster data is a DEM, so
+        /// raster defaults to the answer a DEM needs and anything that wants
+        /// otherwise sets <see cref="Sparse"/>.
+        /// </remarks>
+        /// <returns>True to answer 404.</returns>
+        public async ValueTask<bool> IsSparseAsync()
+        {
+            if (Sparse is { } explicitly)
+            {
+                return explicitly;
+            }
+
+            PMTilesHeader header = await Archive.GetHeaderAsync().ConfigureAwait(false);
+            return header.TileType is not PMTilesTileType.Mvt;
+        }
     }
 }
