@@ -1,0 +1,59 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      Reads PMTiles archives out of a BitTorrent swarm and serves their tiles to
+      the map, so a device becomes a peer for the maps it displays rather than
+      only a consumer of somebody's tile server.
+
+      Two sets of target frameworks on purpose. The plain ones carry everything
+      that is pure logic — archive parsing, piece mapping, the swarm client —
+      which is the bulk of this and is testable without a device or a map. The
+      platform ones add the glue that registers with the native HTTP provider,
+      and are the only ones that need the bindings.
+    -->
+    <TargetFrameworks>net9.0;net10.0;net9.0-android;net9.0-ios;net9.0-maccatalyst;net9.0-windows10.0.19041.0;net10.0-android;net10.0-ios;net10.0-maccatalyst;net10.0-windows10.0.19041.0</TargetFrameworks>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>MapLibreNative.Maui.Torrent</RootNamespace>
+    <AssemblyName>MapLibreNative.Maui.Torrent</AssemblyName>
+    <PackageId>MapLibreNative.Maui.Torrent</PackageId>
+    <Description>Serve PMTiles map tiles from a BitTorrent swarm in MapLibre Native MAUI.</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MonoTorrent" Version="3.0.2" />
+  </ItemGroup>
+
+  <!--
+    The test project lives under this one's directory, so the SDK's default
+    globbing would otherwise compile it into the library.
+  -->
+  <ItemGroup>
+    <Compile Remove="tests/**/*.cs" />
+    <None Remove="tests/**" />
+  </ItemGroup>
+
+  <!--
+    The provider glue only exists where the bindings do. A plain net9.0 build is
+    the library minus the map integration, which is exactly what the tests want.
+    Everything under src/ is pure and compiles for every target; the SDK's own
+    globbing picks both up, so this only has to subtract.
+  -->
+  <PropertyGroup>
+    <!-- "net9.0" has no platform; "net9.0-android" does. -->
+    <_IsPlatformTarget Condition="$(TargetFramework.Contains('-'))">true</_IsPlatformTarget>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(_IsPlatformTarget)' != 'true'">
+    <Compile Remove="platform/**/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(_IsPlatformTarget)' == 'true'">
+    <ProjectReference Include="..\bindings\MapLibreNative.Maui.csproj" />
+  </ItemGroup>
+
+</Project>
