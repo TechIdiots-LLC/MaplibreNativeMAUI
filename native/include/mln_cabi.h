@@ -816,6 +816,15 @@ MLN_CABI_API void   mbgl_android_release_window(void* window) MLN_CABI_NOEXCEPT;
  * Registering a provider replaces the network file source for the whole
  * process, so it must be done before the first map is created. Registering
  * nothing leaves the platform's own network stack untouched.
+ *
+ * One behavioural difference worth knowing. On Android the provider sits
+ * underneath mbgl's OnlineFileSource, so requests still get its retry with
+ * backoff, rate-limit handling and queueing — only the transport is delegated.
+ * Everywhere else the provider replaces OnlineFileSource entirely, because
+ * there is no way to slot in beneath it without colliding with the platform's
+ * own HTTPFileSource. A host registering a provider on those platforms is
+ * therefore responsible for its own retry and backoff; failing a request means
+ * mbgl will not retry it on the host's behalf.
  */
 /**
  * Callback type for the HTTP provider.  Called by the native layer when it

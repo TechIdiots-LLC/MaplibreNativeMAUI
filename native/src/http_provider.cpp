@@ -94,12 +94,22 @@ void mbgl_set_http_provider_impl(mbgl_http_provider_fn fn, void* userdata) noexc
         s.fn       = fn;
         s.userdata = userdata;
     }
+#if !defined(__ANDROID__)
     // Take over FileSourceType::Network only once a provider actually exists.
     // An application that never registers one is left entirely alone, still
     // using whichever network stack maplibre-native built for its platform.
+    //
+    // Not done on Android, and deliberately so. There the provider is already
+    // reached through mbgl::HTTPFileSource, which sits *underneath*
+    // OnlineFileSource — so requests keep mbgl's retry/backoff, rate-limit
+    // handling and queueing, with only the transport delegated to the host.
+    // Registering this factory would replace OnlineFileSource outright and
+    // throw that away, which would be a regression on the one platform that
+    // already worked.
     if (fn) {
         mbgl_install_provider_file_source();
     }
+#endif
 }
 
 void mbgl_set_http_cancel_provider_impl(mbgl_http_cancel_fn fn, void* userdata) noexcept {
