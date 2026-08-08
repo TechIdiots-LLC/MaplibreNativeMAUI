@@ -33,6 +33,7 @@
   <ItemGroup>
     <None Include="hilbert-reference.csv" CopyToOutputDirectory="PreserveNewest" />
     <None Include="*.pmtiles" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="tilejson-*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
