@@ -800,8 +800,23 @@ MLN_CABI_API const char*     mln_cabi_version(void) MLN_CABI_NOEXCEPT;
 MLN_CABI_API void*  mbgl_android_acquire_window(void* jni_env, void* surface_jobject) MLN_CABI_NOEXCEPT;
 /** Release an ANativeWindow obtained via mbgl_android_acquire_window. */
 MLN_CABI_API void   mbgl_android_release_window(void* window) MLN_CABI_NOEXCEPT;
+#endif /* __ANDROID__ */
 
-/* ── Android HTTP provider ─────────────────────────────────────────────────── */
+/* ── Host HTTP provider (all platforms) ────────────────────────────────────── */
+/*
+ * Lets the host answer resource requests instead of a native HTTP stack.
+ *
+ * Originally Android-only, where a standalone NDK build has no HTTP
+ * implementation of its own. It is available everywhere now because the
+ * indirection is useful in its own right: the byte range mbgl asks for is
+ * passed through, and PMTiles reads are all ranged, so a host holding an
+ * archive somewhere other than a web server — a BitTorrent swarm, an embedded
+ * database, an encrypted bundle — can satisfy tile reads directly.
+ *
+ * Registering a provider replaces the network file source for the whole
+ * process, so it must be done before the first map is created. Registering
+ * nothing leaves the platform's own network stack untouched.
+ */
 /**
  * Callback type for the HTTP provider.  Called by the native layer when it
  * needs to fetch a URL.  The host (C#) must call mbgl_http_respond() with the
@@ -907,7 +922,6 @@ MLN_CABI_API void mbgl_http_respond(
  * The host C# should also abort the in-flight HttpClient request.
  */
 MLN_CABI_API void mbgl_http_cancel(uint64_t request_id) MLN_CABI_NOEXCEPT;
-#endif
 
 #ifdef __cplusplus
 } // extern "C"

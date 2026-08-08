@@ -44,6 +44,12 @@ target_include_directories(mln-cabi PRIVATE
 target_sources(mln-cabi PRIVATE
     src/mln_cabi.cpp
     src/mln_cabi_offline.cpp
+    # Host-provided networking. Built on every platform: on Android it defines
+    # mbgl::HTTPFileSource, because nothing else does in a standalone NDK build,
+    # and elsewhere it registers a FileSourceType::Network factory at runtime.
+    # That registration only happens once the host installs a provider, so a
+    # build that never calls mbgl_set_http_provider is unaffected.
+    src/http_provider.cpp
 )
 
 # ── Platform-specific frontend ────────────────────────────────────────────────
@@ -68,7 +74,6 @@ elseif(ANDROID)
         "${MAPLIBRE_NATIVE_DIR}/platform/default/src/mbgl/util/logging_stderr.cpp"
         "${MAPLIBRE_NATIVE_DIR}/platform/android/src/test/collator_test_stub.cpp"
         "${MAPLIBRE_NATIVE_DIR}/platform/android/src/test/number_format_test_stub.cpp"
-        src/http_file_source_android.cpp
     )
     # MapLibre disables RTTI on Android/Linux. We must match that so polymorphic
     # classes in mln_cabi.cpp don't emit typeinfo that references non-existent

@@ -1,24 +1,40 @@
-// HTTPFileSource implementation for standalone Android NDK builds.
+// Host-provided networking: resource requests are answered by the .NET host
+// rather than by a native HTTP stack.
 //
-// Rather than shipping/cross-compiling libcurl for every Android ABI, HTTP is
-// delegated to the host .NET runtime via a registered callback.  When a
-// request arrives the C++ side calls the provider function (set from C# via
-// mbgl_set_http_provider), which performs the actual HTTP fetch using
-// Android's built-in HttpURLConnection through .NET's HttpClient.  When the
-// fetch completes, the host calls mbgl_http_respond() which marshals the
-// result back onto the correct mbgl RunLoop thread and invokes the callback.
+// Originally this existed only for standalone Android NDK builds, where
+// shipping libcurl for every ABI was unattractive and the JNI SDK's HTTP
+// implementation is absent. It is now built on every platform, because routing
+// requests through the host is useful in its own right: mbgl passes the byte
+// range on the Resource, and PMTiles reads are all ranged, so a host that holds
+// an archive somewhere other than a web server — a BitTorrent swarm, an
+// embedded database, an encrypted bundle — can serve tiles without maplibre
+// knowing the difference.
 //
 // Protocol:
 //   1. mbgl_set_http_provider(fn, userdata) -- called once at map init from C#.
-//   2. HTTPFileSource::request() -- assigns a unique request_id, calls fn().
+//   2. request() -- assigns a unique request_id, calls fn().
 //   3. C# fetches the URL, then calls mbgl_http_respond(request_id, ...).
 //   4. mbgl_http_respond posts a closure onto the RunLoop and calls callback.
 //   5. If the AsyncRequest is destroyed before the response arrives,
 //      mbgl_http_cancel(request_id) is called and the response is silently dropped.
+//
+// Two routes into that machinery, because the platforms differ:
+//
+//   Android — defines mbgl::HTTPFileSource directly. It has to: nothing else in
+//     a standalone NDK build provides that symbol, and mbgl-core references it.
+//
+//   Everywhere else — maplibre-native already links its own HTTPFileSource, so
+//     defining a second one would collide. Instead a FileSource is registered
+//     at runtime for FileSourceType::Network, which needs no build changes and
+//     is opt-in: the factory is installed only when a provider is actually set,
+//     so an application that never calls mbgl_set_http_provider keeps
+//     maplibre's own network stack, unchanged.
 
 // Include the C ABI header for mbgl_http_provider_fn / mbgl_http_error_t typedefs.
 #include "mln_cabi.h"
 
+#include <mbgl/storage/file_source.hpp>
+#include <mbgl/storage/file_source_manager.hpp>
 #include <mbgl/storage/http_file_source.hpp>
 #include <mbgl/storage/resource.hpp>
 #include <mbgl/storage/resource_options.hpp>
@@ -68,11 +84,22 @@ HttpProviderState& state() {
 
 extern "C" {
 
+// Defined at the bottom of this file, once ProviderFileSource is in scope.
+void mbgl_install_provider_file_source() noexcept;
+
 void mbgl_set_http_provider_impl(mbgl_http_provider_fn fn, void* userdata) noexcept {
-    auto& s = state();
-    std::lock_guard<std::mutex> lock(s.mutex);
-    s.fn       = fn;
-    s.userdata = userdata;
+    {
+        auto& s = state();
+        std::lock_guard<std::mutex> lock(s.mutex);
+        s.fn       = fn;
+        s.userdata = userdata;
+    }
+    // Take over FileSourceType::Network only once a provider actually exists.
+    // An application that never registers one is left entirely alone, still
+    // using whichever network stack maplibre-native built for its platform.
+    if (fn) {
+        mbgl_install_provider_file_source();
+    }
 }
 
 void mbgl_set_http_cancel_provider_impl(mbgl_http_cancel_fn fn, void* userdata) noexcept {
@@ -211,33 +238,28 @@ void mbgl_http_cancel_impl(uint64_t request_id) noexcept {
 
 } // extern "C"
 
-// ── HTTPFileSource implementation ─────────────────────────────────────────────
+// ── Shared request dispatch ───────────────────────────────────────────────────
 
 namespace mbgl {
-
-class HTTPFileSource::Impl {};
-
-HTTPFileSource::HTTPFileSource(const ResourceOptions&, const ClientOptions&)
-    : impl(std::make_unique<Impl>()) {}
-
-HTTPFileSource::~HTTPFileSource() = default;
-
-// The AsyncRequest subclass that cancels the pending request on destruction.
 namespace {
-class AndroidHttpRequest : public AsyncRequest {
-public:
-    explicit AndroidHttpRequest(uint64_t id) : _id(id) {}
 
-    ~AndroidHttpRequest() override {
-        mbgl_http_cancel_impl(_id);
-    }
+/// Cancels the host-side fetch when mbgl drops the request, which it does
+/// constantly while panning and zooming. Without this, superseded requests run
+/// to completion and starve the tiles actually on screen.
+class ProviderRequest : public AsyncRequest {
+public:
+    explicit ProviderRequest(uint64_t id) : _id(id) {}
+
+    ~ProviderRequest() override { mbgl_http_cancel_impl(_id); }
 
 private:
     uint64_t _id;
 };
-} // namespace
 
-std::unique_ptr<AsyncRequest> HTTPFileSource::request(const Resource& resource, Callback callback) {
+/// The body of request(), shared by both routes into the provider so the
+/// request table, cancellation and range handling exist in exactly one place.
+std::unique_ptr<AsyncRequest> dispatchToProvider(const Resource&        resource,
+                                                 FileSource::Callback&& callback) {
     auto& s = state();
 
     mbgl_http_provider_fn fn;
@@ -248,7 +270,8 @@ std::unique_ptr<AsyncRequest> HTTPFileSource::request(const Resource& resource, 
         fn = s.fn;
         userdata = s.userdata;
         if (!fn) {
-            // No provider registered — fall back to immediate connection error.
+            // No provider registered — fail rather than hang waiting for a
+            // response nobody is going to send.
             Response response;
             response.error = std::make_unique<const Response::Error>(
                 Response::Error::Reason::Connection,
@@ -278,7 +301,8 @@ std::unique_ptr<AsyncRequest> HTTPFileSource::request(const Resource& resource, 
         modified = modifiedStr.c_str();
     }
 
-    // Extract byte-range if this is a range request (used by PMTiles).
+    // Extract byte-range if this is a range request. Every PMTiles read is one,
+    // which is what allows a host to serve an archive it holds in pieces.
     int64_t range_start = -1;
     int64_t range_end   = -1;
     if (resource.dataRange) {
@@ -290,7 +314,30 @@ std::unique_ptr<AsyncRequest> HTTPFileSource::request(const Resource& resource, 
     // the fetch to a thread pool and call back via mbgl_http_respond).
     fn(id, resource.url.c_str(), etag, modified, range_start, range_end, userdata);
 
-    return std::make_unique<AndroidHttpRequest>(id);
+    return std::make_unique<ProviderRequest>(id);
+}
+
+} // namespace
+} // namespace mbgl
+
+// ── Route 1: HTTPFileSource (Android only) ───────────────────────────────────
+//
+// Only defined where nothing else provides the symbol. On other platforms
+// maplibre-native supplies its own and a second definition would not link.
+
+#if defined(__ANDROID__)
+
+namespace mbgl {
+
+class HTTPFileSource::Impl {};
+
+HTTPFileSource::HTTPFileSource(const ResourceOptions&, const ClientOptions&)
+    : impl(std::make_unique<Impl>()) {}
+
+HTTPFileSource::~HTTPFileSource() = default;
+
+std::unique_ptr<AsyncRequest> HTTPFileSource::request(const Resource& resource, Callback callback) {
+    return dispatchToProvider(resource, std::move(callback));
 }
 
 void HTTPFileSource::setResourceOptions(ResourceOptions) {}
@@ -306,3 +353,80 @@ ClientOptions HTTPFileSource::getClientOptions() {
 }
 
 } // namespace mbgl
+
+#endif // __ANDROID__
+
+// ── Route 2: a registered Network FileSource (all platforms) ─────────────────
+
+namespace mbgl {
+namespace {
+
+/// A FileSource that hands every request to the host application.
+class ProviderFileSource final : public FileSource {
+public:
+    std::unique_ptr<AsyncRequest> request(const Resource& resource, Callback callback) override {
+        return dispatchToProvider(resource, std::move(callback));
+    }
+
+    bool canRequest(const Resource& resource) const override {
+        // Same contract as the built-in network source: anything addressed over
+        // HTTP. What the host does to satisfy it is the host's business.
+        return 0 == resource.url.rfind("http://", 0) ||
+               0 == resource.url.rfind("https://", 0);
+    }
+
+    void setResourceOptions(ResourceOptions options) override {
+        std::lock_guard<std::mutex> lock(optionsMutex);
+        resourceOptions = options.clone();
+    }
+
+    ResourceOptions getResourceOptions() override {
+        std::lock_guard<std::mutex> lock(optionsMutex);
+        return resourceOptions.clone();
+    }
+
+    void setClientOptions(ClientOptions options) override {
+        std::lock_guard<std::mutex> lock(optionsMutex);
+        clientOptions = options.clone();
+    }
+
+    ClientOptions getClientOptions() override {
+        std::lock_guard<std::mutex> lock(optionsMutex);
+        return clientOptions.clone();
+    }
+
+private:
+    std::mutex      optionsMutex;
+    ResourceOptions resourceOptions;
+    ClientOptions   clientOptions;
+};
+
+} // namespace
+} // namespace mbgl
+
+extern "C" {
+
+/**
+ * Install the provider-backed network file source.
+ *
+ * Called from mbgl_set_http_provider once a provider exists, so an application
+ * that never registers one keeps maplibre's own network stack untouched.
+ *
+ * Registration is idempotent and one-way. mbgl caches file source instances, so
+ * a map created before this point keeps whichever source it already resolved —
+ * which is why the public API documents that the provider must be set before
+ * the first map is created.
+ */
+void mbgl_install_provider_file_source() noexcept {
+    static std::once_flag once;
+    std::call_once(once, [] {
+        mbgl::FileSourceManager::get()->registerFileSourceFactory(
+            mbgl::FileSourceType::Network,
+            [](const mbgl::ResourceOptions&, const mbgl::ClientOptions&)
+                -> std::unique_ptr<mbgl::FileSource> {
+                return std::make_unique<mbgl::ProviderFileSource>();
+            });
+    });
+}
+
+} // extern "C"

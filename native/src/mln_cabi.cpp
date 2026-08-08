@@ -1865,7 +1865,7 @@ void mbgl_android_release_window(void* window) noexcept {
     ANativeWindow_release(reinterpret_cast<ANativeWindow*>(window));
 }
 
-// ── Android HTTP provider (implemented in http_file_source_android.cpp) ───────
+// ── Host HTTP provider (implemented in http_provider.cpp) ────────────────────
 extern "C" void mbgl_set_http_provider_impl(mbgl_http_provider_fn fn, void* userdata) noexcept;
 extern "C" void mbgl_set_http_cancel_provider_impl(mbgl_http_cancel_fn fn, void* userdata) noexcept;
 extern "C" void mbgl_http_respond_impl(uint64_t request_id,
