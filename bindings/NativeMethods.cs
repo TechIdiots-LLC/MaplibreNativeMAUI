@@ -700,8 +700,16 @@ public static partial class NativeMethods
 
     [DllImport(Lib, EntryPoint = "mln_android_release_window")]
     public static extern void AndroidReleaseWindow(IntPtr window);
+#endif
 
-    // ── Android HTTP provider ──────────────────────────────────────────────────
+    // ── Host HTTP provider (all platforms) ────────────────────────
+    //
+    // The native side serves this on every platform. On Android the provider
+    // sits *beneath* OnlineFileSource, so it sees all traffic and prefix
+    // claims do nothing; everywhere else it replaces OnlineFileSource, which
+    // is why claiming matters there — an unclaimed provider owns the whole
+    // network stack, retry and backoff included.
+
 
     /// <summary>
     /// Callback signature for the HTTP provider.  Called by the native layer
@@ -801,7 +809,6 @@ public static partial class NativeMethods
     /// </summary>
     [DllImport(Lib, EntryPoint = "mbgl_http_provider_clear_claims")]
     public static extern void HttpProviderClearClaims();
-#endif
 
     // ── Offline regions + ambient cache ───────────────────────────────────────
     // All offline callbacks are invoked on MapLibre's internal database thread.

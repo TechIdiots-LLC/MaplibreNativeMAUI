@@ -22,6 +22,8 @@
     <PackageId>MapLibreNative.Maui.Torrent</PackageId>
     <Description>Serve PMTiles map tiles from a BitTorrent swarm in MapLibre Native MAUI.</Description>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- The provider hands raw pointers to the native layer. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
