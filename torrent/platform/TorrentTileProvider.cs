@@ -55,6 +55,16 @@ public sealed class TorrentTileProviderOptions
 /// The style needs no special syntax either way.
 /// </para>
 /// <para>
+/// The URL may also be the combined form pmtiles-swarm publishes, with the
+/// handles in its fragment:
+/// <c>…/tiles.json#torrent=&lt;url&gt;&amp;magnet=&lt;magnet&gt;</c>. Those are
+/// read only when the document cannot be — an unreachable server, or a source
+/// that never published a block — so the richer answer always wins when it is
+/// available. A fragment is never sent in a request, so the same string is an
+/// ordinary TileJSON URL to everything that does not know to look. See
+/// <see cref="TorrentSourceUrl"/>.
+/// </para>
+/// <para>
 /// Only the archive's own tile URLs are claimed. Everything else the map fetches
 /// — other sources, sprites, fonts, the style itself — keeps maplibre's own
 /// network stack, with its retry and rate-limit handling intact. That keeps the
@@ -85,13 +95,16 @@ public static class TorrentTileProvider
     /// <summary>
     /// Joins the swarm behind a TileJSON URL, if it advertises one.
     /// </summary>
-    /// <param name="tileJsonUrl">A pmtiles-swarm <c>tiles.json</c> URL.</param>
+    /// <param name="tileJsonUrl">
+    /// A pmtiles-swarm <c>tiles.json</c> URL, optionally carrying
+    /// <c>#torrent=…&amp;magnet=…</c> as a fallback for when it cannot be fetched.
+    /// </param>
     /// <param name="options">Cache location and timeouts.</param>
     /// <param name="cancellationToken">Cancels the join.</param>
     /// <returns>
-    /// The descriptor that was joined, or null when the server published no
-    /// torrent block. Null is a normal outcome, not a failure: an ordinary tile
-    /// server simply cannot be accelerated.
+    /// The descriptor that was joined, or null when neither the document nor the
+    /// fragment named an archive. Null is a normal outcome, not a failure: an
+    /// ordinary tile server simply cannot be accelerated.
     /// </returns>
     /// <remarks>
     /// Call before the first map is created. Returns as soon as the archive is
@@ -105,15 +118,14 @@ public static class TorrentTileProvider
     {
         s_options = options;
 
-        string json = await s_http
-            .GetStringAsync(tileJsonUrl, cancellationToken)
+        TorrentSourceUrl sourceUrl = TorrentSourceUrl.Parse(tileJsonUrl);
+        TorrentDescriptor? resolved = await ResolveAsync(sourceUrl, options, cancellationToken)
             .ConfigureAwait(false);
 
-        TorrentTileJson document = TorrentTileJson.Parse(json);
-        if (document.Torrent is not { } descriptor || !descriptor.CanJoin)
+        if (resolved is not { } descriptor || !descriptor.CanJoin)
         {
             options.Log?.Invoke(
-                $"[torrent] {tileJsonUrl} advertises no joinable archive; using HTTP");
+                $"[torrent] {sourceUrl.TileJsonUrl} advertises no joinable archive; using HTTP");
             return null;
         }
 
@@ -141,7 +153,7 @@ public static class TorrentTileProvider
         };
         s_archives[descriptor.InfoHash.ToLowerInvariant()] = entry;
 
-        Register(descriptor, tileJsonUrl, options);
+        Register(descriptor, sourceUrl.TileJsonUrl, options);
 
         // Warm the swarm without blocking the caller: the map should paint over
         // HTTP rather than wait for peers.
@@ -175,6 +187,139 @@ public static class TorrentTileProvider
         }
 
         s_archives.Clear();
+    }
+
+    /// <summary>
+    /// Works out what archive is behind a source URL, from the document if it can
+    /// be read and from the URL's own fragment if it cannot.
+    /// </summary>
+    /// <remarks>
+    /// The document is the better answer and is asked first: its <c>torrent</c>
+    /// block carries the infohash, the size, the web seeds and the mutable
+    /// identity, none of which fit in a URL. The fragment is what is left when
+    /// the document is unreachable or carries no block at all — a server that is
+    /// down, or a style whose sources point somewhere that never published one.
+    /// That is the case the fragment exists for, so an unreadable document is a
+    /// reason to fall back rather than to fail.
+    /// </remarks>
+    private static async Task<TorrentDescriptor?> ResolveAsync(
+        TorrentSourceUrl sourceUrl,
+        TorrentTileProviderOptions options,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            string json = await s_http
+                .GetStringAsync(sourceUrl.TileJsonUrl, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (TorrentTileJson.Parse(json).Torrent is { CanJoin: true } published)
+            {
+                return published;
+            }
+
+            options.Log?.Invoke(
+                $"[torrent] {sourceUrl.TileJsonUrl} carries no torrent block");
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            // Unreachable, not JSON, not a TileJSON — all the same answer, and all
+            // of them the reason the handles are in the URL in the first place.
+            options.Log?.Invoke(
+                $"[torrent] {sourceUrl.TileJsonUrl} unreadable ({error.Message})");
+        }
+
+        return await FromFragmentAsync(sourceUrl, options, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Builds a descriptor out of the handles in the URL's fragment.
+    /// </summary>
+    /// <remarks>
+    /// A fragment names handles, not an identity, so the infohash has to be
+    /// recovered from one of them: read out of the magnet, or read out of the
+    /// metainfo the <c>.torrent</c> URL points at. Everything else a document
+    /// would have supplied is genuinely unknown here and stays null rather than
+    /// being guessed at.
+    /// </remarks>
+    private static async Task<TorrentDescriptor?> FromFragmentAsync(
+        TorrentSourceUrl sourceUrl,
+        TorrentTileProviderOptions options,
+        CancellationToken cancellationToken)
+    {
+        if (!sourceUrl.HasHandles)
+        {
+            return null;
+        }
+
+        string? infoHash = InfoHashOfMagnet(sourceUrl.Magnet);
+
+        // Only a .torrent to go on, so the metainfo is fetched to learn what the
+        // archive even is. Written to the cache under that name straight away, so
+        // the join below finds it there rather than asking for it twice.
+        if (infoHash is null && sourceUrl.TorrentUrl is { } torrentUrl)
+        {
+            try
+            {
+                byte[] bytes = await s_http
+                    .GetByteArrayAsync(torrentUrl, cancellationToken)
+                    .ConfigureAwait(false);
+
+                infoHash = MonoTorrent.Torrent.Load(bytes)
+                    .InfoHashes.V1OrV2.ToHex().ToLowerInvariant();
+
+                Directory.CreateDirectory(options.CacheDirectory);
+                await File.WriteAllBytesAsync(
+                    Path.Combine(options.CacheDirectory, $"{infoHash}.torrent"),
+                    bytes,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception error) when (error is not OperationCanceledException)
+            {
+                options.Log?.Invoke(
+                    $"[torrent] {torrentUrl} could not be read ({error.Message})");
+                return null;
+            }
+        }
+
+        if (infoHash is null)
+        {
+            return null;
+        }
+
+        options.Log?.Invoke(
+            $"[torrent] {sourceUrl.TileJsonUrl}: joining {infoHash} from the URL fragment");
+
+        return new TorrentDescriptor(
+            infoHash,
+            sourceUrl.Magnet,
+            sourceUrl.TorrentUrl,
+            Name: null,
+            Size: null,
+            WebSeeds: Array.Empty<string>(),
+            Mutable: null);
+    }
+
+    /// <summary>Reads the infohash a magnet names, or null if it names none.</summary>
+    private static string? InfoHashOfMagnet(string? magnet)
+    {
+        if (magnet is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            // A BEP 46 magnet names a public key and may carry no xt at all, in
+            // which case there is no infohash to be had until the DHT is asked.
+            return MonoTorrent.MagnetLink.Parse(magnet)
+                .InfoHashes?.V1OrV2.ToHex().ToLowerInvariant();
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     /// <summary>

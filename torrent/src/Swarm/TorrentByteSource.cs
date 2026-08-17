@@ -226,12 +226,65 @@ public sealed class TorrentByteSource : IByteRangeSource, IAsyncDisposable
             }
 
             _info = info;
+            PrefetchTail(info);
             return info;
         }
         finally
         {
             _initLock.Release();
         }
+    }
+
+    /// <summary>
+    /// Raises the last piece of the archive, before anything has read a header.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Everything else worth prioritising is derived from the header — the root
+    /// directory, the JSON metadata, the leaf directories. That leaves a gap at
+    /// the beginning: until the header is readable nothing points anywhere but
+    /// at the header, so the structural sections are only ever asked for on a
+    /// second pass, after the first has finished.
+    /// </para>
+    /// <para>
+    /// The end of the file is the right blind bet for that gap. The PMTiles spec
+    /// lets a writer relocate every section but the header, and planetiler uses
+    /// that: it reserves 16 KiB at the front, writes tile data from there, and
+    /// puts the JSON metadata and then the leaf directories after all of it. On
+    /// an archive of that shape the tail is structure rather than tiles, and it
+    /// is the half a partial mirror is least likely to hold — tile data arrives
+    /// in whatever order the swarm offers it, while nothing at all asks for the
+    /// end.
+    /// </para>
+    /// <para>
+    /// Deliberately one piece and deliberately not critical. It is a guess: on
+    /// an archive laid out the canonical way, tippecanoe's among them, the tail
+    /// is ordinary tile data and this fetches a piece nobody wanted. One piece
+    /// is a price worth paying to take a round trip out of every planetiler
+    /// archive; a wider window would not be.
+    /// </para>
+    /// <para>
+    /// <b>Inert with the bundled engine.</b>
+    /// <see cref="MonoTorrentEngine.Hint"/> does nothing on purpose — MonoTorrent's
+    /// streaming provider owns piece priority and setting it underneath would
+    /// fight the read in flight — so on that engine the tail is read on demand
+    /// like everything else. This is here because the behaviour belongs in this
+    /// layer, matching pmtiles-torrent 0.4.6, and it takes effect for any engine
+    /// that does implement hints.
+    /// </para>
+    /// </remarks>
+    private void PrefetchTail(TorrentInfo info)
+    {
+        long length = Math.Min(info.PieceLength, info.FileLength);
+        long offset = info.FileLength - length;
+        if (offset < 0 || length <= 0)
+        {
+            return;
+        }
+
+        // Below the header and the root directory, which are what everything else
+        // is blocked on, and above the tile data nobody has asked for.
+        _engine.Hint(offset, length, FetchPriority.Normal);
     }
 
     /// <summary>Maps a file-relative offset to the piece containing it.</summary>
