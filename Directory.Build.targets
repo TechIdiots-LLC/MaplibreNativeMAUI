@@ -1,0 +1,55 @@
+<Project>
+
+  <!--
+    The experimental package line.
+
+    This branch builds against a fork of maplibre-native (terrain-3d-color-relief)
+    rather than upstream, so its natives are not the ones the stable line ships
+    even at the same version. Publishing that under the stable package IDs would
+    make a fork build installable by accident, so the whole family is renamed:
+
+        MapLibreNative.Maui          ->  MapLibreNative.Maui.Experimental
+        MapLibreNative.Maui.WPF      ->  MapLibreNative.Maui.Experimental.WPF
+        MapLibreNative.Maui.Vulkan   ->  MapLibreNative.Maui.Experimental.Vulkan
+        MapLibreNative.Maui.Handlers ->  MapLibreNative.Maui.Experimental.Handlers
+        MapLibreNative.Maui.Torrent  ->  MapLibreNative.Maui.Experimental.Torrent
+
+    Only the package identity moves. AssemblyName and RootNamespace are left
+    alone, so consuming code needs no changes: swap the package reference and
+    rebuild. The flip side is that the two lines cannot be installed side by
+    side, since both carry an assembly called MapLibreNative.Maui. That is the
+    intended relationship: they are alternatives, not additions.
+
+    Set from the command line (`-p:Experimental=true`), which makes it a global
+    property, so it flows across ProjectReference to the projects being packed
+    with it. That is what keeps a dependency correct: MapLibreNative.Maui.WPF
+    packed this way declares a dependency on MapLibreNative.Maui.Experimental
+    rather than on the stable package.
+
+    This lives in Directory.Build.targets rather than Directory.Build.props
+    because props is imported before each project body, where the original
+    PackageId is set; targets is imported after, so this is rewriting a known
+    value rather than being overwritten by it.
+  -->
+  <PropertyGroup Condition="'$(Experimental)' == 'true' AND '$(IsPackable)' != 'false'">
+
+    <!-- The root package, which has no suffix to preserve. -->
+    <PackageId Condition="'$(PackageId)' == 'MapLibreNative.Maui'">MapLibreNative.Maui.Experimental</PackageId>
+
+    <!--
+      Everything else keeps its suffix after the inserted segment: the tail from
+      character 20 is what follows "MapLibreNative.Maui.". The Contains guard
+      stops this re-matching the line above, which by now already reads
+      MapLibreNative.Maui.Experimental.
+    -->
+    <PackageId Condition="$(PackageId.StartsWith('MapLibreNative.Maui.')) AND !$(PackageId.Contains('.Experimental'))">MapLibreNative.Maui.Experimental.$(PackageId.Substring(20))</PackageId>
+
+    <!--
+      Said on the package itself, not only in a release note, because the ID is
+      the only thing most people will read before installing it.
+    -->
+    <Description>[EXPERIMENTAL] $(Description) Built against a fork of maplibre-native; not the stable MapLibreNative.Maui line.</Description>
+
+  </PropertyGroup>
+
+</Project>

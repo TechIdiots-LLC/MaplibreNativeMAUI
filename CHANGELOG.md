@@ -55,6 +55,33 @@
 ### 🐞 Bug fixes
 - **Android: the 64-bit `libmln-cabi.so` was not 16 KB page aligned, so Google Play rejected apps that shipped it** — Android 15 allows devices with 16 KB memory pages, and Play now blocks uploads whose native libraries are linked for 4 KB ("Your app is not compatible with 16 KB memory page sizes"). The release CI builds with NDK r27, whose linker still defaults `max-page-size` to 4 KB; r28's picks 16 KB on its own, which is why a local build looked fine while every published `arm64-v8a` and `x86_64` `.so` — 4.5.0 included — carried `0x1000`-aligned `LOAD` segments. The Android link now passes `-Wl,-z,max-page-size=16384` on the two 64-bit ABIs whatever the NDK version, and both Android native workflows fail the build if the linked `.so` comes out below 16 KB. `armeabi-v7a` is untouched — the NDK applies the flag to 64-bit ABIs only, and 32-bit Android has no 16 KB devices. Windows and Apple need nothing: the Windows build emits a PE via MSVC, where `-Wl,-z` has no meaning and the loader wants 4 KB sections, and on Apple `mln-cabi` is a static archive with no LOAD segments of its own — the app's own arm64 link already aligns to 16 KB. Reported in [#32](https://github.com/TechIdiots-LLC/MaplibreNativeMAUI/issues/32).
 
+## 5.0.0-experimental.1
+
+First release of the **experimental line**: the `MapLibreNative.Maui.Experimental.*`
+packages, a preview of the next major version. The stable `MapLibreNative.Maui` 4.x
+line is unaffected and continues to receive minor and patch releases.
+
+### What is in it
+
+- **3D terrain**, and the fork it needs. `dependencies/maplibre-native` points at
+  `WifiDB/maplibre-native` (`terrain-3d-color-relief`) rather than upstream, so these
+  natives are not the ones the stable line ships even at a matching version. That is
+  the reason for the separate package identity rather than a prerelease of 4.x: a fork
+  build under the stable ID is too easy to install by accident.
+- **Torrent tile source** (`MapLibreNative.Maui.Experimental.Torrent`), serving PMTiles
+  map tiles out of a BitTorrent swarm, over the host HTTP provider and URL-claiming ABI.
+  It has no stable-line counterpart, because the stable native carries neither.
+- Everything already on the 4.5.0 line.
+
+### Using it
+
+The assemblies keep their usual names, so swapping the package reference is the whole
+migration and `using MapLibreNative.Maui;` still compiles. For the same reason the two
+lines cannot be installed side by side: both carry an assembly called
+`MapLibreNative.Maui`. They are alternatives, not additions.
+
+Sample apps are not attached to experimental releases.
+
 ## 4.5.0
 ### ✨ Features and improvements
 - **`GpsFollowZoomMode` / `GpsFollowZoom` — configurable zoom when GPS Follow engages** — new properties on the MAUI `MapLibreMap` control (and matching dependency properties on the WPF `MlnMapImage`) controlling the camera zoom applied when the GPS control enters Follow mode (via the on-map button, or the first fix while following). `KeepCurrent` (default) preserves the old behaviour (only zooms to 14 when further out than 8); `Fixed` always eases to the `GpsFollowZoom` level (default 16, the vistumbler-android behaviour); `Accuracy` computes the zoom from the fix's reported accuracy so the accuracy circle spans about a third of the viewport — a sharp fix lands at street level (clamped to 17), a coarse cell-grade fix stays zoomed out to cover its uncertainty (clamped to 10). Later fixes never change the zoom, so a manual pinch/scroll zoom sticks until Follow is re-entered. Entering Follow via the button now also applies the entry zoom on Android/iOS (previously only Windows/WPF re-eased the camera there).
