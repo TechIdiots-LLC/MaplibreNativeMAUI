@@ -7,16 +7,16 @@
  *   iOS/mac  : platform_frontend_apple.cpp    (Metal / EGL)
  */
 #pragma once
-#include <mbgl/map/map_observer.hpp>
-#include <mbgl/renderer/renderer_frontend.hpp>
-#include <mbgl/renderer/renderer_observer.hpp>
-#include <mbgl/util/size.hpp>
-#include <mbgl/actor/scheduler.hpp>
+#include <mln/map/map_observer.hpp>
+#include <mln/renderer/renderer_frontend.hpp>
+#include <mln/renderer/renderer_observer.hpp>
+#include <mln/util/size.hpp>
+#include <mln/actor/scheduler.hpp>
 #include "mln_cabi.h"
 
-namespace mbgl { class Renderer; }
+namespace mln { class Renderer; }
 
-class PlatformFrontend : public mbgl::RendererFrontend {
+class PlatformFrontend : public mln::RendererFrontend {
 public:
     virtual ~PlatformFrontend() = default;
 
@@ -24,13 +24,13 @@ public:
     virtual void render() = 0;
 
     /// Resize the rendering surface.
-    virtual void setSize(mbgl::Size) = 0;
+    virtual void setSize(mln::Size) = 0;
 
     /// Returns the current surface size (physical pixels).
-    virtual mbgl::Size getSize() const = 0;
+    virtual mln::Size getSize() const = 0;
 
     /// Returns a default (no-op) MapObserver.
-    virtual mbgl::MapObserver& getObserver() = 0;
+    virtual mln::MapObserver& getObserver() = 0;
 
     /// Returns the platform-native view created by the frontend, or nullptr.
     /// On Apple this is the MTKView* (Metal) or CAMetalLayer-backed UIView*
@@ -43,5 +43,5 @@ public:
     virtual bool readPixels(uint8_t* /*out*/, size_t /*len*/) { return false; }
 
     /// Returns the underlying Renderer for feature queries, or nullptr.
-    virtual mbgl::Renderer* getRenderer() { return nullptr; }
+    virtual mln::Renderer* getRenderer() { return nullptr; }
 };

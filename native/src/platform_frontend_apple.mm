@@ -18,12 +18,12 @@
 
 #include "null_map_observer.hpp"
 
-#include <mbgl/mtl/renderer_backend.hpp>
-#include <mbgl/mtl/renderable_resource.hpp>
-#include <mbgl/mtl/mtl_fwd.hpp>
-#include <mbgl/renderer/renderer.hpp>
-#include <mbgl/renderer/update_parameters.hpp>
-#include <mbgl/gfx/backend_scope.hpp>
+#include <mln/mtl/renderer_backend.hpp>
+#include <mln/mtl/renderable_resource.hpp>
+#include <mln/mtl/mtl_fwd.hpp>
+#include <mln/renderer/renderer.hpp>
+#include <mln/renderer/update_parameters.hpp>
+#include <mln/gfx/backend_scope.hpp>
 
 // metal-cpp (vendored by maplibre-native)
 #include <Metal/Metal.hpp>
@@ -66,29 +66,29 @@ class MetalFrontend;
 
 // ── RenderableResource ─────────────────────────────────────────────────────────
 
-class MetalRenderableResource final : public mbgl::mtl::RenderableResource {
+class MetalRenderableResource final : public mln::mtl::RenderableResource {
 public:
     explicit MetalRenderableResource(MetalBackend& backend_) : _backend(backend_) {}
 
     void bind() override;
     void swap() override;
 
-    const mbgl::mtl::RendererBackend& getBackend() const override;
+    const mln::mtl::RendererBackend& getBackend() const override;
 
-    const mbgl::mtl::MTLCommandBufferPtr& getCommandBuffer() const override {
+    const mln::mtl::MTLCommandBufferPtr& getCommandBuffer() const override {
         return _commandBufferPtr;
     }
 
-    mbgl::mtl::MTLBlitPassDescriptorPtr getUploadPassDescriptor() const override {
+    mln::mtl::MTLBlitPassDescriptorPtr getUploadPassDescriptor() const override {
         // Allocate a fresh descriptor each call; ownership transferred to caller.
         return NS::TransferPtr(MTL::BlitPassDescriptor::alloc()->init());
     }
 
-    const mbgl::mtl::MTLRenderPassDescriptorPtr& getRenderPassDescriptor() const override {
+    const mln::mtl::MTLRenderPassDescriptorPtr& getRenderPassDescriptor() const override {
         return _renderPassDescPtr;
     }
 
-    mbgl::Size framebufferSize() const {
+    mln::Size framebufferSize() const {
         CGSize sz = _mtlView ? _mtlView.drawableSize : CGSizeMake(0, 0);
         return { static_cast<uint32_t>(sz.width), static_cast<uint32_t>(sz.height) };
     }
@@ -100,25 +100,25 @@ public:
     id<MTLCommandQueue>    _commandQueue   = nil;
 
 private:
-    mbgl::mtl::MTLCommandBufferPtr     _commandBufferPtr;
-    mutable mbgl::mtl::MTLRenderPassDescriptorPtr _renderPassDescPtr;
+    mln::mtl::MTLCommandBufferPtr     _commandBufferPtr;
+    mutable mln::mtl::MTLRenderPassDescriptorPtr _renderPassDescPtr;
 };
 
 // ── Metal backend ──────────────────────────────────────────────────────────────
 
-class MetalBackend : public mbgl::mtl::RendererBackend,
-                     public mbgl::gfx::Renderable {
+class MetalBackend : public mln::mtl::RendererBackend,
+                     public mln::gfx::Renderable {
 public:
-    MetalBackend(mbgl::Size sz)
-        : mbgl::mtl::RendererBackend(mbgl::gfx::ContextMode::Unique)
-        , mbgl::gfx::Renderable(sz, std::make_unique<MetalRenderableResource>(*this))
+    MetalBackend(mln::Size sz)
+        : mln::mtl::RendererBackend(mln::gfx::ContextMode::Unique)
+        , mln::gfx::Renderable(sz, std::make_unique<MetalRenderableResource>(*this))
     {}
 
     ~MetalBackend() override = default;
 
-    mbgl::gfx::Renderable& getDefaultRenderable() override { return *this; }
+    mln::gfx::Renderable& getDefaultRenderable() override { return *this; }
 
-    void setSize(mbgl::Size sz) { this->size = sz; }
+    void setSize(mln::Size sz) { this->size = sz; }
 
     void updateAssumedState() override {
         assumeFramebufferBinding(ImplicitFramebufferBinding);
@@ -169,7 +169,7 @@ public:
 
 // ── RenderableResource impl (needs full MetalBackend definition) ───────────────
 
-const mbgl::mtl::RendererBackend& MetalRenderableResource::getBackend() const {
+const mln::mtl::RendererBackend& MetalRenderableResource::getBackend() const {
     return _backend;
 }
 
@@ -207,10 +207,10 @@ void MetalRenderableResource::swap() {
 
 class MetalFrontend final : public PlatformFrontend {
 public:
-    MetalFrontend(mbgl::Size sz, float pixelRatio,
+    MetalFrontend(mln::Size sz, float pixelRatio,
                   mbgl_render_fn renderCb, void* renderUd)
         : _backend(sz)
-        , _renderer(std::make_unique<mbgl::Renderer>(_backend, pixelRatio))
+        , _renderer(std::make_unique<mln::Renderer>(_backend, pixelRatio))
         , _renderCb(renderCb), _renderUd(renderUd)
     {
         // Create the MTKView now that the backend has initialised Metal.
@@ -218,18 +218,18 @@ public:
     }
 
     ~MetalFrontend() override {
-        mbgl::gfx::BackendScope guard(_backend, mbgl::gfx::BackendScope::ScopeType::Implicit);
+        mln::gfx::BackendScope guard(_backend, mln::gfx::BackendScope::ScopeType::Implicit);
         _renderer.reset();
     }
 
     void reset() override { _renderer.reset(); }
 
-    void setObserver(mbgl::RendererObserver& obs) override {
+    void setObserver(mln::RendererObserver& obs) override {
         _renderer->setObserver(&obs);
     }
 
     // Called by mbgl when it wants a new frame; we signal the MAUI layer.
-    void update(std::shared_ptr<mbgl::UpdateParameters> params) override {
+    void update(std::shared_ptr<mln::UpdateParameters> params) override {
         {
             std::unique_lock<std::mutex> lock(_mutex);
             _updateParams = std::move(params);
@@ -239,7 +239,7 @@ public:
 
     // Called by the MAUI layer (from the main thread) to render the pending frame.
     void render() override {
-        std::shared_ptr<mbgl::UpdateParameters> params;
+        std::shared_ptr<mln::UpdateParameters> params;
         {
             std::unique_lock<std::mutex> lock(_mutex);
             params = std::move(_updateParams);
@@ -252,7 +252,7 @@ public:
         _pendingParams.reset();
     }
 
-    void setSize(mbgl::Size sz) override {
+    void setSize(mln::Size sz) override {
         _backend.setSize(sz);
         auto& res = _backend.getResource<MetalRenderableResource>();
         if (res._mtlView) {
@@ -260,10 +260,10 @@ public:
         }
     }
 
-    mbgl::Size getSize() const override { return _backend.getSize(); }
-    mbgl::MapObserver& getObserver() override { return _nullObserver; }
-    mbgl::Renderer* getRenderer() override { return _renderer.get(); }
-    const mbgl::TaggedScheduler& getThreadPool() const override { return const_cast<MetalBackend&>(_backend).getThreadPool(); }
+    mln::Size getSize() const override { return _backend.getSize(); }
+    mln::MapObserver& getObserver() override { return _nullObserver; }
+    mln::Renderer* getRenderer() override { return _renderer.get(); }
+    const mln::TaggedScheduler& getThreadPool() const override { return const_cast<MetalBackend&>(_backend).getThreadPool(); }
 
     void* getNativeView() override { return _backend.getNativeView(); }
 
@@ -271,16 +271,16 @@ private:
     // Called synchronously from drawInMTKView: (i.e. from [mtlView draw] above).
     void drawFrame() {
         if (!_pendingParams || !_renderer) return;
-        mbgl::gfx::BackendScope guard(_backend, mbgl::gfx::BackendScope::ScopeType::Implicit);
+        mln::gfx::BackendScope guard(_backend, mln::gfx::BackendScope::ScopeType::Implicit);
         _renderer->render(_pendingParams);
     }
 
     MetalBackend                            _backend;
-    std::unique_ptr<mbgl::Renderer>         _renderer;
+    std::unique_ptr<mln::Renderer>         _renderer;
     mbgl_render_fn                          _renderCb;
     void*                                   _renderUd;
-    std::shared_ptr<mbgl::UpdateParameters> _updateParams;
-    std::shared_ptr<mbgl::UpdateParameters> _pendingParams;
+    std::shared_ptr<mln::UpdateParameters> _updateParams;
+    std::shared_ptr<mln::UpdateParameters> _pendingParams;
     std::mutex                              _mutex;
     NullMapObserver                         _nullObserver;
 };
@@ -289,7 +289,7 @@ private:
 
 PlatformFrontend* createPlatformFrontend(
     void* /*surface_handle*/, void* /*gl_context*/,
-    mbgl::Size sz, float pixelRatio,
+    mln::Size sz, float pixelRatio,
     mbgl_render_fn renderCb, void* renderUd)
 {
     return new MetalFrontend(sz, pixelRatio, renderCb, renderUd);
@@ -308,9 +308,9 @@ PlatformFrontend* createPlatformFrontend(
 
 #include "platform_frontend_vulkan_common.hpp"
 
-#include <mbgl/vulkan/renderer_backend.hpp>
-#include <mbgl/vulkan/renderable_resource.hpp>
-#include <mbgl/vulkan/context.hpp>
+#include <mln/vulkan/renderer_backend.hpp>
+#include <mln/vulkan/renderable_resource.hpp>
+#include <mln/vulkan/context.hpp>
 
 #import <UIKit/UIKit.h>
 #import <QuartzCore/CAMetalLayer.h>
@@ -328,7 +328,7 @@ namespace {
 
 class AppleVulkanBackend;
 
-class AppleVulkanResource final : public mbgl::vulkan::SurfaceRenderableResource {
+class AppleVulkanResource final : public mln::vulkan::SurfaceRenderableResource {
 public:
     explicit AppleVulkanResource(AppleVulkanBackend& b);
     std::vector<const char*> getDeviceExtensions() override {
@@ -338,12 +338,12 @@ public:
     void bind() override {}
 };
 
-class AppleVulkanBackend final : public mbgl::vulkan::RendererBackend,
-                                 public mbgl::vulkan::Renderable {
+class AppleVulkanBackend final : public mln::vulkan::RendererBackend,
+                                 public mln::vulkan::Renderable {
 public:
-    explicit AppleVulkanBackend(mbgl::Size sz)
-        : mbgl::vulkan::RendererBackend(mbgl::gfx::ContextMode::Unique),
-          mbgl::vulkan::Renderable(sz, std::make_unique<AppleVulkanResource>(*this)) {
+    explicit AppleVulkanBackend(mln::Size sz)
+        : mln::vulkan::RendererBackend(mln::gfx::ContextMode::Unique),
+          mln::vulkan::Renderable(sz, std::make_unique<AppleVulkanResource>(*this)) {
         _view = [[MbglMetalLayerView alloc] initWithFrame:CGRectZero];
         ((CAMetalLayer*)_view.layer).drawableSize = CGSizeMake(sz.width, sz.height);
         init();
@@ -352,21 +352,21 @@ public:
 
     CAMetalLayer* getMetalLayer() const { return (CAMetalLayer*)_view.layer; }
 
-    mbgl::gfx::Renderable& getDefaultRenderable() override { return *this; }
+    mln::gfx::Renderable& getDefaultRenderable() override { return *this; }
 
     // Backend contract required by VulkanFrontendT<Backend>.
-    mbgl::Size getSize() const { return size; }
-    void setSize(mbgl::Size sz) {
+    mln::Size getSize() const { return size; }
+    void setSize(mln::Size sz) {
         size = sz;
         ((CAMetalLayer*)_view.layer).drawableSize = CGSizeMake(sz.width, sz.height);
-        if (context) static_cast<mbgl::vulkan::Context&>(*context).requestSurfaceUpdate();
+        if (context) static_cast<mln::vulkan::Context&>(*context).requestSurfaceUpdate();
     }
     void* getNativeView() { return (__bridge void*)_view; }
     bool  readPixels(uint8_t*, size_t) { return false; }
 
 protected:
     std::vector<const char*> getInstanceExtensions() override {
-        auto ext = mbgl::vulkan::RendererBackend::getInstanceExtensions();
+        auto ext = mln::vulkan::RendererBackend::getInstanceExtensions();
         ext.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
         ext.push_back(VK_EXT_METAL_SURFACE_EXTENSION_NAME);
         ext.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
@@ -380,7 +380,7 @@ private:
 };
 
 AppleVulkanResource::AppleVulkanResource(AppleVulkanBackend& b)
-    : mbgl::vulkan::SurfaceRenderableResource(b) {}
+    : mln::vulkan::SurfaceRenderableResource(b) {}
 
 void AppleVulkanResource::createPlatformSurface() {
     auto& b = static_cast<AppleVulkanBackend&>(backend);
@@ -393,7 +393,7 @@ void AppleVulkanResource::createPlatformSurface() {
 
 PlatformFrontend* createPlatformFrontend(
     void* /*surface_handle*/, void* /*gl_context*/,
-    mbgl::Size sz, float pixelRatio,
+    mln::Size sz, float pixelRatio,
     mbgl_render_fn renderCb, void* renderUd)
 {
     return new VulkanFrontendT<AppleVulkanBackend>(pixelRatio, renderCb, renderUd, sz);

@@ -45,7 +45,7 @@ target_sources(mln-cabi PRIVATE
     src/mln_cabi.cpp
     src/mln_cabi_offline.cpp
     # Host-provided networking. Built on every platform: on Android it defines
-    # mbgl::HTTPFileSource, because nothing else does in a standalone NDK build,
+    # mln::HTTPFileSource, because nothing else does in a standalone NDK build,
     # and elsewhere it registers a FileSourceType::Network factory at runtime.
     # That registration only happens once the host installs a provider, so a
     # build that never calls mbgl_set_http_provider is unaffected.
@@ -57,7 +57,7 @@ if(WIN32)
     target_sources(mln-cabi PRIVATE src/platform_frontend_windows.cpp)
     target_compile_options(mln-cabi PRIVATE /wd4267)
     target_include_directories(mln-cabi PRIVATE "${MAPLIBRE_NATIVE_DIR}/src")
-    # Vulkan build: the offscreen frontend reuses mbgl::vulkan::HeadlessBackend,
+    # Vulkan build: the offscreen frontend reuses mln::vulkan::HeadlessBackend,
     # whose header lives in platform/default/include (added to mbgl-core by
     # platform/windows/windows.cmake).
     if(MLN_WITH_VULKAN)
@@ -70,8 +70,8 @@ elseif(ANDROID)
     # Platform stub sources — symbols normally provided by MapLibreAndroid JNI SDK
     # that are absent in a standalone NDK build.
     target_sources(mln-cabi PRIVATE
-        "${MAPLIBRE_NATIVE_DIR}/platform/default/src/mbgl/text/local_glyph_rasterizer.cpp"
-        "${MAPLIBRE_NATIVE_DIR}/platform/default/src/mbgl/util/logging_stderr.cpp"
+        "${MAPLIBRE_NATIVE_DIR}/platform/default/src/mln/text/local_glyph_rasterizer.cpp"
+        "${MAPLIBRE_NATIVE_DIR}/platform/default/src/mln/util/logging_stderr.cpp"
         "${MAPLIBRE_NATIVE_DIR}/platform/android/src/test/collator_test_stub.cpp"
         "${MAPLIBRE_NATIVE_DIR}/platform/android/src/test/number_format_test_stub.cpp"
     )
@@ -121,7 +121,7 @@ elseif(APPLE)
     # mbgl-core is compiled with -fno-rtti on Apple (same as Android/Linux).
     # We must match that flag so MetalBackend's typeinfo does not emit a
     # reference to the non-existent base class typeinfo
-    # (typeinfo for mbgl::mtl::RendererBackend) that mbgl-core never defines.
+    # (typeinfo for mln::mtl::RendererBackend) that mbgl-core never defines.
     target_compile_options(mln-cabi PRIVATE -fno-rtti)
 else()
     message(FATAL_ERROR "Unsupported platform")
@@ -134,8 +134,8 @@ if(TARGET mbgl-core)
     target_link_libraries(mln-cabi PRIVATE mbgl-core)
     # mbgl-core links its vendored header-only deps PRIVATE, so their include
     # directories are not propagated to us. The platform frontends include
-    # headers out of maplibre-native's src/ tree directly (mbgl/gl/context.hpp
-    # -> mbgl/gl/object.hpp -> <unique_resource.hpp>), so we need that one
+    # headers out of maplibre-native's src/ tree directly (mln/gl/context.hpp
+    # -> mln/gl/object.hpp -> <unique_resource.hpp>), so we need that one
     # explicitly.
     if(TARGET mbgl-vendor-unique_resource)
         target_link_libraries(mln-cabi PRIVATE mbgl-vendor-unique_resource)

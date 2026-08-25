@@ -19,19 +19,19 @@
 
 #ifdef MLN_RENDER_BACKEND_OPENGL
 
-#include <mbgl/gl/renderable_resource.hpp>
-#include <mbgl/gl/renderer_backend.hpp>
-#include <mbgl/gl/context.hpp>
-#include <mbgl/renderer/renderer.hpp>
-#include <mbgl/renderer/update_parameters.hpp>
-#include <mbgl/gfx/backend_scope.hpp>
+#include <mln/gl/renderable_resource.hpp>
+#include <mln/gl/renderer_backend.hpp>
+#include <mln/gl/context.hpp>
+#include <mln/renderer/renderer.hpp>
+#include <mln/renderer/update_parameters.hpp>
+#include <mln/gfx/backend_scope.hpp>
 #include <memory>
 #include <mutex>
 
 #include "null_map_observer.hpp"
 
 /* ── Renderable resource ────────────────────────────────────────────── */
-class WGLRenderableResource : public mbgl::gl::RenderableResource {
+class WGLRenderableResource : public mln::gl::RenderableResource {
 public:
     WGLRenderableResource(class WGLBackend& backend) : _backend(backend) {}
     void bind() override;
@@ -40,11 +40,11 @@ private:
 };
 
 /* ── WGL backend ────────────────────────────────────────────────────── */
-class WGLBackend : public mbgl::gl::RendererBackend,
-                   public mbgl::gfx::Renderable {
+class WGLBackend : public mln::gl::RendererBackend,
+                   public mln::gfx::Renderable {
 public:
-    WGLBackend(HDC hDC, HGLRC hGLRC, mbgl::Size sz)
-        : mbgl::gfx::Renderable(sz, std::make_unique<WGLRenderableResource>(*this))
+    WGLBackend(HDC hDC, HGLRC hGLRC, mln::Size sz)
+        : mln::gfx::Renderable(sz, std::make_unique<WGLRenderableResource>(*this))
         // Unique (not Shared): our WGL context is a private off-screen surface, not
         // actually shared with host-drawn content, so mbgl's own per-frame clear
         // pass (renderer_impl.cpp's commonClearPass) should run normally. Shared
@@ -53,18 +53,18 @@ public:
         // whenever the new frame didn't fully repaint the viewport (e.g. right
         // after zooming out). We still need the state re-sync Shared mode gave us
         // for free (see render() below).
-        , mbgl::gl::RendererBackend(mbgl::gfx::ContextMode::Unique)
+        , mln::gl::RendererBackend(mln::gfx::ContextMode::Unique)
         , _hDC(hDC), _hGLRC(hGLRC)
     {}
 
-    mbgl::gfx::Renderable& getDefaultRenderable() override { return *this; }
-    void setSize(mbgl::Size sz) { this->size = sz; }
+    mln::gfx::Renderable& getDefaultRenderable() override { return *this; }
+    void setSize(mln::Size sz) { this->size = sz; }
 
 protected:
     void activate()   override { wglMakeCurrent(_hDC, _hGLRC); }
     void deactivate() override { wglMakeCurrent(nullptr, nullptr); }
-    mbgl::gl::ProcAddress getExtensionFunctionPointer(const char* name) override {
-        return reinterpret_cast<mbgl::gl::ProcAddress>(wglGetProcAddress(name));
+    mln::gl::ProcAddress getExtensionFunctionPointer(const char* name) override {
+        return reinterpret_cast<mln::gl::ProcAddress>(wglGetProcAddress(name));
     }
     // Re-sync mbgl's cached GL state to match what is actually current on the
     // context, since our host toggles other GL contexts current on the same
@@ -87,26 +87,26 @@ void WGLRenderableResource::bind() {
 /* ── WGL frontend ───────────────────────────────────────────────────── */
 class WGLFrontend : public PlatformFrontend {
 public:
-    WGLFrontend(HDC hDC, HGLRC hGLRC, mbgl::Size sz, float pixelRatio,
+    WGLFrontend(HDC hDC, HGLRC hGLRC, mln::Size sz, float pixelRatio,
                 mbgl_render_fn renderCb, void* renderUd)
         : _backend(hDC, hGLRC, sz)
-        , _renderer(std::make_unique<mbgl::Renderer>(_backend, pixelRatio))
+        , _renderer(std::make_unique<mln::Renderer>(_backend, pixelRatio))
         , _renderCb(renderCb), _renderUd(renderUd)
     {}
 
     ~WGLFrontend() override {
-        mbgl::gfx::BackendScope guard(_backend, mbgl::gfx::BackendScope::ScopeType::Implicit);
+        mln::gfx::BackendScope guard(_backend, mln::gfx::BackendScope::ScopeType::Implicit);
         _renderer.reset();
     }
 
     /* RendererFrontend */
     void reset() override { _renderer.reset(); }
 
-    void setObserver(mbgl::RendererObserver& obs) override {
+    void setObserver(mln::RendererObserver& obs) override {
         _renderer->setObserver(&obs);
     }
 
-    void update(std::shared_ptr<mbgl::UpdateParameters> params) override {
+    void update(std::shared_ptr<mln::UpdateParameters> params) override {
         {
             std::unique_lock<std::mutex> lock(_mutex);
             _updateParams = std::move(params);
@@ -116,39 +116,39 @@ public:
 
     /* PlatformFrontend */
     void render() override {
-        std::shared_ptr<mbgl::UpdateParameters> params;
+        std::shared_ptr<mln::UpdateParameters> params;
         {
             std::unique_lock<std::mutex> lock(_mutex);
             params = std::move(_updateParams);
         }
         if (!params) return;
-        mbgl::gfx::BackendScope guard(_backend, mbgl::gfx::BackendScope::ScopeType::Implicit);
+        mln::gfx::BackendScope guard(_backend, mln::gfx::BackendScope::ScopeType::Implicit);
         // Mark all cached GL state dirty so mbgl re-applies it unconditionally this
         // frame, rather than trusting values it cached from a previous frame on a
         // context another WGL surface may have made current in between. This is
         // what ContextMode::Shared used to trigger for us automatically via
         // Context::createCommandEncoder(); doing it explicitly lets the backend use
         // ContextMode::Unique instead, so mbgl's per-frame clear pass isn't skipped.
-        _backend.getContext<mbgl::gl::Context>().setDirtyState();
+        _backend.getContext<mln::gl::Context>().setDirtyState();
         _renderer->render(params);
     }
 
-    void setSize(mbgl::Size sz) override {
+    void setSize(mln::Size sz) override {
         _backend.setSize(sz);
     }
 
-    mbgl::Size getSize() const override { return _backend.getSize(); }
+    mln::Size getSize() const override { return _backend.getSize(); }
 
-    mbgl::MapObserver& getObserver() override { return _nullObserver; }
-    mbgl::Renderer* getRenderer() override { return _renderer.get(); }
-    const mbgl::TaggedScheduler& getThreadPool() const override { return const_cast<WGLBackend&>(_backend).getThreadPool(); }
+    mln::MapObserver& getObserver() override { return _nullObserver; }
+    mln::Renderer* getRenderer() override { return _renderer.get(); }
+    const mln::TaggedScheduler& getThreadPool() const override { return const_cast<WGLBackend&>(_backend).getThreadPool(); }
 
 private:
     WGLBackend                                _backend;
-    std::unique_ptr<mbgl::Renderer>           _renderer;
+    std::unique_ptr<mln::Renderer>           _renderer;
     mbgl_render_fn                            _renderCb;
     void*                                     _renderUd;
-    std::shared_ptr<mbgl::UpdateParameters>   _updateParams;
+    std::shared_ptr<mln::UpdateParameters>   _updateParams;
     std::mutex                                _mutex;
     NullMapObserver                           _nullObserver;
 };
@@ -156,7 +156,7 @@ private:
 /* ── Factory (called by mln_cabi.cpp) ──────────────────────────────── */
 PlatformFrontend* createPlatformFrontend(
     void* surface_handle, void* gl_context,
-    mbgl::Size sz, float pixelRatio,
+    mln::Size sz, float pixelRatio,
     mbgl_render_fn renderCb, void* renderUd)
 {
     return new WGLFrontend(
@@ -170,11 +170,11 @@ PlatformFrontend* createPlatformFrontend(
 
 #include "null_map_observer.hpp"
 
-#include <mbgl/vulkan/headless_backend.hpp>
-#include <mbgl/renderer/renderer.hpp>
-#include <mbgl/renderer/update_parameters.hpp>
-#include <mbgl/gfx/backend_scope.hpp>
-#include <mbgl/util/image.hpp>
+#include <mln/vulkan/headless_backend.hpp>
+#include <mln/renderer/renderer.hpp>
+#include <mln/renderer/update_parameters.hpp>
+#include <mln/gfx/backend_scope.hpp>
+#include <mln/util/image.hpp>
 
 #include <cstring>
 #include <memory>
@@ -201,35 +201,35 @@ static void VkDiag(const char* msg) {
  * airspace-free, in-tree model as the WGL path (which reads back GL-side). */
 class VulkanOffscreenFrontend : public PlatformFrontend {
 public:
-    VulkanOffscreenFrontend(mbgl::Size sz, float pixelRatio, mbgl_render_fn cb, void* ud)
+    VulkanOffscreenFrontend(mln::Size sz, float pixelRatio, mbgl_render_fn cb, void* ud)
         : _size(sz)
-        , _backend(sz, mbgl::gfx::Renderable::SwapBehaviour::NoFlush, mbgl::gfx::ContextMode::Unique)
-        , _renderer(std::make_unique<mbgl::Renderer>(_backend, pixelRatio))
+        , _backend(sz, mln::gfx::Renderable::SwapBehaviour::NoFlush, mln::gfx::ContextMode::Unique)
+        , _renderer(std::make_unique<mln::Renderer>(_backend, pixelRatio))
         , _renderCb(cb), _renderUd(ud)
     { VkDiag("ctor: backend+renderer constructed"); }
 
     ~VulkanOffscreenFrontend() override {
         VkDiag("dtor: begin");
-        mbgl::gfx::BackendScope guard(_backend, mbgl::gfx::BackendScope::ScopeType::Implicit);
+        mln::gfx::BackendScope guard(_backend, mln::gfx::BackendScope::ScopeType::Implicit);
         _renderer.reset();
         VkDiag("dtor: end");
     }
 
     /* RendererFrontend */
     void reset() override { _renderer.reset(); }
-    void setObserver(mbgl::RendererObserver& obs) override { _renderer->setObserver(&obs); }
-    void update(std::shared_ptr<mbgl::UpdateParameters> params) override {
+    void setObserver(mln::RendererObserver& obs) override { _renderer->setObserver(&obs); }
+    void update(std::shared_ptr<mln::UpdateParameters> params) override {
         VkDiag("update");
         { std::unique_lock<std::mutex> lock(_mutex); _updateParams = std::move(params); }
         if (_renderCb) _renderCb(_renderUd);
     }
-    const mbgl::TaggedScheduler& getThreadPool() const override {
-        return const_cast<mbgl::vulkan::HeadlessBackend&>(_backend).getThreadPool();
+    const mln::TaggedScheduler& getThreadPool() const override {
+        return const_cast<mln::vulkan::HeadlessBackend&>(_backend).getThreadPool();
     }
 
     /* PlatformFrontend */
     void render() override {
-        std::shared_ptr<mbgl::UpdateParameters> params;
+        std::shared_ptr<mln::UpdateParameters> params;
         { std::unique_lock<std::mutex> lock(_mutex); params = std::move(_updateParams); }
         if (!params) return;
         // Default (Explicit) scope: the headless backend's activate() creates its impl
@@ -238,11 +238,11 @@ public:
         // live; reading it in a separate scope tears frame resources down first and
         // corrupts the heap. readStillImage() waits for the frame and copies the image.
         VkDiag("render: begin");
-        mbgl::gfx::BackendScope guard(_backend);
+        mln::gfx::BackendScope guard(_backend);
         _renderer->render(params);
         VkDiag("render: renderer->render done");
         try {
-            mbgl::PremultipliedImage img = _backend.readStillImage();
+            mln::PremultipliedImage img = _backend.readStillImage();
             VkDiag("render: readStillImage done");
             // The offscreen color attachment is R8G8B8A8 (see texture2d.cpp), so
             // readStillImage() hands back RGBA bytes. The managed side blits this
@@ -264,10 +264,10 @@ public:
         VkDiag("render: end");
     }
 
-    void setSize(mbgl::Size sz) override { VkDiag("setSize"); _size = sz; _backend.setSize(sz); }
-    mbgl::Size getSize() const override { return _size; }
-    mbgl::MapObserver& getObserver() override { return _nullObserver; }
-    mbgl::Renderer* getRenderer() override { return _renderer.get(); }
+    void setSize(mln::Size sz) override { VkDiag("setSize"); _size = sz; _backend.setSize(sz); }
+    mln::Size getSize() const override { return _size; }
+    mln::MapObserver& getObserver() override { return _nullObserver; }
+    mln::Renderer* getRenderer() override { return _renderer.get(); }
 
     bool readPixels(uint8_t* out, size_t len) override {
         const size_t need = static_cast<size_t>(_size.width) * _size.height * 4u;
@@ -277,20 +277,20 @@ public:
     }
 
 private:
-    mbgl::Size                               _size;
-    mbgl::vulkan::HeadlessBackend            _backend;
-    std::unique_ptr<mbgl::Renderer>          _renderer;
+    mln::Size                               _size;
+    mln::vulkan::HeadlessBackend            _backend;
+    std::unique_ptr<mln::Renderer>          _renderer;
     std::vector<uint8_t>                     _lastImage;   // most recent frame, RGBA
     mbgl_render_fn                           _renderCb;
     void*                                    _renderUd;
-    std::shared_ptr<mbgl::UpdateParameters>  _updateParams;
+    std::shared_ptr<mln::UpdateParameters>  _updateParams;
     std::mutex                               _mutex;
     NullMapObserver                          _nullObserver;
 };
 
 PlatformFrontend* createPlatformFrontend(
     void* /*surface_handle*/, void* /*gl_context*/,
-    mbgl::Size sz, float pixelRatio,
+    mln::Size sz, float pixelRatio,
     mbgl_render_fn renderCb, void* renderUd)
 {
     VkDiag("create: begin");

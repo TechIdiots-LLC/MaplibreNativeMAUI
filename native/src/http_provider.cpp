@@ -20,7 +20,7 @@
 //
 // Two routes into that machinery, because the platforms differ:
 //
-//   Android — defines mbgl::HTTPFileSource directly. It has to: nothing else in
+//   Android — defines mln::HTTPFileSource directly. It has to: nothing else in
 //     a standalone NDK build provides that symbol, and mbgl-core references it.
 //
 //   Everywhere else — maplibre-native already links its own HTTPFileSource, so
@@ -33,17 +33,17 @@
 // Include the C ABI header for mbgl_http_provider_fn / mbgl_http_error_t typedefs.
 #include "mln_cabi.h"
 
-#include <mbgl/storage/file_source.hpp>
-#include <mbgl/storage/file_source_manager.hpp>
-#include <mbgl/storage/http_file_source.hpp>
-#include <mbgl/storage/online_file_source.hpp>
-#include <mbgl/storage/resource.hpp>
-#include <mbgl/storage/resource_options.hpp>
-#include <mbgl/storage/response.hpp>
-#include <mbgl/util/async_request.hpp>
-#include <mbgl/util/chrono.hpp>
-#include <mbgl/util/client_options.hpp>
-#include <mbgl/util/run_loop.hpp>
+#include <mln/storage/file_source.hpp>
+#include <mln/storage/file_source_manager.hpp>
+#include <mln/storage/http_file_source.hpp>
+#include <mln/storage/online_file_source.hpp>
+#include <mln/storage/resource.hpp>
+#include <mln/storage/resource_options.hpp>
+#include <mln/storage/response.hpp>
+#include <mln/util/async_request.hpp>
+#include <mln/util/chrono.hpp>
+#include <mln/util/client_options.hpp>
+#include <mln/util/run_loop.hpp>
 
 #include <atomic>
 #include <cstdint>
@@ -60,8 +60,8 @@
 namespace {
 
 struct PendingRequest {
-    mbgl::FileSource::Callback callback;
-    mbgl::util::RunLoop*       runLoop;  // the map thread's RunLoop
+    mln::FileSource::Callback callback;
+    mln::util::RunLoop*       runLoop;  // the map thread's RunLoop
     std::atomic<bool>          cancelled{false};
 };
 
@@ -105,7 +105,7 @@ void mbgl_set_http_provider_impl(mbgl_http_provider_fn fn, void* userdata) noexc
     // using whichever network stack maplibre-native built for its platform.
     //
     // Not done on Android, and deliberately so. There the provider is already
-    // reached through mbgl::HTTPFileSource, which sits *underneath*
+    // reached through mln::HTTPFileSource, which sits *underneath*
     // OnlineFileSource — so requests keep mbgl's retry/backoff, rate-limit
     // handling and queueing, with only the transport delegated to the host.
     // Registering this factory would replace OnlineFileSource outright and
@@ -170,10 +170,10 @@ void mbgl_http_respond_impl(uint64_t request_id,
 
     // Build the response (must be done before posting to RunLoop as strings
     // are owned by C# and may be freed after this call returns).
-    mbgl::Response response;
+    mln::Response response;
 
     if (error != MBGL_HTTP_ERROR_NONE) {
-        using Reason = mbgl::Response::Error::Reason;
+        using Reason = mln::Response::Error::Reason;
         Reason reason;
         switch (error) {
             case MBGL_HTTP_ERROR_NOT_FOUND:  reason = Reason::NotFound;    break;
@@ -182,7 +182,7 @@ void mbgl_http_respond_impl(uint64_t request_id,
             case MBGL_HTTP_ERROR_RATE_LIMIT: reason = Reason::RateLimit;   break;
             default:                          reason = Reason::Other;       break;
         }
-        response.error = std::make_unique<const mbgl::Response::Error>(
+        response.error = std::make_unique<const mln::Response::Error>(
             reason, error_message ? error_message : "");
     } else if (no_content) {
         response.noContent = true;
@@ -204,7 +204,7 @@ void mbgl_http_respond_impl(uint64_t request_id,
 
     // Parse Last-Modified
     if (modified && *modified) {
-        response.modified = mbgl::util::parseTimestamp(modified);
+        response.modified = mln::util::parseTimestamp(modified);
     }
 
     // Parse Expires (prefer Cache-Control max-age if provided)
@@ -215,14 +215,14 @@ void mbgl_http_respond_impl(uint64_t request_id,
             long secs = strtol(p + 8, nullptr, 10);
             if (secs > 0) {
                 using namespace std::chrono;
-                response.expires = time_point_cast<mbgl::Seconds>(
+                response.expires = time_point_cast<mln::Seconds>(
                     system_clock::now() + seconds(secs));
             }
         }
         const char* mr = strstr(cache_control, "must-revalidate");
         if (mr) response.mustRevalidate = true;
     } else if (expires && *expires) {
-        response.expires = mbgl::util::parseTimestamp(expires);
+        response.expires = mln::util::parseTimestamp(expires);
     }
 
     // Marshal the callback back onto the requesting thread's RunLoop. The closure
@@ -268,7 +268,7 @@ void mbgl_http_cancel_impl(uint64_t request_id) noexcept {
 
 // ── Shared request dispatch ───────────────────────────────────────────────────
 
-namespace mbgl {
+namespace mln {
 namespace {
 
 /// Cancels the host-side fetch when mbgl drops the request, which it does
@@ -346,7 +346,7 @@ std::unique_ptr<AsyncRequest> dispatchToProvider(const Resource&        resource
 }
 
 } // namespace
-} // namespace mbgl
+} // namespace mln
 
 // ── Route 1: HTTPFileSource (Android only) ───────────────────────────────────
 //
@@ -355,7 +355,7 @@ std::unique_ptr<AsyncRequest> dispatchToProvider(const Resource&        resource
 
 #if defined(__ANDROID__)
 
-namespace mbgl {
+namespace mln {
 
 class HTTPFileSource::Impl {};
 
@@ -380,13 +380,13 @@ ClientOptions HTTPFileSource::getClientOptions() {
     return {};
 }
 
-} // namespace mbgl
+} // namespace mln
 
 #endif // __ANDROID__
 
 // ── Route 2: a registered Network FileSource (all platforms) ─────────────────
 
-namespace mbgl {
+namespace mln {
 namespace {
 
 /// Routes requests either to the host or to maplibre's own network stack.
@@ -488,7 +488,7 @@ private:
 };
 
 } // namespace
-} // namespace mbgl
+} // namespace mln
 
 extern "C" {
 
@@ -506,11 +506,11 @@ extern "C" {
 void mbgl_install_provider_file_source() noexcept {
     static std::once_flag once;
     std::call_once(once, [] {
-        mbgl::FileSourceManager::get()->registerFileSourceFactory(
-            mbgl::FileSourceType::Network,
-            [](const mbgl::ResourceOptions& resourceOptions, const mbgl::ClientOptions& clientOptions)
-                -> std::unique_ptr<mbgl::FileSource> {
-                return std::make_unique<mbgl::ProviderFileSource>(resourceOptions, clientOptions);
+        mln::FileSourceManager::get()->registerFileSourceFactory(
+            mln::FileSourceType::Network,
+            [](const mln::ResourceOptions& resourceOptions, const mln::ClientOptions& clientOptions)
+                -> std::unique_ptr<mln::FileSource> {
+                return std::make_unique<mln::ProviderFileSource>(resourceOptions, clientOptions);
             });
     });
 }

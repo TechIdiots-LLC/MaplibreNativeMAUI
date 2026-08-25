@@ -1,16 +1,16 @@
 // Minimal stub for HTTPFileSource used in standalone NDK builds.
 // HTTP requests are not supported; each request immediately returns a
 // Connection error so the map can fall back to cached / asset resources.
-#include <mbgl/storage/http_file_source.hpp>
-#include <mbgl/storage/resource.hpp>
-#include <mbgl/storage/resource_options.hpp>
-#include <mbgl/storage/response.hpp>
-#include <mbgl/util/async_request.hpp>
-#include <mbgl/util/client_options.hpp>
+#include <mln/storage/http_file_source.hpp>
+#include <mln/storage/resource.hpp>
+#include <mln/storage/resource_options.hpp>
+#include <mln/storage/response.hpp>
+#include <mln/util/async_request.hpp>
+#include <mln/util/client_options.hpp>
 
 #include <memory>
 
-namespace mbgl {
+namespace mln {
 
 class HTTPFileSource::Impl {};
 
@@ -39,4 +39,4 @@ ClientOptions HTTPFileSource::getClientOptions() {
     return {};
 }
 
-} // namespace mbgl
+} // namespace mln
