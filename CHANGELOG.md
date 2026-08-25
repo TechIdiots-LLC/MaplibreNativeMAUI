@@ -1,7 +1,14 @@
 # Changelog
 
 ## master
-> **Build note:** this line depends on a fork — `dependencies/maplibre-native` points at `WifiDB/maplibre-native` (branch `terrain-3d-color-relief`) rather than upstream, so the C ABI can use the 3D-terrain and color-relief work before it lands in maplibre-native. Repoint the submodule at upstream once that merges.
+### ✨ Features and improvements
+- _...Add new stuff here..._
+
+### 🐞 Bug fixes
+- _...Add new stuff here..._
+
+## 5.0.0
+- Feature/terrain 3d vulkan ([#27](https://github.com/TechIdiots-LLC/MaplibreNativeMAUI/pull/27)) (@acalcutt)
 
 ### ✨ Features and improvements
 - **The host HTTP provider now works on every platform, not just Android** — `mbgl_set_http_provider` lets the host answer resource requests instead of a native HTTP stack, but it was fenced off: the implementing file *defines* `mbgl::HTTPFileSource`, which a standalone Android NDK build needs (nothing else supplies that symbol) but which collides with the one maplibre-native already links on Windows and Apple — and the header's declarations were inside `#ifdef __ANDROID__` too, so the API was not even visible elsewhere. Instead of replacing maplibre's HTTP stack at build time, a `FileSource` is now registered for `FileSourceType::Network` at *runtime* via `FileSourceManager`: no build surgery, no symbol collision, and opt-in — the factory is installed only when a provider is actually set, so an application that never calls `mbgl_set_http_provider` keeps the network stack its platform already built, unchanged. Both routes share one dispatch path, so the request table, cancellation and byte-range handling exist in one place (`http_file_source_android.cpp` → `http_provider.cpp`). Why it is worth having off Android: mbgl passes the byte range on the `Resource`, and every PMTiles read is ranged, so a host holding an archive somewhere other than a web server — a BitTorrent swarm, an embedded database, an encrypted bundle — can satisfy tile reads directly, with maplibre unaware of the difference. **Behavioural note:** on Android the provider sits *underneath* `OnlineFileSource`, so requests keep mbgl's retry/backoff, rate-limit handling and queueing and only the transport is delegated; on other platforms the provider replaces `OnlineFileSource` outright, because there is no way to slot in beneath it without colliding with the platform's own `HTTPFileSource` — so a host registering a provider there is responsible for its own retry and backoff. A host can also **claim only the URLs it can serve** — `mbgl_http_provider_claim_prefix` — so a provider that exists to serve one archive from somewhere unusual intercepts just that, while every other request still goes through maplibre's own stack with its retry, rate-limit handling and queueing intact; claiming nothing keeps the original all-or-nothing behaviour. Nothing changes at runtime until a host registers a provider; no sample does yet.
