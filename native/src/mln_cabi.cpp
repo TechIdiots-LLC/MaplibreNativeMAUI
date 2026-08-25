@@ -9,48 +9,48 @@
 #include "mln_cabi.h"
 #include "mln_cabi_internal.hpp"
 
-#include <mbgl/map/map.hpp>
-#include <mbgl/map/map_options.hpp>
-#include <mbgl/map/camera.hpp>
-#include <mbgl/util/run_loop.hpp>
-#include <mbgl/storage/resource_options.hpp>
-#include <mbgl/style/style.hpp>
-#include <mbgl/style/sources/geojson_source.hpp>
-#include <mbgl/style/sources/vector_source.hpp>
-#include <mbgl/style/sources/raster_source.hpp>
-#include <mbgl/style/sources/raster_dem_source.hpp>
-#include <mbgl/style/sources/image_source.hpp>
-#include <mbgl/style/terrain.hpp>
-#include <mbgl/style/layers/fill_layer.hpp>
-#include <mbgl/style/layers/line_layer.hpp>
-#include <mbgl/style/layers/circle_layer.hpp>
-#include <mbgl/style/layers/symbol_layer.hpp>
-#include <mbgl/style/layers/raster_layer.hpp>
-#include <mbgl/style/layers/heatmap_layer.hpp>
-#include <mbgl/style/layers/hillshade_layer.hpp>
-#include <mbgl/style/layers/fill_extrusion_layer.hpp>
-#include <mbgl/style/layers/background_layer.hpp>
-#include <mbgl/style/layers/location_indicator_layer.hpp>
-#include <mbgl/style/layers/color_relief_layer.hpp>
-#include <mbgl/style/conversion/geojson.hpp>
-#include <mbgl/style/conversion/geojson_options.hpp>
-#include <mbgl/style/conversion/filter.hpp>
-#include <mbgl/style/conversion/source.hpp>
-#include <mbgl/style/conversion/layer.hpp>
-#include <mbgl/storage/network_status.hpp>
-#include <mbgl/util/rapidjson.hpp>
-#include <mbgl/style/rapidjson_conversion.hpp>
-#include <mbgl/map/map_observer.hpp>
-#include <mbgl/style/image.hpp>
-#include <mbgl/style/transition_options.hpp>
-#include <mbgl/style/light.hpp>
-#include <mbgl/util/image.hpp>
-#include <mbgl/renderer/renderer.hpp>
-#include <mbgl/util/geojson.hpp>
-#include <mbgl/util/logging.hpp>
+#include <mln/map/map.hpp>
+#include <mln/map/map_options.hpp>
+#include <mln/map/camera.hpp>
+#include <mln/util/run_loop.hpp>
+#include <mln/storage/resource_options.hpp>
+#include <mln/style/style.hpp>
+#include <mln/style/sources/geojson_source.hpp>
+#include <mln/style/sources/vector_source.hpp>
+#include <mln/style/sources/raster_source.hpp>
+#include <mln/style/sources/raster_dem_source.hpp>
+#include <mln/style/sources/image_source.hpp>
+#include <mln/style/terrain.hpp>
+#include <mln/style/layers/fill_layer.hpp>
+#include <mln/style/layers/line_layer.hpp>
+#include <mln/style/layers/circle_layer.hpp>
+#include <mln/style/layers/symbol_layer.hpp>
+#include <mln/style/layers/raster_layer.hpp>
+#include <mln/style/layers/heatmap_layer.hpp>
+#include <mln/style/layers/hillshade_layer.hpp>
+#include <mln/style/layers/fill_extrusion_layer.hpp>
+#include <mln/style/layers/background_layer.hpp>
+#include <mln/style/layers/location_indicator_layer.hpp>
+#include <mln/style/layers/color_relief_layer.hpp>
+#include <mln/style/conversion/geojson.hpp>
+#include <mln/style/conversion/geojson_options.hpp>
+#include <mln/style/conversion/filter.hpp>
+#include <mln/style/conversion/source.hpp>
+#include <mln/style/conversion/layer.hpp>
+#include <mln/storage/network_status.hpp>
+#include <mln/util/rapidjson.hpp>
+#include <mln/style/rapidjson_conversion.hpp>
+#include <mln/map/map_observer.hpp>
+#include <mln/style/image.hpp>
+#include <mln/style/transition_options.hpp>
+#include <mln/style/light.hpp>
+#include <mln/util/image.hpp>
+#include <mln/renderer/renderer.hpp>
+#include <mln/util/geojson.hpp>
+#include <mln/util/logging.hpp>
 
-#include <mbgl/map/bound_options.hpp>
-#include <mbgl/style/conversion/stringify.hpp>
+#include <mln/map/bound_options.hpp>
+#include <mln/style/conversion/stringify.hpp>
 #include <rapidjson/writer.h>
 #include <rapidjson/stringbuffer.h>
 
@@ -70,7 +70,7 @@
 extern PlatformFrontend* createPlatformFrontend(
     void*          surface_handle,
     void*          gl_context,
-    mbgl::Size     size,
+    mln::Size     size,
     float          pixel_ratio,
     mbgl_render_fn render_callback,
     void*          render_userdata);
@@ -106,11 +106,11 @@ static std::mutex       s_log_mutex;
 static mbgl_log_fn      s_log_fn       = nullptr;
 static void*            s_log_userdata = nullptr;
 
-/** Custom mbgl::Log observer that forwards records to the C callback. */
-class CabiLogObserver : public mbgl::Log::Observer {
+/** Custom mln::Log observer that forwards records to the C callback. */
+class CabiLogObserver : public mln::Log::Observer {
 public:
-    bool onRecord(mbgl::EventSeverity severity,
-                  mbgl::Event         event,
+    bool onRecord(mln::EventSeverity severity,
+                  mln::Event         event,
                   int64_t             /*code*/,
                   const std::string&  msg) override {
         std::lock_guard<std::mutex> lock(s_log_mutex);
@@ -118,14 +118,14 @@ public:
 
         mbgl_log_level_t level;
         switch (severity) {
-            case mbgl::EventSeverity::Debug:   level = MBGL_LOG_DEBUG;   break;
-            case mbgl::EventSeverity::Info:    level = MBGL_LOG_INFO;    break;
-            case mbgl::EventSeverity::Warning: level = MBGL_LOG_WARNING; break;
-            case mbgl::EventSeverity::Error:   level = MBGL_LOG_ERROR;   break;
+            case mln::EventSeverity::Debug:   level = MBGL_LOG_DEBUG;   break;
+            case mln::EventSeverity::Info:    level = MBGL_LOG_INFO;    break;
+            case mln::EventSeverity::Warning: level = MBGL_LOG_WARNING; break;
+            case mln::EventSeverity::Error:   level = MBGL_LOG_ERROR;   break;
             default:                           level = MBGL_LOG_INFO;    break;
         }
 
-        const char* category = mbgl::Enum<mbgl::Event>::toString(event);
+        const char* category = mln::Enum<mln::Event>::toString(event);
         int consumed = s_log_fn(level, category ? category : "", msg.c_str(), s_log_userdata);
         return consumed != 0;
     }
@@ -140,9 +140,9 @@ mbgl_status_t mbgl_install_log_callback(mbgl_log_fn fn, void* userdata) noexcept
         s_log_userdata = userdata;
         if (fn && !s_log_observer) {
             s_log_observer = new CabiLogObserver();
-            mbgl::Log::setObserver(std::unique_ptr<mbgl::Log::Observer>(s_log_observer));
+            mln::Log::setObserver(std::unique_ptr<mln::Log::Observer>(s_log_observer));
         } else if (!fn) {
-            mbgl::Log::removeObserver();
+            mln::Log::removeObserver();
             s_log_observer = nullptr;
         }
         return MBGL_OK;
@@ -153,19 +153,19 @@ mbgl_status_t mbgl_install_log_callback(mbgl_log_fn fn, void* userdata) noexcept
 
 mbgl_status_t mbgl_network_status_set(int online) noexcept {
     try {
-        mbgl::NetworkStatus::Set(online ? mbgl::NetworkStatus::Status::Online
-                                        : mbgl::NetworkStatus::Status::Offline);
+        mln::NetworkStatus::Set(online ? mln::NetworkStatus::Status::Online
+                                        : mln::NetworkStatus::Status::Offline);
         return MBGL_OK;
     } catch (const std::exception& e) { return set_native_error(e); }
 }
 
 int mbgl_network_status_get() noexcept {
-    return mbgl::NetworkStatus::Get() == mbgl::NetworkStatus::Status::Online ? 1 : 0;
+    return mln::NetworkStatus::Get() == mln::NetworkStatus::Status::Online ? 1 : 0;
 }
 
 /* ─── Internal structs ──────────────────────────────────────────────────────── */
 /** Bridges all MapObserver virtual calls to the C mbgl_map_observer_fn. */
-class CabiMapObserver : public mbgl::MapObserver {
+class CabiMapObserver : public mln::MapObserver {
 public:
     mbgl_map_observer_fn fn = nullptr;
     void*                ud = nullptr;
@@ -183,7 +183,7 @@ public:
     }
     void onWillStartLoadingMap()  override { fire("onWillStartLoadingMap"); }
     void onDidFinishLoadingMap()  override { fire("onDidFinishLoadingMap"); }
-    void onDidFailLoadingMap(mbgl::MapLoadError /*err*/, const std::string& msg) override {
+    void onDidFailLoadingMap(mln::MapLoadError /*err*/, const std::string& msg) override {
         fire("onDidFailLoadingMap", msg.c_str());
     }
     void onWillStartRenderingFrame() override { fire("onWillStartRenderingFrame"); }
@@ -211,7 +211,7 @@ public:
             fire("onRenderError", "unknown render error");
         }
     }
-    void onSourceChanged(mbgl::style::Source& src) override {
+    void onSourceChanged(mln::style::Source& src) override {
         fire("onSourceChanged", src.getID().c_str());
     }
     void onDidBecomeIdle() override { fire("onDidBecomeIdle"); }
@@ -227,7 +227,7 @@ public:
  * The simpler approach is just to reinterpret_cast at every boundary. */
 
 struct CabiRunLoop {
-    mbgl::util::RunLoop loop;
+    mln::util::RunLoop loop;
 };
 struct CabiMap {
     // Destruction order matters: map must die before frontend and observer.
@@ -235,7 +235,7 @@ struct CabiMap {
     // observer first so it is destroyed last.
     std::unique_ptr<CabiMapObserver>      observer;
     std::unique_ptr<PlatformFrontend>     frontend;
-    std::unique_ptr<mbgl::Map>            map;
+    std::unique_ptr<mln::Map>            map;
 };
 
 /* ─── Casting helpers ───────────────────────────────────────────────────────── */
@@ -249,9 +249,9 @@ template<typename H, typename T> static inline H* to(T* t) noexcept { return rei
 static inline CabiRunLoop*        rl_ptr(mbgl_runloop_t*  h) noexcept { return as<CabiRunLoop>(h); }
 static inline PlatformFrontend*   fe_ptr(mbgl_frontend_t* h) noexcept { return as<PlatformFrontend>(h); }
 static inline CabiMap*            map_ptr(mbgl_map_t*     h) noexcept { return as<CabiMap>(h); }
-static inline mbgl::style::Style& style_ref(mbgl_style_t* h) noexcept { return *as<mbgl::style::Style>(h); }
-static inline mbgl::style::Layer& layer_ref(mbgl_layer_t* h) noexcept { return *as<mbgl::style::Layer>(h); }
-static inline mbgl::style::Source& source_ref(mbgl_source_t* h) noexcept { return *as<mbgl::style::Source>(h); }
+static inline mln::style::Style& style_ref(mbgl_style_t* h) noexcept { return *as<mln::style::Style>(h); }
+static inline mln::style::Layer& layer_ref(mbgl_layer_t* h) noexcept { return *as<mln::style::Layer>(h); }
+static inline mln::style::Source& source_ref(mbgl_source_t* h) noexcept { return *as<mln::style::Source>(h); }
 
 /* Helper: safe C-string copy */
 static inline std::string safe_str(const char* s) {
@@ -292,7 +292,7 @@ mbgl_frontend_t* mbgl_frontend_create_gl(
     try {
         return to<mbgl_frontend_t>(createPlatformFrontend(
             surface_handle, gl_context,
-            mbgl::Size{ static_cast<uint32_t>(width_px), static_cast<uint32_t>(height_px) },
+            mln::Size{ static_cast<uint32_t>(width_px), static_cast<uint32_t>(height_px) },
             pixel_ratio,
             render_callback, render_userdata));
     } catch (const std::exception& e) { set_native_error(e); return nullptr; }
@@ -313,7 +313,7 @@ mbgl_status_t mbgl_frontend_render(mbgl_frontend_t* fe) noexcept {
 mbgl_status_t mbgl_frontend_set_size(mbgl_frontend_t* fe, int width_px, int height_px) noexcept {
     if (!fe) return set_error(MBGL_INVALID_ARG, "mbgl_frontend_set_size: null handle");
     try {
-        fe_ptr(fe)->setSize(mbgl::Size{ static_cast<uint32_t>(width_px), static_cast<uint32_t>(height_px) });
+        fe_ptr(fe)->setSize(mln::Size{ static_cast<uint32_t>(width_px), static_cast<uint32_t>(height_px) });
         return MBGL_OK;
     } catch (const std::exception& e) { return set_native_error(e); }
 }
@@ -344,20 +344,20 @@ static mbgl_map_t* map_create_impl(
         cabi_map->observer->fn = observer;
         cabi_map->observer->ud = observer_userdata;
 
-        mbgl::ResourceOptions resOpts;
+        mln::ResourceOptions resOpts;
         if (cache_path) resOpts.withCachePath(cache_path);
         if (asset_path) resOpts.withAssetPath(asset_path);
         if (api_key && *api_key)     resOpts.withApiKey(api_key);
         if (max_cache_size_bytes)    resOpts.withMaximumCacheSize(max_cache_size_bytes);
 
-        mbgl::MapOptions mapOpts;
-        mapOpts.withMapMode(mbgl::MapMode::Continuous)
-               .withConstrainMode(mbgl::ConstrainMode::HeightOnly)
-               .withViewportMode(mbgl::ViewportMode::Default)
+        mln::MapOptions mapOpts;
+        mapOpts.withMapMode(mln::MapMode::Continuous)
+               .withConstrainMode(mln::ConstrainMode::HeightOnly)
+               .withViewportMode(mln::ViewportMode::Default)
                .withSize(cabi_fe->getSize())
                .withPixelRatio(pixel_ratio);
 
-        cabi_map->map = std::make_unique<mbgl::Map>(
+        cabi_map->map = std::make_unique<mln::Map>(
             *cabi_fe,
             *cabi_map->observer,
             mapOpts,
@@ -422,7 +422,7 @@ mbgl_status_t mbgl_map_set_style_json(mbgl_map_t* map, const char* json) noexcep
 mbgl_status_t mbgl_map_set_size(mbgl_map_t* map, int width_px, int height_px) noexcept {
     if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_set_size: null handle");
     try {
-        mbgl::Size sz{ static_cast<uint32_t>(width_px), static_cast<uint32_t>(height_px) };
+        mln::Size sz{ static_cast<uint32_t>(width_px), static_cast<uint32_t>(height_px) };
         auto* m = map_ptr(map);
         m->map->setSize(sz);
         m->frontend->setSize(sz);
@@ -433,8 +433,8 @@ mbgl_status_t mbgl_map_set_size(mbgl_map_t* map, int width_px, int height_px) no
 mbgl_status_t mbgl_map_jump_to(mbgl_map_t* map, double lat, double lon, double zoom, double bearing, double pitch) noexcept {
     if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_jump_to: null handle");
     try {
-        mbgl::CameraOptions cam;
-        cam.center  = mbgl::LatLng{ lat, lon };
+        mln::CameraOptions cam;
+        cam.center  = mln::LatLng{ lat, lon };
         cam.zoom    = zoom;
         cam.bearing = bearing;
         cam.pitch   = pitch;
@@ -446,12 +446,12 @@ mbgl_status_t mbgl_map_jump_to(mbgl_map_t* map, double lat, double lon, double z
 mbgl_status_t mbgl_map_ease_to(mbgl_map_t* map, double lat, double lon, double zoom, double bearing, double pitch, int64_t duration_ms) noexcept {
     if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_ease_to: null handle");
     try {
-        mbgl::CameraOptions cam;
-        cam.center  = mbgl::LatLng{ lat, lon };
+        mln::CameraOptions cam;
+        cam.center  = mln::LatLng{ lat, lon };
         cam.zoom    = zoom;
         cam.bearing = bearing;
         cam.pitch   = pitch;
-        mbgl::AnimationOptions anim{ mbgl::Duration(std::chrono::milliseconds(duration_ms)) };
+        mln::AnimationOptions anim{ mln::Duration(std::chrono::milliseconds(duration_ms)) };
         map_ptr(map)->map->easeTo(cam, anim);
         return MBGL_OK;
     } catch (const std::exception& e) { return set_native_error(e); }
@@ -481,13 +481,13 @@ void mbgl_map_get_center(mbgl_map_t* map, double* out_lat, double* out_lon) noex
 
 mbgl_status_t mbgl_map_set_min_zoom(mbgl_map_t* map, double zoom) noexcept {
     if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_set_min_zoom: null handle");
-    try { map_ptr(map)->map->setBounds(mbgl::BoundOptions{}.withMinZoom(zoom)); return MBGL_OK; }
+    try { map_ptr(map)->map->setBounds(mln::BoundOptions{}.withMinZoom(zoom)); return MBGL_OK; }
     catch (const std::exception& e) { return set_native_error(e); }
 }
 
 mbgl_status_t mbgl_map_set_max_zoom(mbgl_map_t* map, double zoom) noexcept {
     if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_set_max_zoom: null handle");
-    try { map_ptr(map)->map->setBounds(mbgl::BoundOptions{}.withMaxZoom(zoom)); return MBGL_OK; }
+    try { map_ptr(map)->map->setBounds(mln::BoundOptions{}.withMaxZoom(zoom)); return MBGL_OK; }
     catch (const std::exception& e) { return set_native_error(e); }
 }
 
@@ -518,7 +518,7 @@ int mbgl_map_get_debug_options(mbgl_map_t* map) noexcept {
 mbgl_status_t mbgl_map_set_debug_options(mbgl_map_t* map, int options) noexcept {
     if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_set_debug_options: null handle");
     try {
-        map_ptr(map)->map->setDebug(static_cast<mbgl::MapDebugOptions>(options));
+        map_ptr(map)->map->setDebug(static_cast<mln::MapDebugOptions>(options));
         return MBGL_OK;
     } catch (const std::exception& e) { return set_native_error(e); }
 }
@@ -531,9 +531,9 @@ mbgl_status_t mbgl_map_on_scroll(mbgl_map_t* map, double delta, double cx, doubl
         // delta is already normalized to ±1.0 per scroll tick (mouseWheelDelta/120).
         // Multiply by 0.5 to get ~0.5 zoom levels per tick, matching typical map feel.
         double zoom = m->map->getCameraOptions().zoom.value_or(0.0) + delta * 0.5;
-        mbgl::CameraOptions cam;
+        mln::CameraOptions cam;
         cam.zoom   = std::max(0.0, std::min(22.0, zoom));
-        cam.anchor = mbgl::ScreenCoordinate{ cx, cy };
+        cam.anchor = mln::ScreenCoordinate{ cx, cy };
         m->map->jumpTo(cam);
         return MBGL_OK;
     } catch (const std::exception& e) { return set_native_error(e); }
@@ -544,17 +544,17 @@ mbgl_status_t mbgl_map_on_double_tap(mbgl_map_t* map, double x, double y) noexce
     try {
         auto* m = map_ptr(map);
         double zoom = m->map->getCameraOptions().zoom.value_or(0.0) + 1.0;
-        mbgl::CameraOptions cam;
+        mln::CameraOptions cam;
         cam.zoom   = zoom;
-        cam.anchor = mbgl::ScreenCoordinate{ x, y };
-        mbgl::AnimationOptions anim{ mbgl::Duration(std::chrono::milliseconds(300)) };
+        cam.anchor = mln::ScreenCoordinate{ x, y };
+        mln::AnimationOptions anim{ mln::Duration(std::chrono::milliseconds(300)) };
         m->map->easeTo(cam, anim);
         return MBGL_OK;
     } catch (const std::exception& e) { return set_native_error(e); }
 }
 
-static thread_local mbgl::CameraOptions s_panStart;
-static thread_local mbgl::ScreenCoordinate s_panAnchor;
+static thread_local mln::CameraOptions s_panStart;
+static thread_local mln::ScreenCoordinate s_panAnchor;
 
 mbgl_status_t mbgl_map_on_pan_start(mbgl_map_t* map, double x, double y) noexcept {
     if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_on_pan_start: null handle");
@@ -565,7 +565,7 @@ mbgl_status_t mbgl_map_on_pan_start(mbgl_map_t* map, double x, double y) noexcep
 
 mbgl_status_t mbgl_map_on_pan_move(mbgl_map_t* map, double dx, double dy) noexcept {
     if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_on_pan_move: null handle");
-    try { map_ptr(map)->map->moveBy(mbgl::ScreenCoordinate{dx, dy}); return MBGL_OK; }
+    try { map_ptr(map)->map->moveBy(mln::ScreenCoordinate{dx, dy}); return MBGL_OK; }
     catch (const std::exception& e) { return set_native_error(e); }
 }
 
@@ -581,9 +581,9 @@ mbgl_status_t mbgl_map_on_pinch(mbgl_map_t* map, double scale_factor, double cx,
     try {
         auto* m = map_ptr(map);
         double zoom = m->map->getCameraOptions().zoom.value_or(0.0) + std::log2(scale_factor);
-        mbgl::CameraOptions cam;
+        mln::CameraOptions cam;
         cam.zoom   = std::max(0.0, std::min(22.0, zoom));
-        cam.anchor = mbgl::ScreenCoordinate{ cx, cy };
+        cam.anchor = mln::ScreenCoordinate{ cx, cy };
         m->map->jumpTo(cam);
         return MBGL_OK;
     } catch (const std::exception& e) { return set_native_error(e); }
@@ -601,7 +601,7 @@ mbgl_style_t* mbgl_map_get_style(mbgl_map_t* map) noexcept {
 mbgl_source_t* mbgl_style_add_geojson_source(mbgl_style_t* st, const char* source_id) noexcept {
     if (!st || !source_id) { set_error(MBGL_INVALID_ARG, "mbgl_style_add_geojson_source: null arg"); return nullptr; }
     try {
-        auto src = std::make_unique<mbgl::style::GeoJSONSource>(safe_str(source_id));
+        auto src = std::make_unique<mln::style::GeoJSONSource>(safe_str(source_id));
         auto* raw = src.get();
         style_ref(st).addSource(std::move(src));
         return to<mbgl_source_t>(raw);
@@ -611,7 +611,7 @@ mbgl_source_t* mbgl_style_add_geojson_source(mbgl_style_t* st, const char* sourc
 mbgl_source_t* mbgl_style_add_geojson_source_url(mbgl_style_t* st, const char* source_id, const char* url) noexcept {
     if (!st || !source_id || !url) { set_error(MBGL_INVALID_ARG, "mbgl_style_add_geojson_source_url: null arg"); return nullptr; }
     try {
-        auto src = std::make_unique<mbgl::style::GeoJSONSource>(safe_str(source_id));
+        auto src = std::make_unique<mln::style::GeoJSONSource>(safe_str(source_id));
         src->setURL(safe_str(url));
         auto* raw = src.get();
         style_ref(st).addSource(std::move(src));
@@ -624,26 +624,26 @@ mbgl_source_t* mbgl_style_add_geojson_source_options(mbgl_style_t* st,
                                                        const char* options_json) noexcept {
     if (!st || !source_id) { set_error(MBGL_INVALID_ARG, "mbgl_style_add_geojson_source_options: null arg"); return nullptr; }
     try {
-        using namespace mbgl::style::conversion;
-        auto options = mbgl::style::GeoJSONOptions::defaultOptions();
+        using namespace mln::style::conversion;
+        auto options = mln::style::GeoJSONOptions::defaultOptions();
         if (options_json && *options_json) {
-            mbgl::JSDocument doc;
+            mln::JSDocument doc;
             doc.Parse<0>(options_json);
             if (doc.HasParseError()) {
                 set_error(MBGL_INVALID_ARG, "mbgl_style_add_geojson_source_options: JSON parse error");
                 return nullptr;
             }
-            const mbgl::JSValue& v = doc;
+            const mln::JSValue& v = doc;
             Error err;
-            auto converted = convert<mbgl::style::GeoJSONOptions>(Convertible(&v), err);
+            auto converted = convert<mln::style::GeoJSONOptions>(Convertible(&v), err);
             if (!converted) {
                 set_error(MBGL_INVALID_ARG,
                           std::string("mbgl_style_add_geojson_source_options: ") + err.message);
                 return nullptr;
             }
-            options = mbgl::makeMutable<mbgl::style::GeoJSONOptions>(std::move(*converted));
+            options = mln::makeMutable<mln::style::GeoJSONOptions>(std::move(*converted));
         }
-        auto src = std::make_unique<mbgl::style::GeoJSONSource>(safe_str(source_id), std::move(options));
+        auto src = std::make_unique<mln::style::GeoJSONSource>(safe_str(source_id), std::move(options));
         auto* raw = src.get();
         style_ref(st).addSource(std::move(src));
         return to<mbgl_source_t>(raw);
@@ -653,9 +653,9 @@ mbgl_source_t* mbgl_style_add_geojson_source_options(mbgl_style_t* st,
 mbgl_status_t mbgl_geojson_source_set_data(mbgl_source_t* src, const char* geojson) noexcept {
     if (!src || !geojson) return set_error(MBGL_INVALID_ARG, "mbgl_geojson_source_set_data: null arg");
     try {
-        auto* gs = as<mbgl::style::GeoJSONSource>(src);
-        mbgl::style::conversion::Error err;
-        auto result = mbgl::style::conversion::parseGeoJSON(safe_str(geojson), err);
+        auto* gs = as<mln::style::GeoJSONSource>(src);
+        mln::style::conversion::Error err;
+        auto result = mln::style::conversion::parseGeoJSON(safe_str(geojson), err);
         if (result) { gs->setGeoJSON(*result); return MBGL_OK; }
         return set_error(MBGL_INVALID_ARG, "mbgl_geojson_source_set_data: " + err.message);
     } catch (const std::exception& e) { return set_native_error(e); }
@@ -663,14 +663,14 @@ mbgl_status_t mbgl_geojson_source_set_data(mbgl_source_t* src, const char* geojs
 
 mbgl_status_t mbgl_geojson_source_set_url(mbgl_source_t* src, const char* url) noexcept {
     if (!src || !url) return set_error(MBGL_INVALID_ARG, "mbgl_geojson_source_set_url: null arg");
-    try { as<mbgl::style::GeoJSONSource>(src)->setURL(safe_str(url)); return MBGL_OK; }
+    try { as<mln::style::GeoJSONSource>(src)->setURL(safe_str(url)); return MBGL_OK; }
     catch (const std::exception& e) { return set_native_error(e); }
 }
 
 mbgl_source_t* mbgl_style_add_vector_source(mbgl_style_t* st, const char* source_id, const char* url) noexcept {
     if (!st || !source_id) { set_error(MBGL_INVALID_ARG, "mbgl_style_add_vector_source: null arg"); return nullptr; }
     try {
-        auto src = std::make_unique<mbgl::style::VectorSource>(safe_str(source_id), safe_str(url));
+        auto src = std::make_unique<mln::style::VectorSource>(safe_str(source_id), safe_str(url));
         auto* raw = src.get();
         style_ref(st).addSource(std::move(src));
         return to<mbgl_source_t>(raw);
@@ -680,7 +680,7 @@ mbgl_source_t* mbgl_style_add_vector_source(mbgl_style_t* st, const char* source
 mbgl_source_t* mbgl_style_add_raster_source(mbgl_style_t* st, const char* source_id, const char* url, int tile_size) noexcept {
     if (!st || !source_id) { set_error(MBGL_INVALID_ARG, "mbgl_style_add_raster_source: null arg"); return nullptr; }
     try {
-        auto src = std::make_unique<mbgl::style::RasterSource>(safe_str(source_id), safe_str(url), static_cast<uint16_t>(tile_size));
+        auto src = std::make_unique<mln::style::RasterSource>(safe_str(source_id), safe_str(url), static_cast<uint16_t>(tile_size));
         auto* raw = src.get();
         style_ref(st).addSource(std::move(src));
         return to<mbgl_source_t>(raw);
@@ -690,7 +690,7 @@ mbgl_source_t* mbgl_style_add_raster_source(mbgl_style_t* st, const char* source
 mbgl_source_t* mbgl_style_add_rasterdem_source(mbgl_style_t* st, const char* source_id, const char* url, int tile_size) noexcept {
     if (!st || !source_id) { set_error(MBGL_INVALID_ARG, "mbgl_style_add_rasterdem_source: null arg"); return nullptr; }
     try {
-        auto src = std::make_unique<mbgl::style::RasterDEMSource>(safe_str(source_id), safe_str(url), static_cast<uint16_t>(tile_size));
+        auto src = std::make_unique<mln::style::RasterDEMSource>(safe_str(source_id), safe_str(url), static_cast<uint16_t>(tile_size));
         auto* raw = src.get();
         style_ref(st).addSource(std::move(src));
         return to<mbgl_source_t>(raw);
@@ -703,11 +703,11 @@ mbgl_source_t* mbgl_style_add_image_source(mbgl_style_t* st, const char* source_
 {
     if (!st || !source_id) { set_error(MBGL_INVALID_ARG, "mbgl_style_add_image_source: null arg"); return nullptr; }
     try {
-        std::array<mbgl::LatLng, 4> coords{
-            mbgl::LatLng{lat0,lon0}, mbgl::LatLng{lat1,lon1},
-            mbgl::LatLng{lat2,lon2}, mbgl::LatLng{lat3,lon3}
+        std::array<mln::LatLng, 4> coords{
+            mln::LatLng{lat0,lon0}, mln::LatLng{lat1,lon1},
+            mln::LatLng{lat2,lon2}, mln::LatLng{lat3,lon3}
         };
-        auto src = std::make_unique<mbgl::style::ImageSource>(safe_str(source_id), coords);
+        auto src = std::make_unique<mln::style::ImageSource>(safe_str(source_id), coords);
         src->setURL(safe_str(url));
         auto* raw = src.get();
         style_ref(st).addSource(std::move(src));
@@ -750,16 +750,16 @@ static mbgl_layer_t* add_layer_no_source(mbgl_style_t* st, const char* layer_id,
     } catch (const std::exception& e) { set_native_error(e); return nullptr; }
 }
 
-mbgl_layer_t* mbgl_style_add_fill_layer          (mbgl_style_t* st, const char* id, const char* src, const char* before) noexcept { return add_layer<mbgl::style::FillLayer>(st,id,src,before); }
-mbgl_layer_t* mbgl_style_add_line_layer          (mbgl_style_t* st, const char* id, const char* src, const char* before) noexcept { return add_layer<mbgl::style::LineLayer>(st,id,src,before); }
-mbgl_layer_t* mbgl_style_add_circle_layer        (mbgl_style_t* st, const char* id, const char* src, const char* before) noexcept { return add_layer<mbgl::style::CircleLayer>(st,id,src,before); }
-mbgl_layer_t* mbgl_style_add_symbol_layer        (mbgl_style_t* st, const char* id, const char* src, const char* before) noexcept { return add_layer<mbgl::style::SymbolLayer>(st,id,src,before); }
-mbgl_layer_t* mbgl_style_add_raster_layer        (mbgl_style_t* st, const char* id, const char* src, const char* before) noexcept { return add_layer<mbgl::style::RasterLayer>(st,id,src,before); }
-mbgl_layer_t* mbgl_style_add_heatmap_layer       (mbgl_style_t* st, const char* id, const char* src, const char* before) noexcept { return add_layer<mbgl::style::HeatmapLayer>(st,id,src,before); }
-mbgl_layer_t* mbgl_style_add_hillshade_layer     (mbgl_style_t* st, const char* id, const char* src, const char* before) noexcept { return add_layer<mbgl::style::HillshadeLayer>(st,id,src,before); }
-mbgl_layer_t* mbgl_style_add_fill_extrusion_layer(mbgl_style_t* st, const char* id, const char* src, const char* before) noexcept { return add_layer<mbgl::style::FillExtrusionLayer>(st,id,src,before); }
-mbgl_layer_t* mbgl_style_add_background_layer    (mbgl_style_t* st, const char* id, const char* before) noexcept { return add_layer_no_source<mbgl::style::BackgroundLayer>(st,id,before); }
-mbgl_layer_t* mbgl_style_add_location_indicator_layer(mbgl_style_t* st, const char* id, const char* before) noexcept { return add_layer_no_source<mbgl::style::LocationIndicatorLayer>(st,id,before); }
+mbgl_layer_t* mbgl_style_add_fill_layer          (mbgl_style_t* st, const char* id, const char* src, const char* before) noexcept { return add_layer<mln::style::FillLayer>(st,id,src,before); }
+mbgl_layer_t* mbgl_style_add_line_layer          (mbgl_style_t* st, const char* id, const char* src, const char* before) noexcept { return add_layer<mln::style::LineLayer>(st,id,src,before); }
+mbgl_layer_t* mbgl_style_add_circle_layer        (mbgl_style_t* st, const char* id, const char* src, const char* before) noexcept { return add_layer<mln::style::CircleLayer>(st,id,src,before); }
+mbgl_layer_t* mbgl_style_add_symbol_layer        (mbgl_style_t* st, const char* id, const char* src, const char* before) noexcept { return add_layer<mln::style::SymbolLayer>(st,id,src,before); }
+mbgl_layer_t* mbgl_style_add_raster_layer        (mbgl_style_t* st, const char* id, const char* src, const char* before) noexcept { return add_layer<mln::style::RasterLayer>(st,id,src,before); }
+mbgl_layer_t* mbgl_style_add_heatmap_layer       (mbgl_style_t* st, const char* id, const char* src, const char* before) noexcept { return add_layer<mln::style::HeatmapLayer>(st,id,src,before); }
+mbgl_layer_t* mbgl_style_add_hillshade_layer     (mbgl_style_t* st, const char* id, const char* src, const char* before) noexcept { return add_layer<mln::style::HillshadeLayer>(st,id,src,before); }
+mbgl_layer_t* mbgl_style_add_fill_extrusion_layer(mbgl_style_t* st, const char* id, const char* src, const char* before) noexcept { return add_layer<mln::style::FillExtrusionLayer>(st,id,src,before); }
+mbgl_layer_t* mbgl_style_add_background_layer    (mbgl_style_t* st, const char* id, const char* before) noexcept { return add_layer_no_source<mln::style::BackgroundLayer>(st,id,before); }
+mbgl_layer_t* mbgl_style_add_location_indicator_layer(mbgl_style_t* st, const char* id, const char* before) noexcept { return add_layer_no_source<mln::style::LocationIndicatorLayer>(st,id,before); }
 
 mbgl_status_t mbgl_style_remove_layer(mbgl_style_t* st, const char* layer_id) noexcept {
     if (!st || !layer_id) return set_error(MBGL_INVALID_ARG, "mbgl_style_remove_layer: null arg");
@@ -775,7 +775,7 @@ int mbgl_style_has_layer(mbgl_style_t* st, const char* layer_id) noexcept {
 mbgl_status_t mbgl_layer_set_source_layer(mbgl_layer_t* layer, const char* source_layer) noexcept {
     if (!layer || !source_layer) return set_error(MBGL_INVALID_ARG, "mbgl_layer_set_source_layer: null arg");
     try {
-        auto* l = as<mbgl::style::Layer>(layer);
+        auto* l = as<mln::style::Layer>(layer);
         l->setSourceLayer(safe_str(source_layer));
         return MBGL_OK;
     }
@@ -785,34 +785,34 @@ mbgl_status_t mbgl_layer_set_source_layer(mbgl_layer_t* layer, const char* sourc
 mbgl_status_t mbgl_layer_set_filter(mbgl_layer_t* layer, const char* filter_json) noexcept {
     if (!layer || !filter_json) return set_error(MBGL_INVALID_ARG, "mbgl_layer_set_filter: null arg");
     try {
-        mbgl::JSDocument doc;
+        mln::JSDocument doc;
         doc.Parse(filter_json);
         if (doc.HasParseError()) return set_error(MBGL_INVALID_ARG, "mbgl_layer_set_filter: JSON parse error");
-        mbgl::style::conversion::Error err;
-        auto filter = mbgl::style::conversion::convert<mbgl::style::Filter>(doc, err);
+        mln::style::conversion::Error err;
+        auto filter = mln::style::conversion::convert<mln::style::Filter>(doc, err);
         if (!filter) return set_error(MBGL_INVALID_ARG, "mbgl_layer_set_filter: " + err.message);
-        as<mbgl::style::Layer>(layer)->setFilter(*filter);
+        as<mln::style::Layer>(layer)->setFilter(*filter);
         return MBGL_OK;
     } catch (const std::exception& e) { return set_native_error(e); }
 }
 
 mbgl_status_t mbgl_layer_set_min_zoom(mbgl_layer_t* layer, float zoom) noexcept {
     if (!layer) return set_error(MBGL_INVALID_ARG, "mbgl_layer_set_min_zoom: null handle");
-    try { as<mbgl::style::Layer>(layer)->setMinZoom(zoom); return MBGL_OK; }
+    try { as<mln::style::Layer>(layer)->setMinZoom(zoom); return MBGL_OK; }
     catch (const std::exception& e) { return set_native_error(e); }
 }
 
 mbgl_status_t mbgl_layer_set_max_zoom(mbgl_layer_t* layer, float zoom) noexcept {
     if (!layer) return set_error(MBGL_INVALID_ARG, "mbgl_layer_set_max_zoom: null handle");
-    try { as<mbgl::style::Layer>(layer)->setMaxZoom(zoom); return MBGL_OK; }
+    try { as<mln::style::Layer>(layer)->setMaxZoom(zoom); return MBGL_OK; }
     catch (const std::exception& e) { return set_native_error(e); }
 }
 
 mbgl_status_t mbgl_layer_set_visibility(mbgl_layer_t* layer, int visible) noexcept {
     if (!layer) return set_error(MBGL_INVALID_ARG, "mbgl_layer_set_visibility: null handle");
     try {
-        as<mbgl::style::Layer>(layer)->setVisibility(
-            visible ? mbgl::style::VisibilityType::Visible : mbgl::style::VisibilityType::None);
+        as<mln::style::Layer>(layer)->setVisibility(
+            visible ? mln::style::VisibilityType::Visible : mln::style::VisibilityType::None);
         return MBGL_OK;
     } catch (const std::exception& e) { return set_native_error(e); }
 }
@@ -820,11 +820,11 @@ mbgl_status_t mbgl_layer_set_visibility(mbgl_layer_t* layer, int visible) noexce
 mbgl_status_t mbgl_layer_set_paint_property(mbgl_layer_t* layer, const char* name, const char* value_json) noexcept {
     if (!layer || !name || !value_json) return set_error(MBGL_INVALID_ARG, "mbgl_layer_set_paint_property: null arg");
     try {
-        mbgl::JSDocument doc;
+        mln::JSDocument doc;
         doc.Parse(value_json);
         if (doc.HasParseError()) return set_error(MBGL_INVALID_ARG, "mbgl_layer_set_paint_property: JSON parse error");
-        const mbgl::JSValue& v = doc;
-        as<mbgl::style::Layer>(layer)->setProperty(safe_str(name), mbgl::style::conversion::Convertible(&v));
+        const mln::JSValue& v = doc;
+        as<mln::style::Layer>(layer)->setProperty(safe_str(name), mln::style::conversion::Convertible(&v));
         return MBGL_OK;
     } catch (const std::exception& e) { return set_native_error(e); }
 }
@@ -832,11 +832,11 @@ mbgl_status_t mbgl_layer_set_paint_property(mbgl_layer_t* layer, const char* nam
 mbgl_status_t mbgl_layer_set_layout_property(mbgl_layer_t* layer, const char* name, const char* value_json) noexcept {
     if (!layer || !name || !value_json) return set_error(MBGL_INVALID_ARG, "mbgl_layer_set_layout_property: null arg");
     try {
-        mbgl::JSDocument doc;
+        mln::JSDocument doc;
         doc.Parse(value_json);
         if (doc.HasParseError()) return set_error(MBGL_INVALID_ARG, "mbgl_layer_set_layout_property: JSON parse error");
-        const mbgl::JSValue& v = doc;
-        as<mbgl::style::Layer>(layer)->setProperty(safe_str(name), mbgl::style::conversion::Convertible(&v));
+        const mln::JSValue& v = doc;
+        as<mln::style::Layer>(layer)->setProperty(safe_str(name), mln::style::conversion::Convertible(&v));
         return MBGL_OK;
     } catch (const std::exception& e) { return set_native_error(e); }
 }
@@ -848,12 +848,12 @@ mbgl_status_t mbgl_map_fly_to(mbgl_map_t* map, double lat, double lon,
                                int64_t duration_ms) noexcept {
     if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_fly_to: null handle");
     try {
-        mbgl::CameraOptions cam;
-        cam.center  = mbgl::LatLng{ lat, lon };
+        mln::CameraOptions cam;
+        cam.center  = mln::LatLng{ lat, lon };
         cam.zoom    = zoom;
         cam.bearing = bearing;
         cam.pitch   = pitch;
-        mbgl::AnimationOptions anim{ mbgl::Duration(std::chrono::milliseconds(duration_ms)) };
+        mln::AnimationOptions anim{ mln::Duration(std::chrono::milliseconds(duration_ms)) };
         map_ptr(map)->map->flyTo(cam, anim);
         return MBGL_OK;
     } catch (const std::exception& e) { return set_native_error(e); }
@@ -863,16 +863,16 @@ mbgl_status_t mbgl_map_fly_to(mbgl_map_t* map, double lat, double lon,
 
 /* Builds CameraOptions from the padded-variant arguments.  NaN zoom / bearing /
  * pitch fields are left unset so the current value is preserved. */
-static mbgl::CameraOptions padded_camera(double lat, double lon,
+static mln::CameraOptions padded_camera(double lat, double lon,
                                          double zoom, double bearing, double pitch,
                                          double pad_top, double pad_left,
                                          double pad_bottom, double pad_right) {
-    mbgl::CameraOptions cam;
-    cam.center = mbgl::LatLng{ lat, lon };
+    mln::CameraOptions cam;
+    cam.center = mln::LatLng{ lat, lon };
     if (!std::isnan(zoom))    cam.zoom    = zoom;
     if (!std::isnan(bearing)) cam.bearing = bearing;
     if (!std::isnan(pitch))   cam.pitch   = pitch;
-    cam.padding = mbgl::EdgeInsets{ pad_top, pad_left, pad_bottom, pad_right };
+    cam.padding = mln::EdgeInsets{ pad_top, pad_left, pad_bottom, pad_right };
     return cam;
 }
 
@@ -897,7 +897,7 @@ mbgl_status_t mbgl_map_ease_to_padded(mbgl_map_t* map,
                                         int64_t duration_ms) noexcept {
     if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_ease_to_padded: null handle");
     try {
-        mbgl::AnimationOptions anim{ mbgl::Duration(std::chrono::milliseconds(duration_ms)) };
+        mln::AnimationOptions anim{ mln::Duration(std::chrono::milliseconds(duration_ms)) };
         map_ptr(map)->map->easeTo(padded_camera(lat, lon, zoom, bearing, pitch,
                                                 pad_top, pad_left, pad_bottom, pad_right), anim);
         return MBGL_OK;
@@ -912,7 +912,7 @@ mbgl_status_t mbgl_map_fly_to_padded(mbgl_map_t* map,
                                        int64_t duration_ms) noexcept {
     if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_fly_to_padded: null handle");
     try {
-        mbgl::AnimationOptions anim{ mbgl::Duration(std::chrono::milliseconds(duration_ms)) };
+        mln::AnimationOptions anim{ mln::Duration(std::chrono::milliseconds(duration_ms)) };
         map_ptr(map)->map->flyTo(padded_camera(lat, lon, zoom, bearing, pitch,
                                                pad_top, pad_left, pad_bottom, pad_right), anim);
         return MBGL_OK;
@@ -928,9 +928,9 @@ mbgl_status_t mbgl_map_get_camera(mbgl_map_t* map,
                                     double* out_pitch) noexcept {
     if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_get_camera: null handle");
     try {
-        std::optional<mbgl::EdgeInsets> padding;
+        std::optional<mln::EdgeInsets> padding;
         if (pad_top != 0 || pad_left != 0 || pad_bottom != 0 || pad_right != 0)
-            padding = mbgl::EdgeInsets{ pad_top, pad_left, pad_bottom, pad_right };
+            padding = mln::EdgeInsets{ pad_top, pad_left, pad_bottom, pad_right };
         auto cam = map_ptr(map)->map->getCameraOptions(padding);
         if (out_lat)     *out_lat     = cam.center  ? cam.center->latitude()  : 0.0;
         if (out_lon)     *out_lon     = cam.center  ? cam.center->longitude() : 0.0;
@@ -946,11 +946,11 @@ mbgl_status_t mbgl_map_scale_by(mbgl_map_t* map, double scale,
                                   int64_t duration_ms) noexcept {
     if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_scale_by: null handle");
     try {
-        std::optional<mbgl::ScreenCoordinate> anchor;
+        std::optional<mln::ScreenCoordinate> anchor;
         if (!std::isnan(anchor_x) && !std::isnan(anchor_y))
-            anchor = mbgl::ScreenCoordinate{ anchor_x, anchor_y };
-        mbgl::AnimationOptions anim;
-        if (duration_ms > 0) anim.duration = mbgl::Duration(std::chrono::milliseconds(duration_ms));
+            anchor = mln::ScreenCoordinate{ anchor_x, anchor_y };
+        mln::AnimationOptions anim;
+        if (duration_ms > 0) anim.duration = mln::Duration(std::chrono::milliseconds(duration_ms));
         map_ptr(map)->map->scaleBy(scale, anchor, anim);
         return MBGL_OK;
     } catch (const std::exception& e) { return set_native_error(e); }
@@ -963,11 +963,11 @@ mbgl_status_t mbgl_map_set_bounds(mbgl_map_t* map,
                                    double min_pitch, double max_pitch) noexcept {
     if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_set_bounds: null handle");
     try {
-        mbgl::BoundOptions opts;
+        mln::BoundOptions opts;
         if (!std::isnan(lat_sw) && !std::isnan(lon_sw) &&
             !std::isnan(lat_ne) && !std::isnan(lon_ne)) {
-            opts.withLatLngBounds(mbgl::LatLngBounds::hull(
-                mbgl::LatLng{ lat_sw, lon_sw }, mbgl::LatLng{ lat_ne, lon_ne }));
+            opts.withLatLngBounds(mln::LatLngBounds::hull(
+                mln::LatLng{ lat_sw, lon_sw }, mln::LatLng{ lat_ne, lon_ne }));
         }
         if (!std::isnan(min_zoom))  opts.withMinZoom(min_zoom);
         if (!std::isnan(max_zoom))  opts.withMaxZoom(max_zoom);
@@ -988,9 +988,9 @@ mbgl_status_t mbgl_map_camera_for_bounds(mbgl_map_t* map,
                                           double* out_pitch) noexcept {
     if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_camera_for_bounds: null handle");
     try {
-        auto bounds  = mbgl::LatLngBounds::hull(mbgl::LatLng{ lat_sw, lon_sw },
-                                                mbgl::LatLng{ lat_ne, lon_ne });
-        mbgl::EdgeInsets padding{ pad_top, pad_left, pad_bottom, pad_right };
+        auto bounds  = mln::LatLngBounds::hull(mln::LatLng{ lat_sw, lon_sw },
+                                                mln::LatLng{ lat_ne, lon_ne });
+        mln::EdgeInsets padding{ pad_top, pad_left, pad_bottom, pad_right };
         auto cam = map_ptr(map)->map->cameraForLatLngBounds(bounds, padding);
         if (out_lat)     *out_lat     = cam.center  ? cam.center->latitude()  : 0.0;
         if (out_lon)     *out_lon     = cam.center  ? cam.center->longitude() : 0.0;
@@ -1004,7 +1004,7 @@ mbgl_status_t mbgl_map_camera_for_bounds(mbgl_map_t* map,
 void mbgl_map_pixel_for_latlng(mbgl_map_t* map, double lat, double lon,
                                 double* out_x, double* out_y) noexcept {
     if (!map || !out_x || !out_y) return;
-    auto sc = map_ptr(map)->map->pixelForLatLng(mbgl::LatLng{ lat, lon });
+    auto sc = map_ptr(map)->map->pixelForLatLng(mln::LatLng{ lat, lon });
     *out_x = sc.x;
     *out_y = sc.y;
 }
@@ -1012,7 +1012,7 @@ void mbgl_map_pixel_for_latlng(mbgl_map_t* map, double lat, double lon,
 void mbgl_map_latlng_for_pixel(mbgl_map_t* map, double x, double y,
                                 double* out_lat, double* out_lon) noexcept {
     if (!map || !out_lat || !out_lon) return;
-    auto ll = map_ptr(map)->map->latLngForPixel(mbgl::ScreenCoordinate{ x, y });
+    auto ll = map_ptr(map)->map->latLngForPixel(mln::ScreenCoordinate{ x, y });
     *out_lat = ll.latitude();
     *out_lon = ll.longitude();
 }
@@ -1021,7 +1021,7 @@ mbgl_status_t mbgl_map_set_projection_mode(mbgl_map_t* map, int axonometric,
                                             double x_skew, double y_skew) noexcept {
     if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_set_projection_mode: null handle");
     try {
-        mbgl::ProjectionMode mode;
+        mln::ProjectionMode mode;
         mode.axonometric = (axonometric != 0);
         mode.xSkew = x_skew;
         mode.ySkew = y_skew;
@@ -1037,11 +1037,11 @@ mbgl_status_t mbgl_style_add_image(mbgl_style_t* st, const char* image_id,
                                     int sdf, const uint8_t* rgba_premultiplied) noexcept {
     if (!st || !image_id || !rgba_premultiplied) return set_error(MBGL_INVALID_ARG, "mbgl_style_add_image: null arg");
     try {
-        mbgl::PremultipliedImage img(
+        mln::PremultipliedImage img(
             { static_cast<uint32_t>(width), static_cast<uint32_t>(height) },
             rgba_premultiplied,
             static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
-        style_ref(st).addImage(std::make_unique<mbgl::style::Image>(
+        style_ref(st).addImage(std::make_unique<mln::style::Image>(
             safe_str(image_id), std::move(img), pixel_ratio, sdf != 0));
         return MBGL_OK;
     } catch (const std::exception& e) { return set_native_error(e); }
@@ -1067,9 +1067,9 @@ char* mbgl_style_get_json(mbgl_style_t* st) noexcept {
 mbgl_status_t mbgl_style_set_transition(mbgl_style_t* st, int64_t duration_ms, int64_t delay_ms) noexcept {
     if (!st) return set_error(MBGL_INVALID_ARG, "mbgl_style_set_transition: null handle");
     try {
-        mbgl::style::TransitionOptions opts;
-        opts.duration = mbgl::Duration(std::chrono::milliseconds(duration_ms));
-        opts.delay    = mbgl::Duration(std::chrono::milliseconds(delay_ms));
+        mln::style::TransitionOptions opts;
+        opts.duration = mln::Duration(std::chrono::milliseconds(duration_ms));
+        opts.delay    = mln::Duration(std::chrono::milliseconds(delay_ms));
         style_ref(st).setTransitionOptions(opts);
         return MBGL_OK;
     } catch (const std::exception& e) { return set_native_error(e); }
@@ -1080,11 +1080,11 @@ mbgl_status_t mbgl_style_set_light_property(mbgl_style_t* st, const char* name, 
     try {
         auto* light = style_ref(st).getLight();
         if (!light) return set_error(MBGL_INVALID_STATE, "mbgl_style_set_light_property: no light in style");
-        mbgl::JSDocument doc;
+        mln::JSDocument doc;
         doc.Parse(value_json);
         if (doc.HasParseError()) return set_error(MBGL_INVALID_ARG, "mbgl_style_set_light_property: JSON parse error");
-        const mbgl::JSValue& v = doc;
-        light->setProperty(safe_str(name), mbgl::style::conversion::Convertible(&v));
+        const mln::JSValue& v = doc;
+        light->setProperty(safe_str(name), mln::style::conversion::Convertible(&v));
         return MBGL_OK;
     } catch (const std::exception& e) { return set_native_error(e); }
 }
@@ -1093,7 +1093,7 @@ mbgl_status_t mbgl_style_set_light_property(mbgl_style_t* st, const char* name, 
 
 mbgl_layer_t* mbgl_style_add_color_relief_layer(mbgl_style_t* st, const char* id,
                                                  const char* src, const char* before) noexcept {
-    return add_layer<mbgl::style::ColorReliefLayer>(st, id, src, before);
+    return add_layer<mln::style::ColorReliefLayer>(st, id, src, before);
 }
 
 /* ─── Feature queries ────────────────────────────────────────────────────────── */
@@ -1109,9 +1109,9 @@ static std::vector<std::string> split_layer_ids(const char* csv) {
     return result;
 }
 
-static char* features_to_json(std::vector<mbgl::Feature>&& features) {
-    mbgl::FeatureCollection fc(features.begin(), features.end());
-    std::string json = mapbox::geojson::stringify(mbgl::GeoJSON{ fc });
+static char* features_to_json(std::vector<mln::Feature>&& features) {
+    mln::FeatureCollection fc(features.begin(), features.end());
+    std::string json = mapbox::geojson::stringify(mln::GeoJSON{ fc });
     char* result = new char[json.size() + 1];
     std::copy(json.begin(), json.end(), result);
     result[json.size()] = '\0';
@@ -1125,10 +1125,10 @@ char* mbgl_map_query_rendered_features_at_point(mbgl_map_t* map, double x, doubl
         auto* m        = map_ptr(map);
         auto* renderer = m->frontend->getRenderer();
         if (!renderer) return nullptr;
-        mbgl::RenderedQueryOptions opts;
+        mln::RenderedQueryOptions opts;
         auto ids = split_layer_ids(layer_ids);
         if (!ids.empty()) opts.layerIDs = ids;
-        auto features = renderer->queryRenderedFeatures(mbgl::ScreenCoordinate{ x, y }, opts);
+        auto features = renderer->queryRenderedFeatures(mln::ScreenCoordinate{ x, y }, opts);
         return features_to_json(std::move(features));
     } catch (...) { return nullptr; }
 }
@@ -1142,10 +1142,10 @@ char* mbgl_map_query_rendered_features_in_box(mbgl_map_t* map,
         auto* m        = map_ptr(map);
         auto* renderer = m->frontend->getRenderer();
         if (!renderer) return nullptr;
-        mbgl::RenderedQueryOptions opts;
+        mln::RenderedQueryOptions opts;
         auto ids = split_layer_ids(layer_ids);
         if (!ids.empty()) opts.layerIDs = ids;
-        mbgl::ScreenBox box{ { x1, y1 }, { x2, y2 } };
+        mln::ScreenBox box{ { x1, y1 }, { x2, y2 } };
         auto features = renderer->queryRenderedFeatures(box, opts);
         return features_to_json(std::move(features));
     } catch (...) { return nullptr; }
@@ -1209,32 +1209,32 @@ mbgl_status_t mbgl_map_dump_debug_logs(mbgl_map_t* map) noexcept {
 
 /* ─── Feature state helpers ─────────────────────────────────────────────────── */
 
-static mbgl::Value jsValueToMbglValue(const mbgl::JSValue& v) {
+static mln::Value jsValueToMbglValue(const mln::JSValue& v) {
     if (v.IsBool())   return v.GetBool();
     if (v.IsInt64())  return v.GetInt64();
     if (v.IsUint64()) return static_cast<int64_t>(v.GetUint64());
     if (v.IsDouble()) return v.GetDouble();
     if (v.IsString()) return std::string{v.GetString(), v.GetStringLength()};
     if (v.IsArray()) {
-        std::vector<mbgl::Value> arr;
+        std::vector<mln::Value> arr;
         arr.reserve(v.Size());
         for (const auto& elem : v.GetArray())
             arr.push_back(jsValueToMbglValue(elem));
         return arr;
     }
     if (v.IsObject()) {
-        mbgl::PropertyMap obj;
+        mln::PropertyMap obj;
         for (const auto& m : v.GetObject())
             obj[std::string{m.name.GetString(), m.name.GetStringLength()}] = jsValueToMbglValue(m.value);
         return obj;
     }
-    return mbgl::NullValue{};
+    return mln::NullValue{};
 }
 
-static mbgl::FeatureState jsonToFeatureState(const char* json) {
-    mbgl::FeatureState state;
+static mln::FeatureState jsonToFeatureState(const char* json) {
+    mln::FeatureState state;
     if (!json || !*json) return state;
-    mbgl::JSDocument doc;
+    mln::JSDocument doc;
     doc.Parse(json);
     if (doc.HasParseError() || !doc.IsObject()) return state;
     for (const auto& m : doc.GetObject())
@@ -1242,9 +1242,9 @@ static mbgl::FeatureState jsonToFeatureState(const char* json) {
     return state;
 }
 
-static void writeValue(const mbgl::Value& v, rapidjson::Writer<rapidjson::StringBuffer>& w) {
+static void writeValue(const mln::Value& v, rapidjson::Writer<rapidjson::StringBuffer>& w) {
     v.match(
-        [&](const mbgl::NullValue&)                { w.Null(); },
+        [&](const mln::NullValue&)                { w.Null(); },
         [&](bool b)                                { w.Bool(b); },
         [&](uint64_t u)                            { w.Uint64(u); },
         [&](int64_t i)                             { w.Int64(i); },
@@ -1252,12 +1252,12 @@ static void writeValue(const mbgl::Value& v, rapidjson::Writer<rapidjson::String
         [&](const std::string& s) {
             w.String(s.data(), static_cast<rapidjson::SizeType>(s.size()));
         },
-        [&](const std::vector<mbgl::Value>& arr) {
+        [&](const std::vector<mln::Value>& arr) {
             w.StartArray();
             for (const auto& e : arr) writeValue(e, w);
             w.EndArray();
         },
-        [&](const mbgl::PropertyMap& obj) {
+        [&](const mln::PropertyMap& obj) {
             w.StartObject();
             for (const auto& [k, v2] : obj) {
                 w.Key(k.data(), static_cast<rapidjson::SizeType>(k.size()));
@@ -1268,7 +1268,7 @@ static void writeValue(const mbgl::Value& v, rapidjson::Writer<rapidjson::String
     );
 }
 
-static char* featureStateToJson(const mbgl::FeatureState& state) {
+static char* featureStateToJson(const mln::FeatureState& state) {
     rapidjson::StringBuffer buf;
     rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
     writer.StartObject();
@@ -1310,7 +1310,7 @@ char* mbgl_map_get_feature_state(mbgl_map_t* map,
         if (!renderer) return nullptr;
         std::optional<std::string> layerId =
             (source_layer_id && *source_layer_id) ? std::optional<std::string>{source_layer_id} : std::nullopt;
-        mbgl::FeatureState state;
+        mln::FeatureState state;
         renderer->getFeatureState(state, safe_str(source_id), layerId, safe_str(feature_id));
         return featureStateToJson(state);
     } catch (...) { return nullptr; }
@@ -1348,17 +1348,17 @@ char* mbgl_map_query_source_features(mbgl_map_t* map,
         auto* renderer = map_ptr(map)->frontend->getRenderer();
         if (!renderer) return nullptr;
 
-        mbgl::SourceQueryOptions opts;
+        mln::SourceQueryOptions opts;
         auto layers = split_layer_ids(source_layer_ids);
         if (!layers.empty()) opts.sourceLayers = layers;
         if (filter_json && *filter_json) {
-            mbgl::JSDocument doc;
+            mln::JSDocument doc;
             doc.Parse<0>(filter_json);
             if (doc.HasParseError()) return nullptr;
-            const mbgl::JSValue& v = doc;
-            mbgl::style::conversion::Error err;
-            auto filter = mbgl::style::conversion::convert<mbgl::style::Filter>(
-                mbgl::style::conversion::Convertible(&v), err);
+            const mln::JSValue& v = doc;
+            mln::style::conversion::Error err;
+            auto filter = mln::style::conversion::convert<mln::style::Filter>(
+                mln::style::conversion::Convertible(&v), err);
             if (!filter) { set_error(MBGL_INVALID_ARG, "mbgl_map_query_source_features: " + err.message); return nullptr; }
             opts.filter = std::move(*filter);
         }
@@ -1378,26 +1378,26 @@ char* mbgl_map_query_feature_extensions(mbgl_map_t* map,
         auto* renderer = map_ptr(map)->frontend->getRenderer();
         if (!renderer) return nullptr;
 
-        mbgl::style::conversion::Error err;
-        auto geojson = mbgl::style::conversion::parseGeoJSON(safe_str(feature_json), err);
+        mln::style::conversion::Error err;
+        auto geojson = mln::style::conversion::parseGeoJSON(safe_str(feature_json), err);
         if (!geojson) { set_error(MBGL_INVALID_ARG, "mbgl_map_query_feature_extensions: " + err.message); return nullptr; }
-        mbgl::Feature feature;
+        mln::Feature feature;
         if (geojson->is<mapbox::geojson::feature>()) {
-            feature = mbgl::Feature{ geojson->get<mapbox::geojson::feature>() };
+            feature = mln::Feature{ geojson->get<mapbox::geojson::feature>() };
         } else if (geojson->is<mapbox::geojson::feature_collection>() &&
                    !geojson->get<mapbox::geojson::feature_collection>().empty()) {
-            feature = mbgl::Feature{ geojson->get<mapbox::geojson::feature_collection>().front() };
+            feature = mln::Feature{ geojson->get<mapbox::geojson::feature_collection>().front() };
         } else {
             set_error(MBGL_INVALID_ARG, "mbgl_map_query_feature_extensions: feature_json must be a GeoJSON Feature");
             return nullptr;
         }
 
-        std::optional<std::map<std::string, mbgl::Value>> args;
+        std::optional<std::map<std::string, mln::Value>> args;
         if (args_json && *args_json) {
-            mbgl::JSDocument doc;
+            mln::JSDocument doc;
             doc.Parse<0>(args_json);
             if (!doc.HasParseError() && doc.IsObject()) {
-                std::map<std::string, mbgl::Value> parsed;
+                std::map<std::string, mln::Value> parsed;
                 for (const auto& m : doc.GetObject())
                     parsed[std::string{m.name.GetString(), m.name.GetStringLength()}] = jsValueToMbglValue(m.value);
                 args = std::move(parsed);
@@ -1407,14 +1407,14 @@ char* mbgl_map_query_feature_extensions(mbgl_map_t* map,
         auto result = renderer->queryFeatureExtensions(
             safe_str(source_id), feature, safe_str(extension), safe_str(extension_field), args);
 
-        if (result.is<mbgl::FeatureCollection>()) {
+        if (result.is<mln::FeatureCollection>()) {
             std::string json = mapbox::geojson::stringify(
-                mbgl::GeoJSON{ result.get<mbgl::FeatureCollection>() });
+                mln::GeoJSON{ result.get<mln::FeatureCollection>() });
             return dup_string(json);
         }
         rapidjson::StringBuffer buf;
         rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
-        writeValue(result.get<mbgl::Value>(), writer);
+        writeValue(result.get<mln::Value>(), writer);
         return dup_string(std::string(buf.GetString(), buf.GetSize()));
     } catch (...) { return nullptr; }
 }
@@ -1427,14 +1427,14 @@ mbgl_status_t mbgl_style_add_source_json(mbgl_style_t* st,
     if (!st || !source_id || !source_json)
         return set_error(MBGL_INVALID_ARG, "mbgl_style_add_source_json: null arg");
     try {
-        using namespace mbgl::style::conversion;
-        mbgl::JSDocument doc;
+        using namespace mln::style::conversion;
+        mln::JSDocument doc;
         doc.Parse<0>(source_json);
         if (doc.HasParseError())
             return set_error(MBGL_INVALID_ARG, "mbgl_style_add_source_json: JSON parse error");
-        const mbgl::JSValue& v = doc;
+        const mln::JSValue& v = doc;
         Error err;
-        auto source = convert<std::unique_ptr<mbgl::style::Source>>(
+        auto source = convert<std::unique_ptr<mln::style::Source>>(
             Convertible(&v), err, safe_str(source_id));
         if (!source)
             return set_error(MBGL_INVALID_ARG, std::string("mbgl_style_add_source_json: ") + err.message);
@@ -1448,16 +1448,16 @@ mbgl_layer_t* mbgl_style_add_layer_json(mbgl_style_t* st,
                                           const char* before_id) noexcept {
     if (!st || !layer_json) { set_error(MBGL_INVALID_ARG, "mbgl_style_add_layer_json: null arg"); return nullptr; }
     try {
-        using namespace mbgl::style::conversion;
-        mbgl::JSDocument doc;
+        using namespace mln::style::conversion;
+        mln::JSDocument doc;
         doc.Parse<0>(layer_json);
         if (doc.HasParseError()) {
             set_error(MBGL_INVALID_ARG, "mbgl_style_add_layer_json: JSON parse error");
             return nullptr;
         }
-        const mbgl::JSValue& v = doc;
+        const mln::JSValue& v = doc;
         Error err;
-        auto layer = convert<std::unique_ptr<mbgl::style::Layer>>(Convertible(&v), err);
+        auto layer = convert<std::unique_ptr<mln::style::Layer>>(Convertible(&v), err);
         if (!layer) {
             set_error(MBGL_INVALID_ARG, std::string("mbgl_style_add_layer_json: ") + err.message);
             return nullptr;
@@ -1474,7 +1474,7 @@ mbgl_layer_t* mbgl_style_add_layer_json(mbgl_style_t* st,
 mbgl_status_t mbgl_style_set_terrain(mbgl_style_t* st, const char* source_id, float exaggeration) noexcept {
     if (!st || !source_id) return set_error(MBGL_INVALID_ARG, "mbgl_style_set_terrain: null arg");
     try {
-        style_ref(st).setTerrain(std::make_unique<mbgl::style::Terrain>(safe_str(source_id), exaggeration));
+        style_ref(st).setTerrain(std::make_unique<mln::style::Terrain>(safe_str(source_id), exaggeration));
         return MBGL_OK;
     } catch (const std::exception& e) { return set_native_error(e); }
 }
@@ -1525,8 +1525,8 @@ int mbgl_map_is_panning(mbgl_map_t* map) noexcept {
 mbgl_status_t mbgl_map_move_by(mbgl_map_t* map, double dx, double dy, int64_t duration_ms) noexcept {
     if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_move_by: null handle");
     try {
-        mbgl::AnimationOptions anim;
-        if (duration_ms > 0) anim.duration = mbgl::Duration(std::chrono::milliseconds(duration_ms));
+        mln::AnimationOptions anim;
+        if (duration_ms > 0) anim.duration = mln::Duration(std::chrono::milliseconds(duration_ms));
         map_ptr(map)->map->moveBy({dx, dy}, anim);
         return MBGL_OK;
     } catch (const std::exception& e) { return set_native_error(e); }
@@ -1541,8 +1541,8 @@ mbgl_status_t mbgl_map_rotate_by(mbgl_map_t* map, double x0, double y0, double x
 mbgl_status_t mbgl_map_pitch_by(mbgl_map_t* map, double delta_degrees, int64_t duration_ms) noexcept {
     if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_pitch_by: null handle");
     try {
-        mbgl::AnimationOptions anim;
-        if (duration_ms > 0) anim.duration = mbgl::Duration(std::chrono::milliseconds(duration_ms));
+        mln::AnimationOptions anim;
+        if (duration_ms > 0) anim.duration = mln::Duration(std::chrono::milliseconds(duration_ms));
         map_ptr(map)->map->pitchBy(delta_degrees, anim);
         return MBGL_OK;
     } catch (const std::exception& e) { return set_native_error(e); }
@@ -1553,7 +1553,7 @@ mbgl_status_t mbgl_map_pitch_by(mbgl_map_t* map, double delta_degrees, int64_t d
 mbgl_status_t mbgl_map_set_north_orientation(mbgl_map_t* map, int orientation) noexcept {
     if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_set_north_orientation: null handle");
     try {
-        map_ptr(map)->map->setNorthOrientation(static_cast<mbgl::NorthOrientation>(orientation));
+        map_ptr(map)->map->setNorthOrientation(static_cast<mln::NorthOrientation>(orientation));
         return MBGL_OK;
     } catch (const std::exception& e) { return set_native_error(e); }
 }
@@ -1561,7 +1561,7 @@ mbgl_status_t mbgl_map_set_north_orientation(mbgl_map_t* map, int orientation) n
 mbgl_status_t mbgl_map_set_constrain_mode(mbgl_map_t* map, int mode) noexcept {
     if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_set_constrain_mode: null handle");
     try {
-        map_ptr(map)->map->setConstrainMode(static_cast<mbgl::ConstrainMode>(mode));
+        map_ptr(map)->map->setConstrainMode(static_cast<mln::ConstrainMode>(mode));
         return MBGL_OK;
     } catch (const std::exception& e) { return set_native_error(e); }
 }
@@ -1569,7 +1569,7 @@ mbgl_status_t mbgl_map_set_constrain_mode(mbgl_map_t* map, int mode) noexcept {
 mbgl_status_t mbgl_map_set_viewport_mode(mbgl_map_t* map, int mode) noexcept {
     if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_set_viewport_mode: null handle");
     try {
-        map_ptr(map)->map->setViewportMode(static_cast<mbgl::ViewportMode>(mode));
+        map_ptr(map)->map->setViewportMode(static_cast<mln::ViewportMode>(mode));
         return MBGL_OK;
     } catch (const std::exception& e) { return set_native_error(e); }
 }
@@ -1636,7 +1636,7 @@ mbgl_status_t mbgl_map_set_tile_lod_zoom_shift(mbgl_map_t* map, double shift) no
 mbgl_status_t mbgl_map_set_tile_lod_mode(mbgl_map_t* map, int mode) noexcept {
     if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_set_tile_lod_mode: null handle");
     try {
-        map_ptr(map)->map->setTileLodMode(static_cast<mbgl::TileLodMode>(mode));
+        map_ptr(map)->map->setTileLodMode(static_cast<mln::TileLodMode>(mode));
         return MBGL_OK;
     } catch (const std::exception& e) { return set_native_error(e); }
 }
@@ -1652,11 +1652,11 @@ mbgl_status_t mbgl_map_camera_for_latlngs(mbgl_map_t* map,
                                            double* out_pitch) noexcept {
     if (!map || !latlngs) return set_error(MBGL_INVALID_ARG, "mbgl_map_camera_for_latlngs: null arg");
     try {
-        std::vector<mbgl::LatLng> pts;
+        std::vector<mln::LatLng> pts;
         pts.reserve(static_cast<size_t>(count));
         for (int i = 0; i < count; ++i)
             pts.emplace_back(latlngs[i * 2], latlngs[i * 2 + 1]);
-        mbgl::EdgeInsets padding{ pad_top, pad_left, pad_bottom, pad_right };
+        mln::EdgeInsets padding{ pad_top, pad_left, pad_bottom, pad_right };
         auto cam = map_ptr(map)->map->cameraForLatLngs(pts, padding);
         if (out_lat)     *out_lat     = cam.center ? cam.center->latitude()  : kNaN;
         if (out_lon)     *out_lon     = cam.center ? cam.center->longitude() : kNaN;
@@ -1674,7 +1674,7 @@ mbgl_status_t mbgl_map_pixels_for_latlngs(mbgl_map_t* map,
                                            double* out_xy) noexcept {
     if (!map || !latlngs || !out_xy) return set_error(MBGL_INVALID_ARG, "mbgl_map_pixels_for_latlngs: null arg");
     try {
-        std::vector<mbgl::LatLng> pts;
+        std::vector<mln::LatLng> pts;
         pts.reserve(static_cast<size_t>(count));
         for (int i = 0; i < count; ++i)
             pts.emplace_back(latlngs[i * 2], latlngs[i * 2 + 1]);
@@ -1692,7 +1692,7 @@ mbgl_status_t mbgl_map_latlngs_for_pixels(mbgl_map_t* map,
                                            double* out_ll) noexcept {
     if (!map || !xy || !out_ll) return set_error(MBGL_INVALID_ARG, "mbgl_map_latlngs_for_pixels: null arg");
     try {
-        std::vector<mbgl::ScreenCoordinate> pts;
+        std::vector<mln::ScreenCoordinate> pts;
         pts.reserve(static_cast<size_t>(count));
         for (int i = 0; i < count; ++i)
             pts.emplace_back(xy[i * 2], xy[i * 2 + 1]);
@@ -1762,7 +1762,7 @@ mbgl_source_t* mbgl_style_get_source(mbgl_style_t* st, const char* source_id) no
 char* mbgl_source_get_attribution(mbgl_source_t* src) noexcept {
     if (!src) return nullptr;
     try {
-        const auto& attr = as<mbgl::style::Source>(src)->getAttribution();
+        const auto& attr = as<mln::style::Source>(src)->getAttribution();
         if (!attr) return nullptr;
         return dup_string(*attr);
     } catch (...) { return nullptr; }
@@ -1770,33 +1770,33 @@ char* mbgl_source_get_attribution(mbgl_source_t* src) noexcept {
 
 /* ─── Layer read-back ────────────────────────────────────────────────────────── */
 
-static char* style_property_to_json(const mbgl::style::StyleProperty& prop) {
-    if (prop.getKind() == mbgl::style::StyleProperty::Kind::Undefined)
+static char* style_property_to_json(const mln::style::StyleProperty& prop) {
+    if (prop.getKind() == mln::style::StyleProperty::Kind::Undefined)
         return nullptr;
     rapidjson::StringBuffer sb;
     rapidjson::Writer<rapidjson::StringBuffer,
                        rapidjson::UTF8<>, rapidjson::UTF8<>,
                        rapidjson::CrtAllocator> writer(sb);
-    mbgl::style::conversion::stringify(writer, prop.getValue());
+    mln::style::conversion::stringify(writer, prop.getValue());
     return dup_string(std::string(sb.GetString(), sb.GetSize()));
 }
 
 char* mbgl_layer_get_paint_property(mbgl_layer_t* layer, const char* name) noexcept {
     if (!layer || !name) return nullptr;
-    try { return style_property_to_json(as<mbgl::style::Layer>(layer)->getProperty(safe_str(name))); }
+    try { return style_property_to_json(as<mln::style::Layer>(layer)->getProperty(safe_str(name))); }
     catch (...) { return nullptr; }
 }
 
 char* mbgl_layer_get_layout_property(mbgl_layer_t* layer, const char* name) noexcept {
     if (!layer || !name) return nullptr;
-    try { return style_property_to_json(as<mbgl::style::Layer>(layer)->getProperty(safe_str(name))); }
+    try { return style_property_to_json(as<mln::style::Layer>(layer)->getProperty(safe_str(name))); }
     catch (...) { return nullptr; }
 }
 
 int mbgl_layer_get_visibility(mbgl_layer_t* layer) noexcept {
     if (!layer) return 1;
-    return as<mbgl::style::Layer>(layer)->getVisibility()
-               == mbgl::style::VisibilityType::Visible ? 1 : 0;
+    return as<mln::style::Layer>(layer)->getVisibility()
+               == mln::style::VisibilityType::Visible ? 1 : 0;
 }
 
 /* ─── Version ───────────────────────────────────────────────────────────────── */
@@ -1810,19 +1810,19 @@ const char* mln_cabi_version() noexcept {
 #include <jni.h>
 
 // This standalone NDK build never runs the JNI_OnLoad that the upstream
-// MapLibre Android SDK normally uses to populate mbgl::android::theJVM, so
+// MapLibre Android SDK normally uses to populate mln::android::theJVM, so
 // every background thread that calls attachThread() (e.g. the RunLoop's
 // "Alarm" thread) aborts on assert(vm != nullptr) in jni.cpp. Capture the
 // JavaVM here — the first JNIEnv we're handed, on the surface-creation path
 // that always runs before the RunLoop/Alarm thread is spawned.
-namespace mbgl { namespace android {
+namespace mln { namespace android {
 extern JavaVM* theJVM;
-}} // namespace mbgl::android
+}} // namespace mln::android
 
 void* mbgl_android_acquire_window(void* jni_env, void* surface_jobject) noexcept {
     JNIEnv* env = reinterpret_cast<JNIEnv*>(jni_env);
-    if (!mbgl::android::theJVM) {
-        env->GetJavaVM(&mbgl::android::theJVM);
+    if (!mln::android::theJVM) {
+        env->GetJavaVM(&mln::android::theJVM);
     }
     return ANativeWindow_fromSurface(
         env,

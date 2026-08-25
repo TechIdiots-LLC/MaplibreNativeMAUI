@@ -19,14 +19,14 @@
 // Include the C ABI header for mbgl_http_provider_fn / mbgl_http_error_t typedefs.
 #include "mln_cabi.h"
 
-#include <mbgl/storage/http_file_source.hpp>
-#include <mbgl/storage/resource.hpp>
-#include <mbgl/storage/resource_options.hpp>
-#include <mbgl/storage/response.hpp>
-#include <mbgl/util/async_request.hpp>
-#include <mbgl/util/chrono.hpp>
-#include <mbgl/util/client_options.hpp>
-#include <mbgl/util/run_loop.hpp>
+#include <mln/storage/http_file_source.hpp>
+#include <mln/storage/resource.hpp>
+#include <mln/storage/resource_options.hpp>
+#include <mln/storage/response.hpp>
+#include <mln/util/async_request.hpp>
+#include <mln/util/chrono.hpp>
+#include <mln/util/client_options.hpp>
+#include <mln/util/run_loop.hpp>
 
 #include <atomic>
 #include <cstdint>
@@ -42,8 +42,8 @@
 namespace {
 
 struct PendingRequest {
-    mbgl::FileSource::Callback callback;
-    mbgl::util::RunLoop*       runLoop;  // the map thread's RunLoop
+    mln::FileSource::Callback callback;
+    mln::util::RunLoop*       runLoop;  // the map thread's RunLoop
     std::atomic<bool>          cancelled{false};
 };
 
@@ -115,10 +115,10 @@ void mbgl_http_respond_impl(uint64_t request_id,
 
     // Build the response (must be done before posting to RunLoop as strings
     // are owned by C# and may be freed after this call returns).
-    mbgl::Response response;
+    mln::Response response;
 
     if (error != MBGL_HTTP_ERROR_NONE) {
-        using Reason = mbgl::Response::Error::Reason;
+        using Reason = mln::Response::Error::Reason;
         Reason reason;
         switch (error) {
             case MBGL_HTTP_ERROR_NOT_FOUND:  reason = Reason::NotFound;    break;
@@ -127,7 +127,7 @@ void mbgl_http_respond_impl(uint64_t request_id,
             case MBGL_HTTP_ERROR_RATE_LIMIT: reason = Reason::RateLimit;   break;
             default:                          reason = Reason::Other;       break;
         }
-        response.error = std::make_unique<const mbgl::Response::Error>(
+        response.error = std::make_unique<const mln::Response::Error>(
             reason, error_message ? error_message : "");
     } else if (no_content) {
         response.noContent = true;
@@ -149,7 +149,7 @@ void mbgl_http_respond_impl(uint64_t request_id,
 
     // Parse Last-Modified
     if (modified && *modified) {
-        response.modified = mbgl::util::parseTimestamp(modified);
+        response.modified = mln::util::parseTimestamp(modified);
     }
 
     // Parse Expires (prefer Cache-Control max-age if provided)
@@ -160,14 +160,14 @@ void mbgl_http_respond_impl(uint64_t request_id,
             long secs = strtol(p + 8, nullptr, 10);
             if (secs > 0) {
                 using namespace std::chrono;
-                response.expires = time_point_cast<mbgl::Seconds>(
+                response.expires = time_point_cast<mln::Seconds>(
                     system_clock::now() + seconds(secs));
             }
         }
         const char* mr = strstr(cache_control, "must-revalidate");
         if (mr) response.mustRevalidate = true;
     } else if (expires && *expires) {
-        response.expires = mbgl::util::parseTimestamp(expires);
+        response.expires = mln::util::parseTimestamp(expires);
     }
 
     // Marshal the callback back onto the requesting thread's RunLoop. The closure
@@ -213,7 +213,7 @@ void mbgl_http_cancel_impl(uint64_t request_id) noexcept {
 
 // ── HTTPFileSource implementation ─────────────────────────────────────────────
 
-namespace mbgl {
+namespace mln {
 
 class HTTPFileSource::Impl {};
 
@@ -305,4 +305,4 @@ ClientOptions HTTPFileSource::getClientOptions() {
     return {};
 }
 
-} // namespace mbgl
+} // namespace mln

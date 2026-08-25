@@ -1,3 +1,4 @@
 [submodule "dependencies/maplibre-native"]
 	path = dependencies/maplibre-native
-	url = https://github.com/WifiDB/maplibre-native.git
+	url = https://github.com/maplibre/maplibre-native.git
+	branch = feature/terrain-3d

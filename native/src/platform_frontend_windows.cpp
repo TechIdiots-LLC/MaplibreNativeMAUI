@@ -19,18 +19,18 @@
 
 #ifdef MLN_RENDER_BACKEND_OPENGL
 
-#include <mbgl/gl/renderable_resource.hpp>
-#include <mbgl/gl/renderer_backend.hpp>
-#include <mbgl/renderer/renderer.hpp>
-#include <mbgl/renderer/update_parameters.hpp>
-#include <mbgl/gfx/backend_scope.hpp>
+#include <mln/gl/renderable_resource.hpp>
+#include <mln/gl/renderer_backend.hpp>
+#include <mln/renderer/renderer.hpp>
+#include <mln/renderer/update_parameters.hpp>
+#include <mln/gfx/backend_scope.hpp>
 #include <memory>
 #include <mutex>
 
 #include "null_map_observer.hpp"
 
 /* ── Renderable resource ────────────────────────────────────────────── */
-class WGLRenderableResource : public mbgl::gl::RenderableResource {
+class WGLRenderableResource : public mln::gl::RenderableResource {
 public:
     WGLRenderableResource(class WGLBackend& backend) : _backend(backend) {}
     void bind() override;
@@ -39,23 +39,23 @@ private:
 };
 
 /* ── WGL backend ────────────────────────────────────────────────────── */
-class WGLBackend : public mbgl::gl::RendererBackend,
-                   public mbgl::gfx::Renderable {
+class WGLBackend : public mln::gl::RendererBackend,
+                   public mln::gfx::Renderable {
 public:
-    WGLBackend(HDC hDC, HGLRC hGLRC, mbgl::Size sz)
-        : mbgl::gfx::Renderable(sz, std::make_unique<WGLRenderableResource>(*this))
-        , mbgl::gl::RendererBackend(mbgl::gfx::ContextMode::Shared)
+    WGLBackend(HDC hDC, HGLRC hGLRC, mln::Size sz)
+        : mln::gfx::Renderable(sz, std::make_unique<WGLRenderableResource>(*this))
+        , mln::gl::RendererBackend(mln::gfx::ContextMode::Shared)
         , _hDC(hDC), _hGLRC(hGLRC)
     {}
 
-    mbgl::gfx::Renderable& getDefaultRenderable() override { return *this; }
-    void setSize(mbgl::Size sz) { this->size = sz; }
+    mln::gfx::Renderable& getDefaultRenderable() override { return *this; }
+    void setSize(mln::Size sz) { this->size = sz; }
 
 protected:
     void activate()   override { wglMakeCurrent(_hDC, _hGLRC); }
     void deactivate() override { wglMakeCurrent(nullptr, nullptr); }
-    mbgl::gl::ProcAddress getExtensionFunctionPointer(const char* name) override {
-        return reinterpret_cast<mbgl::gl::ProcAddress>(wglGetProcAddress(name));
+    mln::gl::ProcAddress getExtensionFunctionPointer(const char* name) override {
+        return reinterpret_cast<mln::gl::ProcAddress>(wglGetProcAddress(name));
     }
     // Re-sync mbgl's cached GL state to match what is actually current on the
     // context. The host (.NET MAUI/WPF controller) calls glBindFramebuffer(0),
@@ -91,26 +91,26 @@ void WGLRenderableResource::bind() {
 /* ── WGL frontend ───────────────────────────────────────────────────── */
 class WGLFrontend : public PlatformFrontend {
 public:
-    WGLFrontend(HDC hDC, HGLRC hGLRC, mbgl::Size sz, float pixelRatio,
+    WGLFrontend(HDC hDC, HGLRC hGLRC, mln::Size sz, float pixelRatio,
                 mbgl_render_fn renderCb, void* renderUd)
         : _backend(hDC, hGLRC, sz)
-        , _renderer(std::make_unique<mbgl::Renderer>(_backend, pixelRatio))
+        , _renderer(std::make_unique<mln::Renderer>(_backend, pixelRatio))
         , _renderCb(renderCb), _renderUd(renderUd)
     {}
 
     ~WGLFrontend() override {
-        mbgl::gfx::BackendScope guard(_backend, mbgl::gfx::BackendScope::ScopeType::Implicit);
+        mln::gfx::BackendScope guard(_backend, mln::gfx::BackendScope::ScopeType::Implicit);
         _renderer.reset();
     }
 
     /* RendererFrontend */
     void reset() override { _renderer.reset(); }
 
-    void setObserver(mbgl::RendererObserver& obs) override {
+    void setObserver(mln::RendererObserver& obs) override {
         _renderer->setObserver(&obs);
     }
 
-    void update(std::shared_ptr<mbgl::UpdateParameters> params) override {
+    void update(std::shared_ptr<mln::UpdateParameters> params) override {
         {
             std::unique_lock<std::mutex> lock(_mutex);
             _updateParams = std::move(params);
@@ -120,32 +120,32 @@ public:
 
     /* PlatformFrontend */
     void render() override {
-        std::shared_ptr<mbgl::UpdateParameters> params;
+        std::shared_ptr<mln::UpdateParameters> params;
         {
             std::unique_lock<std::mutex> lock(_mutex);
             params = std::move(_updateParams);
         }
         if (!params) return;
-        mbgl::gfx::BackendScope guard(_backend, mbgl::gfx::BackendScope::ScopeType::Implicit);
+        mln::gfx::BackendScope guard(_backend, mln::gfx::BackendScope::ScopeType::Implicit);
         _renderer->render(params);
     }
 
-    void setSize(mbgl::Size sz) override {
+    void setSize(mln::Size sz) override {
         _backend.setSize(sz);
     }
 
-    mbgl::Size getSize() const override { return _backend.getSize(); }
+    mln::Size getSize() const override { return _backend.getSize(); }
 
-    mbgl::MapObserver& getObserver() override { return _nullObserver; }
-    mbgl::Renderer* getRenderer() override { return _renderer.get(); }
-    const mbgl::TaggedScheduler& getThreadPool() const override { return const_cast<WGLBackend&>(_backend).getThreadPool(); }
+    mln::MapObserver& getObserver() override { return _nullObserver; }
+    mln::Renderer* getRenderer() override { return _renderer.get(); }
+    const mln::TaggedScheduler& getThreadPool() const override { return const_cast<WGLBackend&>(_backend).getThreadPool(); }
 
 private:
     WGLBackend                                _backend;
-    std::unique_ptr<mbgl::Renderer>           _renderer;
+    std::unique_ptr<mln::Renderer>           _renderer;
     mbgl_render_fn                            _renderCb;
     void*                                     _renderUd;
-    std::shared_ptr<mbgl::UpdateParameters>   _updateParams;
+    std::shared_ptr<mln::UpdateParameters>   _updateParams;
     std::mutex                                _mutex;
     NullMapObserver                           _nullObserver;
 };
@@ -153,7 +153,7 @@ private:
 /* ── Factory (called by mln_cabi.cpp) ──────────────────────────────── */
 PlatformFrontend* createPlatformFrontend(
     void* surface_handle, void* gl_context,
-    mbgl::Size sz, float pixelRatio,
+    mln::Size sz, float pixelRatio,
     mbgl_render_fn renderCb, void* renderUd)
 {
     return new WGLFrontend(
@@ -169,7 +169,7 @@ PlatformFrontend* createPlatformFrontend(
 
 PlatformFrontend* createPlatformFrontend(
     void* /*surface_handle*/, void* /*gl_context*/,
-    mbgl::Size /*sz*/, float /*pixelRatio*/,
+    mln::Size /*sz*/, float /*pixelRatio*/,
     mbgl_render_fn /*renderCb*/, void* /*renderUd*/)
 {
     throw std::runtime_error(

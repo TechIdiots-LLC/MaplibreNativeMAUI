@@ -15,11 +15,11 @@
 
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
-#include <mbgl/gl/renderable_resource.hpp>
-#include <mbgl/gl/renderer_backend.hpp>
-#include <mbgl/renderer/renderer.hpp>
-#include <mbgl/renderer/update_parameters.hpp>
-#include <mbgl/gfx/backend_scope.hpp>
+#include <mln/gl/renderable_resource.hpp>
+#include <mln/gl/renderer_backend.hpp>
+#include <mln/renderer/renderer.hpp>
+#include <mln/renderer/update_parameters.hpp>
+#include <mln/gfx/backend_scope.hpp>
 #include <android/native_window.h>
 #include <memory>
 #include <mutex>
@@ -27,7 +27,7 @@
 #include "null_map_observer.hpp"
 
 /* ── EGL renderable resource ────────────────────────────────────────── */
-class EGLRenderableResource : public mbgl::gl::RenderableResource {
+class EGLRenderableResource : public mln::gl::RenderableResource {
 public:
     EGLRenderableResource(class EGLBackend& b) : _backend(b) {}
     void bind() override;
@@ -36,12 +36,12 @@ private:
 };
 
 /* ── EGL backend ─────────────────────────────────────────────────────── */
-class EGLBackend : public mbgl::gl::RendererBackend,
-                   public mbgl::gfx::Renderable {
+class EGLBackend : public mln::gl::RendererBackend,
+                   public mln::gfx::Renderable {
 public:
-    EGLBackend(ANativeWindow* window, mbgl::Size sz)
-        : mbgl::gfx::Renderable(sz, std::make_unique<EGLRenderableResource>(*this))
-        , mbgl::gl::RendererBackend(mbgl::gfx::ContextMode::Unique)
+    EGLBackend(ANativeWindow* window, mln::Size sz)
+        : mln::gfx::Renderable(sz, std::make_unique<EGLRenderableResource>(*this))
+        , mln::gl::RendererBackend(mln::gfx::ContextMode::Unique)
         , _window(window)
     {
         _display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
@@ -87,7 +87,7 @@ public:
     // just-resized native window, so there's no stale surface state to fall
     // out of sync with what mbgl-core thinks the size is. The shared
     // `_context` is simply rebound to the new surface on the next activate().
-    void setSize(mbgl::Size sz) {
+    void setSize(mln::Size sz) {
         if (sz.width == this->size.width && sz.height == this->size.height) return;
         this->size = sz;
         if (_window) {
@@ -99,15 +99,15 @@ public:
         }
         _surface = eglCreateWindowSurface(_display, _config, _window, nullptr);
     }
-    mbgl::gfx::Renderable& getDefaultRenderable() override { return *this; }
+    mln::gfx::Renderable& getDefaultRenderable() override { return *this; }
 
     void swapBuffers() { eglSwapBuffers(_display, _surface); }
 
 protected:
     void activate()   override { eglMakeCurrent(_display, _surface, _surface, _context); }
     void deactivate() override { eglMakeCurrent(_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT); }
-    mbgl::gl::ProcAddress getExtensionFunctionPointer(const char* name) override {
-        return reinterpret_cast<mbgl::gl::ProcAddress>(eglGetProcAddress(name));
+    mln::gl::ProcAddress getExtensionFunctionPointer(const char* name) override {
+        return reinterpret_cast<mln::gl::ProcAddress>(eglGetProcAddress(name));
     }
     // Re-sync mbgl's cached GL state so it re-binds framebuffer/viewport
     // each frame. Mirrors the Apple/Metal backend in this project, the Qt
@@ -149,10 +149,10 @@ void EGLRenderableResource::bind() {
 /* ── EGL frontend ────────────────────────────────────────────────────── */
 class EGLFrontend : public PlatformFrontend {
 public:
-    EGLFrontend(ANativeWindow* window, mbgl::Size sz, float pixelRatio,
+    EGLFrontend(ANativeWindow* window, mln::Size sz, float pixelRatio,
                 mbgl_render_fn renderCb, void* renderUd)
         : _backend(window, sz)
-        , _renderer(std::make_unique<mbgl::Renderer>(_backend, pixelRatio))
+        , _renderer(std::make_unique<mln::Renderer>(_backend, pixelRatio))
         , _renderCb(renderCb), _renderUd(renderUd)
     {}
 
@@ -162,17 +162,17 @@ public:
         // assumes the context is already current (true on Windows, where the C#
         // caller calls wglMakeCurrent itself) and is a no-op otherwise, so this
         // must be Explicit to actually make our EGL context current.
-        mbgl::gfx::BackendScope guard(_backend, mbgl::gfx::BackendScope::ScopeType::Explicit);
+        mln::gfx::BackendScope guard(_backend, mln::gfx::BackendScope::ScopeType::Explicit);
         _renderer.reset();
     }
 
     void reset() override { _renderer.reset(); }
 
-    void setObserver(mbgl::RendererObserver& obs) override {
+    void setObserver(mln::RendererObserver& obs) override {
         _renderer->setObserver(&obs);
     }
 
-    void update(std::shared_ptr<mbgl::UpdateParameters> params) override {
+    void update(std::shared_ptr<mln::UpdateParameters> params) override {
         {
             std::unique_lock<std::mutex> lock(_mutex);
             _updateParams = std::move(params);
@@ -181,7 +181,7 @@ public:
     }
 
     void render() override {
-        std::shared_ptr<mbgl::UpdateParameters> params;
+        std::shared_ptr<mln::UpdateParameters> params;
         {
             std::unique_lock<std::mutex> lock(_mutex);
             params = std::move(_updateParams);
@@ -189,30 +189,30 @@ public:
         if (!params) return;
         // Explicit: see comment in ~EGLFrontend() above — nothing else ever
         // makes our EGL context current on Android.
-        mbgl::gfx::BackendScope guard(_backend, mbgl::gfx::BackendScope::ScopeType::Explicit);
+        mln::gfx::BackendScope guard(_backend, mln::gfx::BackendScope::ScopeType::Explicit);
         _renderer->render(params);
         _backend.swapBuffers();
     }
 
-    void setSize(mbgl::Size sz) override { _backend.setSize(sz); }
-    mbgl::Size getSize() const override { return _backend.getSize(); }
-    mbgl::MapObserver& getObserver() override { return _nullObserver; }
-    mbgl::Renderer* getRenderer() override { return _renderer.get(); }
-    const mbgl::TaggedScheduler& getThreadPool() const override { return const_cast<EGLBackend&>(_backend).getThreadPool(); }
+    void setSize(mln::Size sz) override { _backend.setSize(sz); }
+    mln::Size getSize() const override { return _backend.getSize(); }
+    mln::MapObserver& getObserver() override { return _nullObserver; }
+    mln::Renderer* getRenderer() override { return _renderer.get(); }
+    const mln::TaggedScheduler& getThreadPool() const override { return const_cast<EGLBackend&>(_backend).getThreadPool(); }
 
 private:
     EGLBackend                              _backend;
-    std::unique_ptr<mbgl::Renderer>         _renderer;
+    std::unique_ptr<mln::Renderer>         _renderer;
     mbgl_render_fn                          _renderCb;
     void*                                   _renderUd;
-    std::shared_ptr<mbgl::UpdateParameters> _updateParams;
+    std::shared_ptr<mln::UpdateParameters> _updateParams;
     std::mutex                              _mutex;
     NullMapObserver                         _nullObserver;
 };
 
 PlatformFrontend* createPlatformFrontend(
     void* surface_handle, void* /*gl_context*/,
-    mbgl::Size sz, float pixelRatio,
+    mln::Size sz, float pixelRatio,
     mbgl_render_fn renderCb, void* renderUd)
 {
     return new EGLFrontend(
@@ -227,7 +227,7 @@ PlatformFrontend* createPlatformFrontend(
 
 PlatformFrontend* createPlatformFrontend(
     void* /*surface_handle*/, void* /*context*/,
-    mbgl::Size /*sz*/, float /*pixelRatio*/,
+    mln::Size /*sz*/, float /*pixelRatio*/,
     mbgl_render_fn /*renderCb*/, void* /*renderUd*/)
 {
     throw std::runtime_error(
