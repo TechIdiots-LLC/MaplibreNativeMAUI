@@ -102,6 +102,27 @@ public sealed class MbglStyle
     public void RemoveLayer(string layerId)
         => NativeMethods.StyleRemoveLayer(Handle, layerId);
 
+    // ── 3D terrain ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Enables 3D terrain, draping the map over elevation from an existing
+    /// raster-dem source (add it first with <see cref="AddRasterDemSource"/> or
+    /// include it in the style JSON; it may be the same source a hillshade layer
+    /// uses).
+    /// </summary>
+    /// <param name="sourceId">ID of a raster-dem source already in the style.</param>
+    /// <param name="exaggeration">Vertical exaggeration multiplier (1.0 = true scale).</param>
+    public void SetTerrain(string sourceId, float exaggeration = 1.0f)
+        => NativeMethods.StyleSetTerrain(Handle, sourceId, exaggeration);
+
+    /// <summary>Disables 3D terrain; the map renders flat again.</summary>
+    public void RemoveTerrain()
+        => NativeMethods.StyleRemoveTerrain(Handle);
+
+    /// <summary>Whether 3D terrain is currently enabled.</summary>
+    public bool IsTerrainEnabled
+        => NativeMethods.StyleIsTerrainEnabled(Handle) != 0;
+
     // ── Attribution ──────────────────────────────────────────────────────
 
     /// <summary>

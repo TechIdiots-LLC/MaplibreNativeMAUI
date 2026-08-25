@@ -642,6 +642,17 @@ public static partial class NativeMethods
         StringMarshalling = StringMarshalling.Utf8)]
     public static partial IntPtr StyleAddLayerJson(IntPtr style, string layerJson, string? beforeLayerId);
 
+    // ── Style – 3D terrain ─────────────────────────────────────────────────────
+    [LibraryImport(Lib, EntryPoint = "mbgl_style_set_terrain",
+        StringMarshalling = StringMarshalling.Utf8)]
+    public static partial MbglStatus StyleSetTerrain(IntPtr style, string sourceId, float exaggeration);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_style_remove_terrain")]
+    public static partial MbglStatus StyleRemoveTerrain(IntPtr style);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_style_is_terrain_enabled")]
+    public static partial int StyleIsTerrainEnabled(IntPtr style);
+
 #if ANDROID
     // ── Android ANativeWindow helpers ──────────────────────────────────────────
     [DllImport(Lib, EntryPoint = "mbgl_android_acquire_window")]

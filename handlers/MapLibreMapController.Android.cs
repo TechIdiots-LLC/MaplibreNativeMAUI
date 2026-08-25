@@ -330,16 +330,24 @@ public class MapLibreMapController : IMapLibreMapController
 
     private LinearLayout _navPanel        = null!;  // d-pad / zoom-in / zoom-out
     private LinearLayout _gpsPanel        = null!;  // tracking / bearing mode
+    private LinearLayout _terrainPanel    = null!;  // 3D-terrain toggle button
+    private TextView     _terrainIcon     = null!;
     private Android.Views.View _navNorthTick = null!;  // rotates with map bearing
     private TextView     _gpsTrackingIcon = null!;  // reflects tracking mode
     private TextView     _gpsBearingIcon  = null!;
 
     private bool _showNavControls = true;
     private bool _showGpsControl  = true;
+    // Terrain toggle control — toggles terrain on _terrainControlSourceId (which must
+    // already exist in the style). The control does not add sources or hillshade.
+    private bool   _showTerrainControl;
+    private string _terrainControlSourceId = "mln-terrain-dem";
+    private float  _terrainControlExaggeration = 1.0f;
 
-    private MapControlCorner _navCorner  = MapControlCorner.TopRight;
-    private MapControlCorner _gpsCorner  = MapControlCorner.TopRight;
-    private MapControlCorner _attrCorner = MapControlCorner.BottomLeft;
+    private MapControlCorner _navCorner     = MapControlCorner.TopRight;
+    private MapControlCorner _gpsCorner     = MapControlCorner.TopRight;
+    private MapControlCorner _terrainCorner = MapControlCorner.TopRight;
+    private MapControlCorner _attrCorner    = MapControlCorner.BottomLeft;
 
     // GPS tracking state (fixes are fed externally via UpdateGpsLocation)
     private enum GpsTrackingMode { Off, Show, Follow }
@@ -477,6 +485,7 @@ public class MapLibreMapController : IMapLibreMapController
 
         // Navigation + GPS overlay panels (custom native views — mln-cabi does
         // not expose the platform SDK's built-in controls).
+        BuildTerrainPanel(ctx, container);
         BuildNavigationPanel(ctx, container);
         BuildGpsPanel(ctx, container);
 
@@ -632,6 +641,46 @@ public class MapLibreMapController : IMapLibreMapController
         RefreshGpsIcons();
     }
 
+    private void BuildTerrainPanel(global::Android.Content.Context ctx, FrameLayout container)
+    {
+        float d = ctx.Resources!.DisplayMetrics!.Density;
+        int btn = (int)Math.Round(OverlayBtnDp * d);
+
+        _terrainPanel = new LinearLayout(ctx) { Orientation = Orientation.Vertical };
+        _terrainPanel.SetBackgroundColor(Android.Graphics.Color.Argb(230, 255, 255, 255));
+        _terrainPanel.Clickable = true;
+
+        _terrainIcon = MakeOverlayButton(ctx, "⛰", btn); // ⛰
+        _terrainIcon.Click += (_, _) => ToggleTerrainControl();
+        _terrainPanel.AddView(_terrainIcon);
+
+        _terrainPanel.Visibility = _showTerrainControl ? ViewStates.Visible : ViewStates.Gone;
+        container.AddView(_terrainPanel, new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent));
+
+        RefreshTerrainIcon();
+    }
+
+    /// <summary>Toggles terrain on the configured source (enable if off, disable if on), then refreshes the button.</summary>
+    private void ToggleTerrainControl()
+    {
+        ToggleTerrain(_terrainControlSourceId, _terrainControlExaggeration);
+        RefreshTerrainIcon();
+    }
+
+    /// <summary>Colours the terrain button to reflect whether terrain is currently enabled.</summary>
+    private void RefreshTerrainIcon()
+    {
+        if (_terrainIcon == null) return;
+        bool on = IsTerrainEnabled;
+        _terrainIcon.SetTextColor(on
+            ? Android.Graphics.Color.Argb(255, 0x00, 0x70, 0xC5)
+            : Android.Graphics.Color.Argb(230, 40, 40, 40));
+        _terrainPanel?.SetBackgroundColor(on
+            ? Android.Graphics.Color.Argb(255, 0xE0, 0xF3, 0xFF)
+            : Android.Graphics.Color.Argb(230, 255, 255, 255));
+    }
+
     private static TextView MakeOverlayButton(global::Android.Content.Context ctx, string text, int sizePx)
     {
         var tv = new TextView(ctx)
@@ -662,19 +711,24 @@ public class MapLibreMapController : IMapLibreMapController
         float d = ctx.Resources!.DisplayMetrics!.Density;
         int Px(double dp) => (int)Math.Round(dp * d);
 
-        int margin = Px(OverlayMarginDp);
-        int gap    = Px(OverlayGapDp);
-        int navH   = Px(OverlayBtnDp * 3 + 2);
-        int gpsH   = Px(OverlayBtnDp * 2 + 1);
+        int margin  = Px(OverlayMarginDp);
+        int gap     = Px(OverlayGapDp);
+        int terrainH = Px(OverlayBtnDp);
+        int navH    = Px(OverlayBtnDp * 3 + 2);
+        int gpsH    = Px(OverlayBtnDp * 2 + 1);
 
+        bool terrainVis = _showTerrainControl;
         bool navVis = _showNavControls;
         bool gpsVis = _showGpsControl;
 
+        // Terrain sits at index 0 (top of the column), then navigation, then GPS, then
+        // attribution — each control offset by the visible controls stacked above it.
         int StackOffset(MapControlCorner c, int idx)
         {
             int off = 0;
-            if (idx > 0 && navVis && _navCorner == c) off += navH + gap;
-            if (idx > 1 && gpsVis && _gpsCorner == c) off += gpsH + gap;
+            if (idx > 0 && terrainVis && _terrainCorner == c) off += terrainH + gap;
+            if (idx > 1 && navVis && _navCorner == c) off += navH + gap;
+            if (idx > 2 && gpsVis && _gpsCorner == c) off += gpsH + gap;
             return off;
         }
 
@@ -692,10 +746,11 @@ public class MapLibreMapController : IMapLibreMapController
             v.LayoutParameters = lp;
         }
 
-        Apply(_navPanel,   _navCorner,  StackOffset(_navCorner, 0));
-        Apply(_gpsPanel,   _gpsCorner,  StackOffset(_gpsCorner, 1));
-        Apply(_attrView,   _attrCorner, StackOffset(_attrCorner, 2));
-        Apply(_attrButton, _attrCorner, StackOffset(_attrCorner, 2));
+        Apply(_terrainPanel, _terrainCorner, StackOffset(_terrainCorner, 0));
+        Apply(_navPanel,   _navCorner,  StackOffset(_navCorner, 1));
+        Apply(_gpsPanel,   _gpsCorner,  StackOffset(_gpsCorner, 2));
+        Apply(_attrView,   _attrCorner, StackOffset(_attrCorner, 3));
+        Apply(_attrButton, _attrCorner, StackOffset(_attrCorner, 3));
     }
 
     // -- Surface / texture lifecycle ------------------------------------------
@@ -801,6 +856,7 @@ public class MapLibreMapController : IMapLibreMapController
                 RefreshAttribution();
                 _locIndLayer = null;               // layer belongs to the old style
                 if (_pendingLocInd.HasValue) ApplyPendingLocationIndicator();
+                RefreshTerrainIcon();              // terrain state resets with the new style
                 OnStyleLoadedReceived?.Invoke(new Style(null));
                 break;
             case "onSourceChanged":
@@ -884,6 +940,17 @@ public class MapLibreMapController : IMapLibreMapController
         RepositionOverlays();
     }
 
+    public void SetShowTerrainControl(bool show, string sourceId, float exaggeration)
+    {
+        _showTerrainControl         = show;
+        _terrainControlSourceId     = string.IsNullOrEmpty(sourceId) ? "mln-terrain-dem" : sourceId;
+        _terrainControlExaggeration = exaggeration;
+        if (_terrainPanel != null)
+            _terrainPanel.Visibility = show ? ViewStates.Visible : ViewStates.Gone;
+        RefreshTerrainIcon();
+        RepositionOverlays();
+    }
+
     public void SetGpsFollowZoom(GpsFollowZoomMode mode, double zoom)
     {
         _gpsFollowZoomMode = mode;
@@ -925,6 +992,13 @@ public class MapLibreMapController : IMapLibreMapController
     {
         if (_gpsCorner == corner) return;
         _gpsCorner = corner;
+        RepositionOverlays();
+    }
+
+    public void SetTerrainControlPosition(MapControlCorner corner)
+    {
+        if (_terrainCorner == corner) return;
+        _terrainCorner = corner;
         RepositionOverlays();
     }
 
@@ -1360,6 +1434,28 @@ public class MapLibreMapController : IMapLibreMapController
         if (!_styleReady || _style == null) return;
         _style.RemoveSource(sourceId);
     }
+
+    public void SetTerrain(string sourceId, float exaggeration)
+    {
+        if (!_styleReady || _style == null) return;
+        _style.SetTerrain(sourceId, exaggeration);
+    }
+
+    public void RemoveTerrain()
+    {
+        if (!_styleReady || _style == null) return;
+        _style.RemoveTerrain();
+    }
+
+    public void ToggleTerrain(string sourceId, float exaggeration)
+    {
+        if (!_styleReady || _style == null) return;
+        if (_style.IsTerrainEnabled) _style.RemoveTerrain();
+        else _style.SetTerrain(sourceId, exaggeration);
+    }
+
+    public bool IsTerrainEnabled => _styleReady && _style != null && _style.IsTerrainEnabled;
+
 
     // -- Layers ----------------------------------------------------------------
 

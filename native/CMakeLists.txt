@@ -58,8 +58,8 @@ elseif(ANDROID)
     # Platform stub sources — symbols normally provided by MapLibreAndroid JNI SDK
     # that are absent in a standalone NDK build.
     target_sources(mln-cabi PRIVATE
-        "${MAPLIBRE_NATIVE_DIR}/platform/default/src/mbgl/text/local_glyph_rasterizer.cpp"
-        "${MAPLIBRE_NATIVE_DIR}/platform/default/src/mbgl/util/logging_stderr.cpp"
+        "${MAPLIBRE_NATIVE_DIR}/platform/default/src/mln/text/local_glyph_rasterizer.cpp"
+        "${MAPLIBRE_NATIVE_DIR}/platform/default/src/mln/util/logging_stderr.cpp"
         "${MAPLIBRE_NATIVE_DIR}/platform/android/src/test/collator_test_stub.cpp"
         "${MAPLIBRE_NATIVE_DIR}/platform/android/src/test/number_format_test_stub.cpp"
         src/http_file_source_android.cpp
@@ -96,7 +96,7 @@ elseif(APPLE)
     # mbgl-core is compiled with -fno-rtti on Apple (same as Android/Linux).
     # We must match that flag so MetalBackend's typeinfo does not emit a
     # reference to the non-existent base class typeinfo
-    # (typeinfo for mbgl::mtl::RendererBackend) that mbgl-core never defines.
+    # (typeinfo for mln::mtl::RendererBackend) that mbgl-core never defines.
     target_compile_options(mln-cabi PRIVATE -fno-rtti)
 else()
     message(FATAL_ERROR "Unsupported platform")

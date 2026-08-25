@@ -65,5 +65,15 @@ public interface IMapLibreMapOptionsSink
     /// <summary>Set the corner the attribution control is anchored to.</summary>
     void SetAttributionControlPosition(MapControlCorner corner);
 
+    /// <summary>
+    /// Show or hide the on-map 3D-terrain toggle button. Clicking it toggles terrain on
+    /// <paramref name="sourceId"/> (enable at <paramref name="exaggeration"/> if off,
+    /// disable if on). The raster-dem source must already exist in the style.
+    /// </summary>
+    void SetShowTerrainControl(bool show, string sourceId, float exaggeration);
+
+    /// <summary>Set the corner the terrain control is anchored to.</summary>
+    void SetTerrainControlPosition(MapControlCorner corner);
+
     //void SetLocationEngineProperties(LocationEngineRequest? locationEngineRequest);
 }

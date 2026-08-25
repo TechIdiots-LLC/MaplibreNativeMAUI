@@ -1,6 +1,6 @@
 /**
  * mln_cabi_offline.cpp — Offline regions + ambient cache C ABI, wrapping
- * mbgl::DatabaseFileSource.
+ * mln::DatabaseFileSource.
  *
  * The manager obtains the shared DatabaseFileSource via FileSourceManager, so
  * a manager created with the same resource options as the map shares the
@@ -18,17 +18,17 @@
 #include "mln_cabi.h"
 #include "mln_cabi_internal.hpp"
 
-#include <mbgl/storage/database_file_source.hpp>
-#include <mbgl/storage/file_source_manager.hpp>
-#include <mbgl/storage/offline.hpp>
-#include <mbgl/storage/resource_options.hpp>
-#include <mbgl/storage/response.hpp>
-#include <mbgl/style/conversion/geojson.hpp>
-#include <mbgl/util/client_options.hpp>
-#include <mbgl/util/geo.hpp>
-#include <mbgl/util/geojson.hpp>
-#include <mbgl/util/geometry.hpp>
-#include <mbgl/util/rapidjson.hpp>
+#include <mln/storage/database_file_source.hpp>
+#include <mln/storage/file_source_manager.hpp>
+#include <mln/storage/offline.hpp>
+#include <mln/storage/resource_options.hpp>
+#include <mln/storage/response.hpp>
+#include <mln/style/conversion/geojson.hpp>
+#include <mln/util/client_options.hpp>
+#include <mln/util/geo.hpp>
+#include <mln/util/geojson.hpp>
+#include <mln/util/geometry.hpp>
+#include <mln/util/rapidjson.hpp>
 
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
@@ -46,12 +46,12 @@
 namespace {
 
 struct OfflineState {
-    std::shared_ptr<mbgl::DatabaseFileSource> db;
+    std::shared_ptr<mln::DatabaseFileSource> db;
     std::mutex mutex;
-    std::map<int64_t, mbgl::OfflineRegion> regions;
+    std::map<int64_t, mln::OfflineRegion> regions;
 
     /** Insert or replace a region in the cache. Caller must NOT hold mutex. */
-    void cache(mbgl::OfflineRegion&& region) {
+    void cache(mln::OfflineRegion&& region) {
         std::lock_guard<std::mutex> lock(mutex);
         int64_t id = region.getID();
         regions.erase(id);
@@ -80,13 +80,13 @@ std::string exception_message(std::exception_ptr ep) {
 
 using JsonWriter = rapidjson::Writer<rapidjson::StringBuffer>;
 
-void write_region(JsonWriter& w, const mbgl::OfflineRegion& region) {
+void write_region(JsonWriter& w, const mln::OfflineRegion& region) {
     w.StartObject();
     w.Key("id");
     w.Int64(region.getID());
 
     const auto& def = region.getDefinition();
-    if (const auto* tp = std::get_if<mbgl::OfflineTilePyramidRegionDefinition>(&def)) {
+    if (const auto* tp = std::get_if<mln::OfflineTilePyramidRegionDefinition>(&def)) {
         w.Key("type");     w.String("tilepyramid");
         w.Key("styleUrl"); w.String(tp->styleURL.data(), static_cast<rapidjson::SizeType>(tp->styleURL.size()));
         w.Key("bounds");
@@ -100,10 +100,10 @@ void write_region(JsonWriter& w, const mbgl::OfflineRegion& region) {
         w.Key("maxZoom");           w.Double(tp->maxZoom);
         w.Key("pixelRatio");        w.Double(tp->pixelRatio);
         w.Key("includeIdeographs"); w.Bool(tp->includeIdeographs);
-    } else if (const auto* g = std::get_if<mbgl::OfflineGeometryRegionDefinition>(&def)) {
+    } else if (const auto* g = std::get_if<mln::OfflineGeometryRegionDefinition>(&def)) {
         w.Key("type");     w.String("geometry");
         w.Key("styleUrl"); w.String(g->styleURL.data(), static_cast<rapidjson::SizeType>(g->styleURL.size()));
-        std::string geomJson = mapbox::geojson::stringify(mbgl::GeoJSON{g->geometry});
+        std::string geomJson = mapbox::geojson::stringify(mln::GeoJSON{g->geometry});
         w.Key("geometry");
         w.RawValue(geomJson.data(), geomJson.size(), rapidjson::kObjectType);
         w.Key("minZoom");           w.Double(g->minZoom);
@@ -114,7 +114,7 @@ void write_region(JsonWriter& w, const mbgl::OfflineRegion& region) {
     w.EndObject();
 }
 
-std::string regions_to_json(const mbgl::OfflineRegions& regions) {
+std::string regions_to_json(const mln::OfflineRegions& regions) {
     rapidjson::StringBuffer buf;
     JsonWriter w(buf);
     w.StartArray();
@@ -123,7 +123,7 @@ std::string regions_to_json(const mbgl::OfflineRegions& regions) {
     return {buf.GetString(), buf.GetSize()};
 }
 
-std::string region_to_json_array(const mbgl::OfflineRegion& region) {
+std::string region_to_json_array(const mln::OfflineRegion& region) {
     rapidjson::StringBuffer buf;
     JsonWriter w(buf);
     w.StartArray();
@@ -132,12 +132,12 @@ std::string region_to_json_array(const mbgl::OfflineRegion& region) {
     return {buf.GetString(), buf.GetSize()};
 }
 
-std::string status_to_json(const mbgl::OfflineRegionStatus& s) {
+std::string status_to_json(const mln::OfflineRegionStatus& s) {
     rapidjson::StringBuffer buf;
     JsonWriter w(buf);
     w.StartObject();
     w.Key("downloadState");
-    w.Int(s.downloadState == mbgl::OfflineRegionDownloadState::Active ? 1 : 0);
+    w.Int(s.downloadState == mln::OfflineRegionDownloadState::Active ? 1 : 0);
     w.Key("completedResourceCount");         w.Uint64(s.completedResourceCount);
     w.Key("completedResourceSize");          w.Uint64(s.completedResourceSize);
     w.Key("completedTileCount");             w.Uint64(s.completedTileCount);
@@ -167,10 +167,10 @@ std::function<void(std::exception_ptr)> wrap_done(std::shared_ptr<OfflineState> 
 
 /** Wraps a regions_fn into mbgl's expected<OfflineRegions> callback, caching
  *  the returned regions so later per-region calls can find them. */
-std::function<void(mbgl::expected<mbgl::OfflineRegions, std::exception_ptr>)>
+std::function<void(mln::expected<mln::OfflineRegions, std::exception_ptr>)>
 wrap_regions(std::shared_ptr<OfflineState> state, mbgl_offline_regions_fn cb, void* ud) {
     return [state = std::move(state), cb, ud](
-               mbgl::expected<mbgl::OfflineRegions, std::exception_ptr> result) {
+               mln::expected<mln::OfflineRegions, std::exception_ptr> result) {
         if (!result) {
             std::string msg = exception_message(result.error());
             cb(MBGL_NATIVE_ERROR, msg.c_str(), nullptr, ud);
@@ -183,16 +183,16 @@ wrap_regions(std::shared_ptr<OfflineState> state, mbgl_offline_regions_fn cb, vo
 }
 
 /** Observer bridging mbgl's region callbacks to the C function pointers. */
-class CabiRegionObserver : public mbgl::OfflineRegionObserver {
+class CabiRegionObserver : public mln::OfflineRegionObserver {
 public:
     CabiRegionObserver(int64_t id_, mbgl_offline_progress_fn progress_,
                        mbgl_offline_region_error_fn error_, void* ud_)
         : id(id_), progress(progress_), error(error_), ud(ud_) {}
 
-    void statusChanged(mbgl::OfflineRegionStatus s) override {
+    void statusChanged(mln::OfflineRegionStatus s) override {
         if (!progress) return;
         progress(id,
-                 s.downloadState == mbgl::OfflineRegionDownloadState::Active ? 1 : 0,
+                 s.downloadState == mln::OfflineRegionDownloadState::Active ? 1 : 0,
                  s.completedResourceCount,
                  s.completedResourceSize,
                  s.completedTileCount,
@@ -202,7 +202,7 @@ public:
                  ud);
     }
 
-    void responseError(mbgl::Response::Error e) override {
+    void responseError(mln::Response::Error e) override {
         if (!error) return;
         error(id, static_cast<int>(e.reason), e.message.c_str(), ud);
     }
@@ -234,14 +234,14 @@ mbgl_offline_manager_t* mbgl_offline_manager_create(const char* cache_path,
                                                     const char* api_key,
                                                     uint64_t    max_cache_size_bytes) noexcept {
     try {
-        mbgl::ResourceOptions resOpts;
+        mln::ResourceOptions resOpts;
         if (cache_path && *cache_path) resOpts.withCachePath(cache_path);
         if (asset_path && *asset_path) resOpts.withAssetPath(asset_path);
         if (api_key && *api_key)       resOpts.withApiKey(api_key);
         if (max_cache_size_bytes)      resOpts.withMaximumCacheSize(max_cache_size_bytes);
 
-        auto fs = mbgl::FileSourceManager::get()->getFileSource(
-            mbgl::FileSourceType::Database, resOpts, mbgl::ClientOptions());
+        auto fs = mln::FileSourceManager::get()->getFileSource(
+            mln::FileSourceType::Database, resOpts, mln::ClientOptions());
         if (!fs) {
             cabi_set_error(MBGL_NATIVE_ERROR, "mbgl_offline_manager_create: no Database file source available");
             return nullptr;
@@ -249,7 +249,7 @@ mbgl_offline_manager_t* mbgl_offline_manager_create(const char* cache_path,
 
         auto* mgr  = new CabiOfflineManager{};
         mgr->state       = std::make_shared<OfflineState>();
-        mgr->state->db   = std::static_pointer_cast<mbgl::DatabaseFileSource>(fs);
+        mgr->state->db   = std::static_pointer_cast<mln::DatabaseFileSource>(fs);
         return reinterpret_cast<mbgl_offline_manager_t*>(mgr);
     } catch (const std::exception& e) { cabi_set_native_error(e); return nullptr; }
 }
@@ -274,7 +274,7 @@ mbgl_status_t mbgl_offline_list_regions(mbgl_offline_manager_t* m,
 }
 
 static mbgl_status_t create_region_impl(mbgl_offline_manager_t* m,
-                                        mbgl::OfflineRegionDefinition definition,
+                                        mln::OfflineRegionDefinition definition,
                                         const uint8_t* metadata, int metadata_len,
                                         mbgl_offline_regions_fn cb, void* userdata,
                                         const char* fn_name) noexcept {
@@ -282,7 +282,7 @@ static mbgl_status_t create_region_impl(mbgl_offline_manager_t* m,
         auto state = mgr_ptr(m)->state;
         state->db->createOfflineRegion(
             definition, to_metadata(metadata, metadata_len),
-            [state, cb, userdata](mbgl::expected<mbgl::OfflineRegion, std::exception_ptr> result) {
+            [state, cb, userdata](mln::expected<mln::OfflineRegion, std::exception_ptr> result) {
                 if (!result) {
                     std::string msg = exception_message(result.error());
                     cb(MBGL_NATIVE_ERROR, msg.c_str(), nullptr, userdata);
@@ -310,10 +310,10 @@ mbgl_status_t mbgl_offline_create_region(mbgl_offline_manager_t* m,
                                          void* userdata) noexcept {
     if (!m || !style_url || !cb)
         return cabi_set_error(MBGL_INVALID_ARG, "mbgl_offline_create_region: null arg");
-    auto bounds = mbgl::LatLngBounds::hull(mbgl::LatLng{lat_sw, lon_sw}, mbgl::LatLng{lat_ne, lon_ne});
+    auto bounds = mln::LatLngBounds::hull(mln::LatLng{lat_sw, lon_sw}, mln::LatLng{lat_ne, lon_ne});
     return create_region_impl(
         m,
-        mbgl::OfflineTilePyramidRegionDefinition(style_url, bounds, min_zoom, max_zoom,
+        mln::OfflineTilePyramidRegionDefinition(style_url, bounds, min_zoom, max_zoom,
                                                  pixel_ratio, include_ideographs != 0),
         metadata, metadata_len, cb, userdata, "mbgl_offline_create_region");
 }
@@ -330,13 +330,13 @@ mbgl_status_t mbgl_offline_create_region_geometry(mbgl_offline_manager_t* m,
     if (!m || !style_url || !geometry_geojson || !cb)
         return cabi_set_error(MBGL_INVALID_ARG, "mbgl_offline_create_region_geometry: null arg");
 
-    mbgl::style::conversion::Error err;
-    auto geojson = mbgl::style::conversion::parseGeoJSON(geometry_geojson, err);
+    mln::style::conversion::Error err;
+    auto geojson = mln::style::conversion::parseGeoJSON(geometry_geojson, err);
     if (!geojson)
         return cabi_set_error(MBGL_INVALID_ARG,
                               "mbgl_offline_create_region_geometry: " + err.message);
 
-    mbgl::Geometry<double> geometry;
+    mln::Geometry<double> geometry;
     if (geojson->is<mapbox::geojson::geometry>()) {
         geometry = geojson->get<mapbox::geojson::geometry>();
     } else if (geojson->is<mapbox::geojson::feature>()) {
@@ -352,7 +352,7 @@ mbgl_status_t mbgl_offline_create_region_geometry(mbgl_offline_manager_t* m,
 
     return create_region_impl(
         m,
-        mbgl::OfflineGeometryRegionDefinition(style_url, std::move(geometry), min_zoom, max_zoom,
+        mln::OfflineGeometryRegionDefinition(style_url, std::move(geometry), min_zoom, max_zoom,
                                               pixel_ratio, include_ideographs != 0),
         metadata, metadata_len, cb, userdata, "mbgl_offline_create_region_geometry");
 }
@@ -360,7 +360,7 @@ mbgl_status_t mbgl_offline_create_region_geometry(mbgl_offline_manager_t* m,
 /** Looks up a cached region; returns nullptr (and sets last-error) if unknown.
  *  The returned pointer stays valid while the region remains in the map —
  *  std::map node addresses are stable across inserts/erases of other keys. */
-static mbgl::OfflineRegion* find_region(const std::shared_ptr<OfflineState>& state,
+static mln::OfflineRegion* find_region(const std::shared_ptr<OfflineState>& state,
                                         int64_t region_id, const char* fn_name) {
     std::lock_guard<std::mutex> lock(state->mutex);
     auto it = state->regions.find(region_id);
@@ -419,8 +419,8 @@ mbgl_status_t mbgl_offline_set_region_download_state(mbgl_offline_manager_t* m,
         auto* region = find_region(state, region_id, "mbgl_offline_set_region_download_state");
         if (!region) return MBGL_INVALID_ARG;
         state->db->setOfflineRegionDownloadState(
-            *region, active ? mbgl::OfflineRegionDownloadState::Active
-                            : mbgl::OfflineRegionDownloadState::Inactive);
+            *region, active ? mln::OfflineRegionDownloadState::Active
+                            : mln::OfflineRegionDownloadState::Inactive);
         return MBGL_OK;
     } catch (const std::exception& e) { return cabi_set_native_error(e); }
 }
@@ -452,7 +452,7 @@ mbgl_status_t mbgl_offline_get_region_status(mbgl_offline_manager_t* m,
         if (!region) return MBGL_INVALID_ARG;
         state->db->getOfflineRegionStatus(
             *region,
-            [state, cb, userdata](mbgl::expected<mbgl::OfflineRegionStatus, std::exception_ptr> result) {
+            [state, cb, userdata](mln::expected<mln::OfflineRegionStatus, std::exception_ptr> result) {
                 if (!result) {
                     std::string msg = exception_message(result.error());
                     cb(MBGL_NATIVE_ERROR, msg.c_str(), nullptr, userdata);
@@ -477,7 +477,7 @@ mbgl_status_t mbgl_offline_update_region_metadata(mbgl_offline_manager_t* m,
         if (!region) return MBGL_INVALID_ARG;
         state->db->updateOfflineMetadata(
             region_id, to_metadata(metadata, metadata_len),
-            [state, cb, userdata](mbgl::expected<mbgl::OfflineRegionMetadata, std::exception_ptr> result) {
+            [state, cb, userdata](mln::expected<mln::OfflineRegionMetadata, std::exception_ptr> result) {
                 if (!cb) return;
                 if (!result) {
                     std::string msg = exception_message(result.error());

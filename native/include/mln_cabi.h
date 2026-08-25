@@ -367,7 +367,7 @@ MLN_CABI_API mbgl_status_t   mbgl_map_set_bounds(mbgl_map_t* map,
                                                    double min_pitch, double max_pitch) MLN_CABI_NOEXCEPT;
 
 /** Compute CameraOptions that fits the given LatLngBounds with optional padding.
- *  Padding order: top, left, bottom, right (matches mbgl::EdgeInsets field order). */
+ *  Padding order: top, left, bottom, right (matches mln::EdgeInsets field order). */
 MLN_CABI_API mbgl_status_t   mbgl_map_camera_for_bounds(mbgl_map_t* map,
                                                           double lat_sw, double lon_sw,
                                                           double lat_ne, double lon_ne,
@@ -556,9 +556,26 @@ MLN_CABI_API mbgl_layer_t*   mbgl_style_add_layer_json(mbgl_style_t* st,
                                                          const char* layer_json,
                                                          const char* before_id) MLN_CABI_NOEXCEPT;
 
+/* ── Style – 3D terrain ──────────────────────────────────────────────────────
+ *
+ * Terrain is a style root property, not a source or layer: it drapes the map
+ * over elevation from an existing raster-dem source. Add that source first with
+ * mbgl_style_add_source_json (or include it in the style JSON); it may be the
+ * same source a hillshade layer uses. */
+/** Enable 3D terrain from an existing raster-dem source.
+ *  @param source_id     ID of a raster-dem source already in the style.
+ *  @param exaggeration  Vertical exaggeration multiplier (1.0 = true scale). */
+MLN_CABI_API mbgl_status_t   mbgl_style_set_terrain(mbgl_style_t* st,
+                                                     const char* source_id,
+                                                     float exaggeration) MLN_CABI_NOEXCEPT;
+/** Disable 3D terrain (the map renders flat again). */
+MLN_CABI_API mbgl_status_t   mbgl_style_remove_terrain(mbgl_style_t* st) MLN_CABI_NOEXCEPT;
+/** Returns 1 when 3D terrain is currently enabled, 0 otherwise. */
+MLN_CABI_API int             mbgl_style_is_terrain_enabled(mbgl_style_t* st) MLN_CABI_NOEXCEPT;
+
 /* ── Offline regions + ambient cache ─────────────────────────────────────────
  *
- * Wraps mbgl::DatabaseFileSource. The manager shares the map's cache database
+ * Wraps mln::DatabaseFileSource. The manager shares the map's cache database
  * when created with the same cache_path / asset_path / api_key, so tiles
  * downloaded into an offline region are served to the map automatically.
  *
@@ -615,7 +632,7 @@ typedef void (*mbgl_offline_progress_fn)(int64_t  region_id,
                                          void*    userdata);
 /** Recurring download-error callback. Errors are usually recoverable (the
  *  downloader retries with backoff).
- *  @param reason  mbgl::Response::Error::Reason value (matches mbgl_http_error_t),
+ *  @param reason  mln::Response::Error::Reason value (matches mbgl_http_error_t),
  *                 or MBGL_OFFLINE_TILE_COUNT_LIMIT (100) when the Mapbox tile
  *                 count limit was reached. */
 typedef void (*mbgl_offline_region_error_fn)(int64_t     region_id,
@@ -779,7 +796,7 @@ typedef void (*mbgl_http_provider_fn)(
 
 /**
  * Error codes passed to mbgl_http_respond().
- * Values are intentionally aligned with mbgl::Response::Error::Reason.
+ * Values are intentionally aligned with mln::Response::Error::Reason.
  */
 typedef enum mbgl_http_error_t {
     MBGL_HTTP_ERROR_NONE       = 0, /**< Success — no error. */

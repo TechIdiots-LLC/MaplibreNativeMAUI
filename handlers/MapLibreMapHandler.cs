@@ -30,6 +30,10 @@ public partial class MapLibreMapHandler
             [nameof(MapLibreMap.NavigationControlPosition)]  = MapNavigationControlPosition,
             [nameof(MapLibreMap.GpsControlPosition)]         = MapGpsControlPosition,
             [nameof(MapLibreMap.AttributionControlPosition)] = MapAttributionControlPosition,
+            [nameof(MapLibreMap.ShowTerrainControl)]         = MapShowTerrainControl,
+            [nameof(MapLibreMap.TerrainControlSourceId)]     = MapTerrainControlSettings,
+            [nameof(MapLibreMap.TerrainControlExaggeration)] = MapTerrainControlSettings,
+            [nameof(MapLibreMap.TerrainControlPosition)]     = MapTerrainControlPosition,
         };
         
     public static void MapStyleUrl(MapLibreMapHandler handler, MapLibreMap view)
@@ -114,4 +118,13 @@ public partial class MapLibreMapHandler
 
     public static void MapAttributionControlPosition(MapLibreMapHandler handler, MapLibreMap view)
         => handler.UpdateAttributionControlPosition(view.AttributionControlPosition);
+
+    public static void MapShowTerrainControl(MapLibreMapHandler handler, MapLibreMap view)
+        => handler.UpdateShowTerrainControl(view.ShowTerrainControl, view.TerrainControlSourceId, view.TerrainControlExaggeration);
+
+    public static void MapTerrainControlSettings(MapLibreMapHandler handler, MapLibreMap view)
+        => handler.UpdateShowTerrainControl(view.ShowTerrainControl, view.TerrainControlSourceId, view.TerrainControlExaggeration);
+
+    public static void MapTerrainControlPosition(MapLibreMapHandler handler, MapLibreMap view)
+        => handler.UpdateTerrainControlPosition(view.TerrainControlPosition);
 }
