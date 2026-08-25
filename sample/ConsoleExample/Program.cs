@@ -100,11 +100,91 @@ class Program
     const int Width  = 1024;
     const int Height = 768;
 
+    // Headless Vulkan render — no WGL/Win32. The off-screen Vulkan frontend renders
+    // into a headless texture that we read back via frontend.ReadPixels.
+    [STAThread]
+    static void RunVulkan()
+    {
+        Console.WriteLine("  Backend: Vulkan (headless off-screen render).");
+
+        bool renderNeeded = false, mapIdle = false;
+        string? failMsg = null;
+
+        using var runLoop  = new MbglRunLoop();
+        using var frontend = new MbglFrontend(IntPtr.Zero, IntPtr.Zero, Width, Height, 1.0f,
+            onRender: () => renderNeeded = true);
+        using var map = new MbglMap(frontend, runLoop,
+            observer: (evt, detail) =>
+            {
+                switch (evt)
+                {
+                    case "onDidFinishLoadingStyle": Console.WriteLine("  Style loaded."); break;
+                    case "onDidBecomeIdle": Console.WriteLine("  Map idle — all tiles ready."); mapIdle = true; break;
+                    case "onDidFailLoadingMap": failMsg = detail ?? "unknown error"; mapIdle = true; break;
+                }
+            });
+
+        map.SetSize(Width, Height);
+        map.JumpTo(lat: 47.6062, lon: -122.3321, zoom: 9); // Seattle
+        map.SetStyleUrl("https://demotiles.maplibre.org/style.json");
+
+        Console.WriteLine("Pumping run loop (max 30 s)...");
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (!mapIdle && DateTime.UtcNow < deadline)
+        {
+            runLoop.RunOnce();
+            if (renderNeeded) { renderNeeded = false; try { frontend.Render(); } catch { } }
+            Thread.Sleep(8);
+        }
+        if (failMsg != null)  Console.Error.WriteLine($"Map load failed: {failMsg}");
+        else if (!mapIdle)    Console.Error.WriteLine("Timed out waiting for map idle.");
+
+        Console.WriteLine("Rendering final frame...");
+        for (int pass = 0; pass < 5; pass++) { runLoop.RunOnce(); try { frontend.Render(); } catch { } Thread.Sleep(16); }
+
+        // Read back the off-screen frame (premultiplied RGBA, top-down).
+        var rgba = new byte[Width * Height * 4];
+        var pin  = GCHandle.Alloc(rgba, GCHandleType.Pinned);
+        bool ok;
+        try { ok = frontend.ReadPixels(pin.AddrOfPinnedObject(), (nuint)rgba.Length); }
+        finally { pin.Free(); }
+        if (!ok) { Console.Error.WriteLine("ReadPixels failed."); return; }
+
+        // RGBA → BGRA for WriteableBitmap (no vertical flip; read-back is top-down).
+        int stride = Width * 4;
+        var bgra = new byte[rgba.Length];
+        for (int i = 0; i < rgba.Length; i += 4)
+        {
+            bgra[i + 0] = rgba[i + 2]; // B ← R
+            bgra[i + 1] = rgba[i + 1]; // G
+            bgra[i + 2] = rgba[i + 0]; // R ← B
+            bgra[i + 3] = rgba[i + 3]; // A
+        }
+
+        string outPath = Path.Combine(AppContext.BaseDirectory, "map_output.png");
+        var bitmap  = new WriteableBitmap(Width, Height, 96, 96, PixelFormats.Bgra32, null);
+        bitmap.WritePixels(new Int32Rect(0, 0, Width, Height), bgra, stride, 0);
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var fs = File.Create(outPath);
+        encoder.Save(fs);
+        Console.WriteLine($"Saved: {outPath}");
+    }
+
     [STAThread]
     static void Main()
     {
         Console.WriteLine("MapLibreNative.Maui — console static render example");
         Console.WriteLine($"Rendering {Width}×{Height} map centred on Seattle...");
+
+        // The Vulkan native renders off-screen (headless) and needs no WGL/Win32
+        // context — take a separate, much simpler path. (Selected at runtime from
+        // whichever mln-cabi.dll is loaded, so the same exe works for either backend.)
+        if (MbglFrontend.RenderBackend == MbglRenderBackend.Vulkan)
+        {
+            RunVulkan();
+            return;
+        }
 
         // ── Create a hidden window as an OpenGL context host ──────────────────
         var hInst = GetModuleHandle(IntPtr.Zero);

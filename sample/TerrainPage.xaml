@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:maplibre="clr-namespace:MapLibreNative.Maui.Handlers;assembly=MapLibreNative.Maui.Handlers"
+             x:Class="MauiSample.TerrainPage"
+             Title="3D Terrain">
+
+    <!-- Single-scroll layout: the map has a bounded height (set in code-behind)
+         with the controls flowing beneath it. -->
+    <ScrollView>
+        <VerticalStackLayout Spacing="0">
+
+            <maplibre:MapLibreMap
+                x:Name="Map"
+                HeightRequest="400"
+                ShowNavigationControls="True"
+                ShowTerrainControl="True"
+                TerrainControlSourceId="__terrain-dem"
+                NavigationControlPosition="TopRight"
+                TerrainControlPosition="TopRight"
+                AttributionControlPosition="BottomLeft" />
+
+            <VerticalStackLayout Spacing="8" Padding="12">
+
+                <Label FontAttributes="Bold" FontSize="16" Text="3D Terrain Toggle" />
+
+                <Label TextColor="Gray" FontSize="12" Text=
+                    "The ⛰ button on the map (above the navigation control) is the built-in terrain control — it toggles terrain on the raster-dem source added below. Or use the button here. Navigate to the source's coverage (e.g. the Alps) and tilt with two fingers to see the relief." />
+
+                <Label Text="Style:" FontAttributes="Bold" />
+                <Picker x:Name="StylePicker" SelectedIndexChanged="OnStyleChanged" />
+
+                <Label Text="Terrain source:" FontAttributes="Bold" />
+                <Picker x:Name="TerrainPicker" />
+                <Entry x:Name="CustomTerrainEntry"
+                       Placeholder="…or paste a custom tilejson/tiles URL (overrides the picker)"
+                       Keyboard="Url" />
+
+                <Button x:Name="ToggleButton"
+                        Text="Enable 3D Terrain"
+                        Clicked="OnToggleTerrain"
+                        BackgroundColor="#1E88E5" TextColor="White"
+                        Padding="12,6" HorizontalOptions="Start" />
+
+                <Label x:Name="StatusLabel" FontSize="12" TextColor="Gray" Text="Terrain: off" />
+
+            </VerticalStackLayout>
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>

@@ -14,6 +14,7 @@ using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using MapLibreNative.Maui.WPF;
 
@@ -56,6 +57,12 @@ public partial class MainWindow : Window
         Path.Combine(Path.GetTempPath(), "maplibre_datadriven_test.log");
     private bool _autoTestRequested;
 
+    // Headless terrain smoke test (--terraintest): drives SetTerrain over a style on
+    // the offscreen WGL backend and snapshots the frame before/after so we can tell
+    // whether draping actually changes the output (or the process dies) on Windows
+    // GL, where terrain has never been exercised. Logs to the same _autoTestLogPath.
+    private bool _terrainTestRequested;
+
     private const string DdTestSourceId = "ddtest-src";
     private const string DdTestGeoJson = """
         {
@@ -80,6 +87,38 @@ public partial class MainWindow : Window
         ["OpenFreeMap Brt."] = "https://tiles.openfreemap.org/styles/bright",
     };
 
+    // ── Preset terrain (raster-dem) sources ────────────────────────────────────
+    // The terrain picker is editable, so a custom tilejson/tiles URL can be typed
+    // too. This mirrors how a consuming app (e.g. Vistumbler) might offer preset or
+    // custom terrain sources in its settings, and lets terrain be toggled on top of
+    // whatever style is loaded rather than a dedicated terrain style.
+    /// <summary>
+    /// A preset DEM: either a TileJSON <paramref name="TileJsonUrl"/>, or explicit
+    /// <c>{z}/{x}/{y}</c> templates plus the <paramref name="Encoding"/> they use
+    /// (terrarium DEMs decode differently from the default mapbox encoding).
+    /// </summary>
+    private sealed record TerrainSource(
+        string? TileJsonUrl,
+        string[]? TileUrlTemplates = null,
+        string? Encoding           = null,
+        string? Attribution        = null,
+        int TileSize               = 256,
+        int MaxZoom                = 15);
+
+    private static readonly Dictionary<string, TerrainSource> TerrainSources = new()
+    {
+        ["Mapterhorn"] = new("https://tiles.mapterhorn.com/tilejson.json"),
+        // AWS Open Data terrain-tiles (Mapzen) — no TileJSON, terrarium-encoded, global to z15.
+        ["AWS Terrarium (Mapzen)"] = new(
+            TileJsonUrl:      null,
+            TileUrlTemplates: ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],
+            Encoding:         "terrarium",
+            Attribution:      "<a href=\"https://registry.opendata.aws/terrain-tiles/\">Open Data</a>"),
+    };
+
+    // Internal source ID the toggle adds the picked raster-dem under.
+    const string TerrainSourceId = "__terrain-dem";
+
     const string MarkerSourceId = "example-marker";
     const string MarkerLayerId  = "example-marker-layer";
     // Seattle GeoJSON point — matches the default fly-to location
@@ -102,16 +141,20 @@ public partial class MainWindow : Window
         InitializeComponent();
         StylePicker.ItemsSource   = Styles.Keys;
         StylePicker.SelectedIndex = 0;
+        TerrainPicker.ItemsSource   = TerrainSources.Keys;
+        TerrainPicker.SelectedIndex = 0;
 
         // Data-bound markers: bind an ObservableCollection<MlnMapMarker> to ItemsSource once; the
         // Add City Pins / Clear Pins buttons mutate it and the map updates live.
         MapHost.ItemsSource = _pins;
 
-        _autoTestRequested = Environment.GetCommandLineArgs().Contains("--autotest");
-        if (_autoTestRequested)
+        var cmdArgs = Environment.GetCommandLineArgs();
+        _autoTestRequested = cmdArgs.Contains("--autotest");
+        _terrainTestRequested = cmdArgs.Contains("--terraintest");
+        if (_autoTestRequested || _terrainTestRequested)
         {
             try { File.Delete(_autoTestLogPath); } catch { /* fine if it didn't exist */ }
-            DdLog($"=== autotest run started {DateTime.Now:O} ===");
+            DdLog($"=== {(_terrainTestRequested ? "terraintest" : "autotest")} run started {DateTime.Now:O} ===");
         }
     }
 
@@ -131,6 +174,21 @@ public partial class MainWindow : Window
             MapHost.CenterOn(47.6062, -122.3321, zoom: 9);
         }
 
+        // A reloaded style drops runtime sources/layers, so re-add the DEM + hillshade
+        // that the on-map ⛰ terrain control (ShowTerrainControl) toggles.
+        _terrainDemAdded = false;
+        EnsureTerrainDemAndHillshade();
+
+        if (_terrainTestRequested)
+        {
+            _terrainTestRequested = false; // run once
+            await RunTerrainSmokeTestAsync();
+            DdLog("=== terraintest run complete — exiting ===");
+            await Task.Delay(500);
+            Application.Current.Shutdown();
+            return;
+        }
+
         if (_autoTestRequested)
         {
             _autoTestRequested = false; // run once
@@ -139,6 +197,117 @@ public partial class MainWindow : Window
             await Task.Delay(500);
             Application.Current.Shutdown();
         }
+    }
+
+    /// <summary>
+    /// Headless terrain smoke test for the Windows GL (WGL) backend. Enables 3D
+    /// terrain over the loaded style with a raster-dem source, tilts the camera, and
+    /// snapshots the rendered frame before and after so we can tell whether draping
+    /// changed the output (or the process crashed). Terrain has only ever been
+    /// exercised on Android GL, so this reproduces the Windows behaviour headlessly.
+    /// Snapshots go next to the log as terrain_*.png; stats/GL state go to the log.
+    /// </summary>
+    private async Task RunTerrainSmokeTestAsync()
+    {
+        DdLog("--- RunTerrainSmokeTestAsync start ---");
+        string dir = Path.GetDirectoryName(_autoTestLogPath)!;
+
+        // Replicate the maplibre-native "planet vector" terrain test (TerrainVectorMapActivity):
+        // OpenFreeMap Liberty + Mapterhorn DEM over Innsbruck (the Alps — heavy green
+        // landcover, so opaque fill draping is visible). It works on Android at z12/tilt60;
+        // we test the SAME config on the Windows C ABI, plus a wide flat view, to isolate
+        // whether the opaque-fill drop is zoom-related or platform-related.
+        const double lat = 47.26475, lon = 11.40416; // Innsbruck
+        const string demUrl = "https://tiles.mapterhorn.com/tilejson.json";
+
+        try
+        {
+            MapHost.StyleUrl = "https://tiles.openfreemap.org/styles/liberty";
+            DdLog("style → OpenFreeMap Liberty");
+            await Task.Delay(5000);
+
+            MapHost.AddRasterDemSource(TerrainSourceId, demUrl);
+            DdLog("added DEM (no hillshade yet)");
+
+            MapHost.JumpTo(lat, lon, zoom: 12, bearing: 20, pitch: 60);
+            await Task.Delay(4000);
+            SnapshotTo(Path.Combine(dir, "pv_z12_noterrain.png"), "Innsbruck z12 tilt60, terrain OFF, no hillshade");
+
+            // (1) Terrain ON with NO hillshade — do the green landcover fills drape on their own?
+            MapHost.ToggleTerrain(TerrainSourceId, 1.0f);
+            DdLog($"terrain ON (no hillshade), enabled={MapHost.IsTerrainEnabled}");
+            await Task.Delay(4500);
+            SnapshotTo(Path.Combine(dir, "pv_z12_terrain_nohs.png"), "z12 terrain ON, NO hillshade (fills drape?)");
+
+            // (2) Now add hillshade on top (as the sample does) — does it change the fills?
+            MapHost.AddHillshadeLayer("__terrain-hillshade", TerrainSourceId);
+            DdLog("added hillshade on top");
+            await Task.Delay(3000);
+            SnapshotTo(Path.Combine(dir, "pv_z12_terrain_hs.png"), "z12 terrain ON + hillshade on top");
+
+            // (3) Same view on the other preset: AWS/Mapzen terrarium tiles, which take the
+            // tile-template + encoding path instead of TileJSON. Relief should look comparable;
+            // a flat or garbage frame means the terrarium encoding did not take.
+            MapHost.RemoveTerrain();
+            MapHost.RemoveLayer("__terrain-hillshade");
+            MapHost.RemoveSource(TerrainSourceId);
+            var terrarium = TerrainSources["AWS Terrarium (Mapzen)"];
+            MapHost.AddRasterDemTilesSource(TerrainSourceId, terrarium.TileUrlTemplates!, terrarium.TileSize,
+                                            minZoom: 0, maxZoom: terrarium.MaxZoom,
+                                            encoding: terrarium.Encoding, attribution: terrarium.Attribution);
+            MapHost.AddHillshadeLayer("__terrain-hillshade", TerrainSourceId);
+            MapHost.SetTerrain(TerrainSourceId, 1.0f);
+            DdLog($"terrarium DEM + hillshade, terrain enabled={MapHost.IsTerrainEnabled}");
+            await Task.Delay(6000);
+            SnapshotTo(Path.Combine(dir, "pv_z12_terrarium_hs.png"), "z12 terrain ON + hillshade, AWS terrarium DEM");
+        }
+        catch (Exception ex)
+        {
+            DdLog($"terrain smoke test THREW (managed): {ex}");
+        }
+        DdLog("--- RunTerrainSmokeTestAsync end ---");
+    }
+
+    /// <summary>
+    /// Snapshots the current rendered frame to <paramref name="path"/> as PNG and logs
+    /// a cheap pixel fingerprint (non-background pixel count + average RGB) so two
+    /// frames can be compared for "did the render actually change" without opening the
+    /// images. Background here is the demo/style clear colour, which we don't know, so
+    /// we just report the average and a count of non-uniform pixels.
+    /// </summary>
+    private void SnapshotTo(string path, string label)
+    {
+        var bmp = MapHost.SnapshotBitmap();
+        if (bmp == null) { DdLog($"snapshot {label}: (null — no frame yet)"); return; }
+
+        int w = bmp.PixelWidth, h = bmp.PixelHeight;
+        int stride = w * 4;
+        var px = new byte[stride * h];
+        bmp.CopyPixels(px, stride, 0);
+
+        long rs = 0, gs = 0, bs = 0;
+        long n = (long)w * h;
+        // Count distinct-ish pixels vs the top-left pixel as a rough "content" proxy.
+        byte b0 = px[0], g0 = px[1], r0 = px[2];
+        long nonBg = 0;
+        for (long i = 0; i < n; i++)
+        {
+            long o = i * 4;
+            byte b = px[o], g = px[o + 1], r = px[o + 2];
+            bs += b; gs += g; rs += r;
+            if (Math.Abs(b - b0) + Math.Abs(g - g0) + Math.Abs(r - r0) > 24) nonBg++;
+        }
+        DdLog($"snapshot {label}: {w}x{h} avgRGB=({rs / n},{gs / n},{bs / n}) " +
+              $"nonUniformPx={nonBg} ({100.0 * nonBg / n:0.0}%) topLeft=({r0},{g0},{b0}) → {Path.GetFileName(path)}");
+
+        try
+        {
+            using var fs = File.Create(path);
+            var enc = new PngBitmapEncoder();
+            enc.Frames.Add(BitmapFrame.Create(bmp));
+            enc.Save(fs);
+        }
+        catch (Exception ex) { DdLog($"snapshot save failed: {ex.Message}"); }
     }
 
     private void MapHost_CameraIdle(object sender, EventArgs e)
@@ -191,7 +360,70 @@ public partial class MainWindow : Window
 
     private void BtnZoomIn_Click(object sender, RoutedEventArgs e)  => MapHost.ZoomIn();
     private void BtnZoomOut_Click(object sender, RoutedEventArgs e) => MapHost.ZoomOut();
-    private void BtnNorth_Click(object sender, RoutedEventArgs e)   => MapHost.ResetNorth();
+    private void BtnNorth_Click(object sender, RoutedEventArgs e)   => MapHost.ResetNorthPitch();
+
+    // Hillshade layer id added alongside terrain so the relief is visible — draping
+    // displaces geometry by DEM height but reads as almost nothing over flat fills, so
+    // a hillshade from the same DEM makes 3D terrain legible on any style.
+    const string TerrainHillshadeLayerId = "__terrain-hillshade";
+    private bool _terrainDemAdded;
+
+    // Adds the picked raster-dem source (+ a hillshade layer so the relief is visible)
+    // to the current style if not already there. Both the on-map ⛰ terrain control
+    // (ShowTerrainControl) and the toolbar button below toggle terrain on this source.
+    private void EnsureTerrainDemAndHillshade()
+    {
+        if (_terrainDemAdded) return;
+        var src = SelectedTerrainSource();
+        if (src == null) return;
+        if (src.TileUrlTemplates is { Length: > 0 })
+            MapHost.AddRasterDemTilesSource(TerrainSourceId, src.TileUrlTemplates, src.TileSize,
+                                            minZoom: 0, maxZoom: src.MaxZoom,
+                                            encoding: src.Encoding, attribution: src.Attribution);
+        else if (!string.IsNullOrWhiteSpace(src.TileJsonUrl))
+            MapHost.AddRasterDemSource(TerrainSourceId, src.TileJsonUrl);
+        else
+            return;
+        MapHost.AddHillshadeLayer(TerrainHillshadeLayerId, TerrainSourceId);
+        _terrainDemAdded = true;
+    }
+
+    // Re-add the DEM under the newly picked source so the terrain control uses it.
+    private void TerrainPicker_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        if (MapHost.IsTerrainEnabled) MapHost.RemoveTerrain();
+        MapHost.RemoveLayer(TerrainHillshadeLayerId);
+        MapHost.RemoveSource(TerrainSourceId);
+        _terrainDemAdded = false;
+        EnsureTerrainDemAndHillshade();
+    }
+
+    // The toolbar button is the programmatic equivalent of the on-map ⛰ terrain control:
+    // both toggle terrain on the same pre-added raster-dem source (hillshade stays on).
+    private void BtnToggleTerrain_Click(object sender, RoutedEventArgs e)
+    {
+        EnsureTerrainDemAndHillshade();
+        if (!_terrainDemAdded)
+        {
+            StatusText.Text = "Pick or type a terrain source URL first.";
+            return;
+        }
+        MapHost.ToggleTerrain(TerrainSourceId, 1.0f);
+        StatusText.Text = MapHost.IsTerrainEnabled
+            ? "3D terrain on (with hillshade) — navigate to the source's coverage (e.g. the Alps) and tilt to see relief."
+            : "3D terrain off.";
+    }
+
+    // The selected terrain source: a preset name maps to its entry; otherwise the typed
+    // text is a custom URL — a {z}/{x}/{y} template if it looks like one, else TileJSON.
+    private TerrainSource? SelectedTerrainSource()
+    {
+        var text = TerrainPicker.Text?.Trim() ?? "";
+        if (TerrainSources.TryGetValue(text, out var preset)) return preset;
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        return text.Contains("{z}") ? new TerrainSource(null, [text]) : new TerrainSource(text);
+    }
 
     // ── Data-bound pins (ItemsSource of MlnMapMarker) ──────────────────────
 

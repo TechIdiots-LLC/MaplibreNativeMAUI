@@ -44,6 +44,12 @@ target_include_directories(mln-cabi PRIVATE
 target_sources(mln-cabi PRIVATE
     src/mln_cabi.cpp
     src/mln_cabi_offline.cpp
+    # Host-provided networking. Built on every platform: on Android it defines
+    # mln::HTTPFileSource, because nothing else does in a standalone NDK build,
+    # and elsewhere it registers a FileSourceType::Network factory at runtime.
+    # That registration only happens once the host installs a provider, so a
+    # build that never calls mbgl_set_http_provider is unaffected.
+    src/http_provider.cpp
 )
 
 # ── Platform-specific frontend ────────────────────────────────────────────────
@@ -51,6 +57,12 @@ if(WIN32)
     target_sources(mln-cabi PRIVATE src/platform_frontend_windows.cpp)
     target_compile_options(mln-cabi PRIVATE /wd4267)
     target_include_directories(mln-cabi PRIVATE "${MAPLIBRE_NATIVE_DIR}/src")
+    # Vulkan build: the offscreen frontend reuses mln::vulkan::HeadlessBackend,
+    # whose header lives in platform/default/include (added to mbgl-core by
+    # platform/windows/windows.cmake).
+    if(MLN_WITH_VULKAN)
+        target_include_directories(mln-cabi PRIVATE "${MAPLIBRE_NATIVE_DIR}/platform/default/include")
+    endif()
 elseif(ANDROID)
     target_sources(mln-cabi PRIVATE src/platform_frontend_android.cpp)
     target_link_libraries(mln-cabi PRIVATE EGL android log)
@@ -58,11 +70,10 @@ elseif(ANDROID)
     # Platform stub sources — symbols normally provided by MapLibreAndroid JNI SDK
     # that are absent in a standalone NDK build.
     target_sources(mln-cabi PRIVATE
-        "${MAPLIBRE_NATIVE_DIR}/platform/default/src/mbgl/text/local_glyph_rasterizer.cpp"
-        "${MAPLIBRE_NATIVE_DIR}/platform/default/src/mbgl/util/logging_stderr.cpp"
+        "${MAPLIBRE_NATIVE_DIR}/platform/default/src/mln/text/local_glyph_rasterizer.cpp"
+        "${MAPLIBRE_NATIVE_DIR}/platform/default/src/mln/util/logging_stderr.cpp"
         "${MAPLIBRE_NATIVE_DIR}/platform/android/src/test/collator_test_stub.cpp"
         "${MAPLIBRE_NATIVE_DIR}/platform/android/src/test/number_format_test_stub.cpp"
-        src/http_file_source_android.cpp
     )
     # MapLibre disables RTTI on Android/Linux. We must match that so polymorphic
     # classes in mln_cabi.cpp don't emit typeinfo that references non-existent
@@ -86,17 +97,31 @@ elseif(APPLE)
     set_source_files_properties(src/platform_frontend_apple.mm PROPERTIES
         COMPILE_FLAGS "-x objective-c++")
     target_include_directories(mln-cabi PRIVATE "${MAPLIBRE_NATIVE_DIR}/src")
-    # metal-cpp headers (vendored inside maplibre-native)
-    target_include_directories(mln-cabi PRIVATE
-        "${MAPLIBRE_NATIVE_DIR}/vendor/metal-cpp")
-    find_library(METAL_LIB Metal REQUIRED)
-    find_library(METALKIT_LIB MetalKit REQUIRED)
-    find_library(QUARTZCORE_LIB QuartzCore REQUIRED)
-    target_link_libraries(mln-cabi PRIVATE ${METAL_LIB} ${METALKIT_LIB} ${QUARTZCORE_LIB})
+
+    if(MLN_WITH_VULKAN)
+        # Vulkan via MoltenVK. mln-cabi is a static archive on Apple, so MoltenVK and
+        # the Vulkan loader are linked into the final app (by the consuming project /
+        # buildTransitive NativeReference); here we only need headers to compile.
+        # QuartzCore provides CAMetalLayer; UIKit provides UIView (iOS + macCatalyst).
+        target_include_directories(mln-cabi PRIVATE "${MAPLIBRE_NATIVE_DIR}/platform/default/include")
+        find_library(QUARTZCORE_LIB QuartzCore REQUIRED)
+        find_library(UIKIT_LIB UIKit)
+        target_link_libraries(mln-cabi PRIVATE ${QUARTZCORE_LIB})
+        if(UIKIT_LIB)
+            target_link_libraries(mln-cabi PRIVATE ${UIKIT_LIB})
+        endif()
+    else()
+        # Metal (default Apple renderer). metal-cpp headers are vendored in maplibre-native.
+        target_include_directories(mln-cabi PRIVATE "${MAPLIBRE_NATIVE_DIR}/vendor/metal-cpp")
+        find_library(METAL_LIB Metal REQUIRED)
+        find_library(METALKIT_LIB MetalKit REQUIRED)
+        find_library(QUARTZCORE_LIB QuartzCore REQUIRED)
+        target_link_libraries(mln-cabi PRIVATE ${METAL_LIB} ${METALKIT_LIB} ${QUARTZCORE_LIB})
+    endif()
     # mbgl-core is compiled with -fno-rtti on Apple (same as Android/Linux).
     # We must match that flag so MetalBackend's typeinfo does not emit a
     # reference to the non-existent base class typeinfo
-    # (typeinfo for mbgl::mtl::RendererBackend) that mbgl-core never defines.
+    # (typeinfo for mln::mtl::RendererBackend) that mbgl-core never defines.
     target_compile_options(mln-cabi PRIVATE -fno-rtti)
 else()
     message(FATAL_ERROR "Unsupported platform")
@@ -107,6 +132,14 @@ endif()
 # Preferred: add_subdirectory(maplibre-native) before this or use find_package.
 if(TARGET mbgl-core)
     target_link_libraries(mln-cabi PRIVATE mbgl-core)
+    # mbgl-core links its vendored header-only deps PRIVATE, so their include
+    # directories are not propagated to us. The platform frontends include
+    # headers out of maplibre-native's src/ tree directly (mln/gl/context.hpp
+    # -> mln/gl/object.hpp -> <unique_resource.hpp>), so we need that one
+    # explicitly.
+    if(TARGET mbgl-vendor-unique_resource)
+        target_link_libraries(mln-cabi PRIVATE mbgl-vendor-unique_resource)
+    endif()
 else()
     message(WARNING "mbgl-core target not found — link maplibre-native before this project")
 endif()

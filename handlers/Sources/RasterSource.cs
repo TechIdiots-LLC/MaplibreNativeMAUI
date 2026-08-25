@@ -17,6 +17,6 @@ public class RasterSource : TileSource
         var parentMap = FindParentMapLibreMap(this);
         if (parentMap == null) return;
         if (string.IsNullOrEmpty(SourceName)) return;
-        parentMap.AddRasterSource(SourceName, TileUrl, TileUrlTemplates, TileSize, MinZoom, MaxZoom);
+        parentMap.AddRasterSource(SourceName, TileUrl, TileUrlTemplates, TileSize, MinZoom, MaxZoom, Attribution);
     }
 }

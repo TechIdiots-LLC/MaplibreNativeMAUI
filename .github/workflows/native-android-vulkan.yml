@@ -13,7 +13,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        abi: [arm64-v8a, x86_64]
+        # Keep in sync with native-android.yml. Note armeabi-v7a devices are
+        # frequently GLES-only in practice, so the OpenGL variant is the one
+        # that matters most there - but build both so the RID set matches.
+        abi: [arm64-v8a, armeabi-v7a, x86_64]
 
     steps:
       - name: Enable Git long paths

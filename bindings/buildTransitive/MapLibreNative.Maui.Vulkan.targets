@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Re-adds the native static libraries shipped by MapLibreNative.Maui.Vulkan so that
+  any consumer (direct or transitive) gets them linked into the final app.
+
+  On Apple platforms "Vulkan" reuses the same Metal native as the base package, so
+  this mirrors MapLibreNative.Maui.targets exactly — see that file for the full
+  rationale (NativeReference items in a class library do not propagate through NuGet
+  automatically; a buildTransitive .targets file is the standard workaround; placed
+  in buildTransitive/ with no TFM subfolder to avoid NU1012).
+
+  $(MSBuildThisFileDirectory) resolves to <package>/buildTransitive/ in the
+  NuGet cache; native files live alongside at native/ios/ and native/maccatalyst/.
+-->
+<Project>
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">
+    <NativeReference Include="$(MSBuildThisFileDirectory)native/ios/libmln-cabi.xcframework">
+      <Kind>Static</Kind>
+      <ForceLoad>True</ForceLoad>
+      <!--
+        Apple system frameworks used by MapLibre native (Metal renderer).
+        Listed here so the .NET iOS linker includes them even when mln-cabi
+        is consumed transitively through MapLibreNative.Maui.Handlers.
+      -->
+      <Frameworks>Metal MetalKit QuartzCore CoreGraphics Foundation UIKit</Frameworks>
+      <!--
+        MapLibre uses the system SQLite dylib (libsqlite3.tbd) on iOS — it is
+        never compiled into a static archive, so it must be linked explicitly.
+        libz and libc++ are also pulled in transitively by mbgl-core.
+      -->
+      <LinkerFlags>-lsqlite3 -lz -lc++</LinkerFlags>
+    </NativeReference>
+  </ItemGroup>
+
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">
+    <NativeReference Include="$(MSBuildThisFileDirectory)native/maccatalyst/libmln-cabi.a">
+      <Kind>Static</Kind>
+      <ForceLoad>True</ForceLoad>
+      <Frameworks>Metal MetalKit QuartzCore CoreGraphics Foundation</Frameworks>
+      <LinkerFlags>-lsqlite3 -lz -lc++</LinkerFlags>
+    </NativeReference>
+  </ItemGroup>
+</Project>

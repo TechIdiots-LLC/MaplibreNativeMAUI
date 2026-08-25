@@ -8,6 +8,6 @@ public class VectorSource : TileSource
         if (parentMap == null) return;
         if (string.IsNullOrEmpty(SourceName)) return;
         if (string.IsNullOrEmpty(TileUrl) && TileUrlTemplates is not { Length: > 0 }) return;
-        parentMap.AddVectorSource(SourceName, TileUrl, TileUrlTemplates, MinZoom, MaxZoom);
+        parentMap.AddVectorSource(SourceName, TileUrl, TileUrlTemplates, MinZoom, MaxZoom, Attribution);
     }
 }

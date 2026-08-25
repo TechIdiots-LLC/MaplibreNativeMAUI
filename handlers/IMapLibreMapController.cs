@@ -45,19 +45,51 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
     /// </summary>
     public void AddGeoJsonSource(string sourceName, string source, string? optionsJson);
 
+    /// <summary>
+    /// Add a raster source, from either a TileJSON <paramref name="tileUrl"/> or explicit
+    /// <c>{z}/{x}/{y}</c> <paramref name="tileUrlTemplates"/>.
+    /// </summary>
+    /// <param name="attribution">
+    /// Attribution HTML for the source, shown by the attribution control. Only honoured with
+    /// <paramref name="tileUrlTemplates"/>; a TileJSON source carries its own attribution.
+    /// </param>
     public void AddRasterSource(string sourceName, string? tileUrl, string[]? tileUrlTemplates, int tileSize,
-        int minZoom, int maxZoom);
+        int minZoom, int maxZoom, string? attribution = null);
 
+    /// <summary>
+    /// Add a raster-dem (elevation) source, from either a TileJSON <paramref name="tileUrl"/>
+    /// or explicit <c>{z}/{x}/{y}</c> <paramref name="tileUrlTemplates"/>.
+    /// </summary>
+    /// <param name="encoding">
+    /// DEM encoding — <c>"terrarium"</c> (AWS/Mapzen terrain-tiles) or <c>"mapbox"</c>
+    /// (the default when null). Only honoured with <paramref name="tileUrlTemplates"/>;
+    /// a TileJSON source declares its own encoding.
+    /// </param>
+    /// <param name="attribution">Attribution HTML for the source, shown by the attribution control.</param>
     public void AddRasterDemSource(string sourceName, string? tileUrl, string[]? tileUrlTemplates, int tileSize,
-        int minZoom, int maxZoom);
+        int minZoom, int maxZoom, string? encoding = null, string? attribution = null);
 
+    /// <summary>
+    /// Add a vector source, from either a TileJSON <paramref name="tileUrl"/> or explicit
+    /// <c>{z}/{x}/{y}</c> <paramref name="tileUrlTemplates"/>.
+    /// </summary>
+    /// <param name="attribution">
+    /// Attribution HTML for the source, shown by the attribution control. Only honoured with
+    /// <paramref name="tileUrlTemplates"/>; a TileJSON source carries its own attribution.
+    /// </param>
     public void AddVectorSource(string sourceName, string? tileUrl, string[]? tileUrlTemplates, int minZoom,
-        int maxZoom);
+        int maxZoom, string? attribution = null);
     public void AddImageSource(string sourceName, string url, LatLngQuad? coordinates);
     public void SetGeoJsonSource(string sourceName, string source);
     public void SetGeoJsonFeature(string sourceName, string geojsonFeature);
     public void RemoveSource(string sourceId);
-    
+
+    // 3D terrain (drapes the map over an existing raster-dem source)
+    public void SetTerrain(string sourceId, float exaggeration);
+    public void RemoveTerrain();
+    public void ToggleTerrain(string sourceId, float exaggeration);
+    public bool IsTerrainEnabled { get; }
+
     // Layers
     public void AddSymbolLayer(
         string layerName,

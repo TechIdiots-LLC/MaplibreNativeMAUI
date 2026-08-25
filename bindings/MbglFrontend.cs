@@ -5,6 +5,9 @@ using System.Runtime.InteropServices;
 
 namespace MapLibreNative.Maui;
 
+/// <summary>The renderer the loaded native library was built against.</summary>
+public enum MbglRenderBackend { OpenGL, Vulkan, Metal }
+
 /// <summary>
 /// Wraps <c>mbgl_frontend_t*</c>.
 /// <para>
@@ -18,6 +21,17 @@ namespace MapLibreNative.Maui;
 public sealed class MbglFrontend : IDisposable
 {
     internal IntPtr Handle { get; private set; }
+
+    /// <summary>The renderer this native build uses (queried once from the native library).
+    /// Lets the shared managed layer pick the right surface handshake — the GL and Vulkan
+    /// packages ship identical C# but different native libraries under the same name.</summary>
+    public static MbglRenderBackend RenderBackend { get; } =
+        NativeMethods.GetRenderBackend() switch
+        {
+            "vulkan" => MbglRenderBackend.Vulkan,
+            "metal"  => MbglRenderBackend.Metal,
+            _         => MbglRenderBackend.OpenGL,
+        };
 
     // Set to true after MbglMap takes ownership. Dispose() becomes a no-op
     // but Handle intentionally stays valid so Render/SetSize calls continue
@@ -54,14 +68,22 @@ public sealed class MbglFrontend : IDisposable
         _renderCallback = onRender;
         _renderDelegate = _ => _renderCallback();
 
-        Handle = NativeMethods.FrontendCreateGl(
+        Handle = NativeMethods.FrontendCreate(
             surfaceHandle, glContext,
             widthPx, heightPx, pixelRatio,
             _renderDelegate, IntPtr.Zero);
 
         if (Handle == IntPtr.Zero)
-            throw new InvalidOperationException("mbgl_frontend_create_gl returned null.");
+            throw new InvalidOperationException("mbgl_frontend_create returned null.");
     }
+
+    /// <summary>
+    /// Copies the most recently rendered frame as tightly-packed premultiplied RGBA
+    /// (<paramref name="byteLength"/> must be ≥ width*height*4) into <paramref name="buffer"/>.
+    /// Only the offscreen (Vulkan Windows) frontend supports this; returns false otherwise.
+    /// </summary>
+    public bool ReadPixels(IntPtr buffer, nuint byteLength)
+        => NativeMethods.FrontendReadPixels(Handle, buffer, byteLength) == MbglStatus.Ok;
 
     /// <summary>
     /// Execute the pending render pass. Call from the render thread when
