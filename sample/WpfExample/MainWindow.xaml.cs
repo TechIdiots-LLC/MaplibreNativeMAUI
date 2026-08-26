@@ -175,7 +175,7 @@ public partial class MainWindow : Window
         }
 
         // A reloaded style drops runtime sources/layers, so re-add the DEM + hillshade
-        // that the on-map ⛰ terrain control (ShowTerrainControl) toggles.
+        // that the on-map terrain control (ShowTerrainControl) toggles.
         _terrainDemAdded = false;
         EnsureTerrainDemAndHillshade();
 
@@ -369,7 +369,7 @@ public partial class MainWindow : Window
     private bool _terrainDemAdded;
 
     // Adds the picked raster-dem source (+ a hillshade layer so the relief is visible)
-    // to the current style if not already there. Both the on-map ⛰ terrain control
+    // to the current style if not already there. Both the on-map terrain control
     // (ShowTerrainControl) and the toolbar button below toggle terrain on this source.
     private void EnsureTerrainDemAndHillshade()
     {
@@ -399,7 +399,7 @@ public partial class MainWindow : Window
         EnsureTerrainDemAndHillshade();
     }
 
-    // The toolbar button is the programmatic equivalent of the on-map ⛰ terrain control:
+    // The toolbar button is the programmatic equivalent of the on-map terrain control:
     // both toggle terrain on the same pre-added raster-dem source (hillshade stays on).
     private void BtnToggleTerrain_Click(object sender, RoutedEventArgs e)
     {

@@ -71,7 +71,7 @@ public partial class TerrainPage : ContentPage
         Map.StyleLoaded += (_, _) =>
         {
             // A reloaded style drops runtime sources/layers, so re-add the DEM + hillshade
-            // that the on-map ⛰ terrain control toggles.
+            // that the on-map terrain control toggles.
             _demAdded = false;
             EnsureDemAndHillshade();
             UpdateStatus();
@@ -118,7 +118,7 @@ public partial class TerrainPage : ContentPage
             Map.StyleUrl = url;
     }
 
-    // The button below is the programmatic equivalent of the on-map ⛰ terrain control:
+    // The button below is the programmatic equivalent of the on-map terrain control:
     // both toggle terrain on the same pre-added raster-dem source (hillshade stays on).
     private void OnToggleTerrain(object? sender, EventArgs e)
     {
