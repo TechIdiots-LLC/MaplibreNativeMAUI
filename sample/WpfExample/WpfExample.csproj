@@ -10,7 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup Condition="'$(UseLocalPackages)' != 'true'">
-    <!-- MbglMapHost + transitive MapLibreNative.Maui (native DLL) -->
+    <!-- MlnMapHost + transitive MapLibreNative.Maui (native DLL) -->
     <ProjectReference Include="..\..\wpf\MapLibreNative.Maui.WPF.csproj" />
   </ItemGroup>
 

@@ -17,7 +17,7 @@ namespace MapLibreNative.Maui.Handlers.WinUI;
 
 /// <summary>
 /// Owns a hidden Win32 window and its WGL rendering context.  MapLibre renders into FBO 0 of
-/// that window; call <see cref="ReadPixels"/> after each <c>MbglFrontend.Render</c> to copy the
+/// that window; call <see cref="ReadPixels"/> after each <c>MlnFrontend.Render</c> to copy the
 /// result into the caller-supplied pixel buffer (e.g. a WinUI <c>WriteableBitmap</c>'s backing store).
 /// </summary>
 internal sealed class HiddenWglContext : IDisposable
@@ -93,9 +93,9 @@ internal sealed class HiddenWglContext : IDisposable
     /// <summary>Physical pixel height of the current surface.</summary>
     public int Height { get; private set; }
 
-    /// <summary>The hidden window's device context — pass as <c>surfaceHandle</c> to <see cref="MbglFrontend"/>.</summary>
+    /// <summary>The hidden window's device context — pass as <c>surfaceHandle</c> to <see cref="MlnFrontend"/>.</summary>
     public IntPtr Hdc => _hdc;
-    /// <summary>The WGL render context — pass as <c>glContext</c> to <see cref="MbglFrontend"/>.</summary>
+    /// <summary>The WGL render context — pass as <c>glContext</c> to <see cref="MlnFrontend"/>.</summary>
     public IntPtr GlContext => _glrc;
 
     // ── Init ──────────────────────────────────────────────────────────────────
@@ -122,7 +122,7 @@ internal sealed class HiddenWglContext : IDisposable
 
     /// <summary>
     /// Reads the rendered pixels (bottom-left origin, BGRA) from FBO 0 into
-    /// <paramref name="buffer"/>. Call after <see cref="MbglFrontend.Render"/>.
+    /// <paramref name="buffer"/>. Call after <see cref="MlnFrontend.Render"/>.
     /// </summary>
     public void ReadPixels(IntPtr buffer) =>
         glReadPixels(0, 0, Width, Height, GL_BGRA, GL_UNSIGNED_BYTE, buffer);

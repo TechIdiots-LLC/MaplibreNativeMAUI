@@ -1,24 +1,24 @@
 ﻿/**
- * MbglMap.cs — Typed C# wrapper around the native mln_map_t handle.
+ * MlnMap.cs — Typed C# wrapper around the native mln_map_t handle.
  *
- * Lifetime: must be disposed on the same thread as its MbglRunLoop.
- * The MbglFrontend must outlive the MbglMap.
+ * Lifetime: must be disposed on the same thread as its MlnRunLoop.
+ * The MlnFrontend must outlive the MlnMap.
  */
 using System.Runtime.InteropServices;
 
 namespace MapLibreNative.Maui;
 
 /// <summary>Wraps <c>mln_map_t*</c>. Dispose on the render thread.</summary>
-public sealed class MbglMap : IDisposable
+public sealed class MlnMap : IDisposable
 {
     internal IntPtr Handle { get; private set; }
 
     // Keep a GC handle to the native delegate so it isn't collected
     private GCHandle _observerHandle;
 
-    public MbglMap(
-        MbglFrontend frontend,
-        MbglRunLoop runLoop,
+    public MlnMap(
+        MlnFrontend frontend,
+        MlnRunLoop runLoop,
         string? cachePath = null,
         string? assetPath = null,
         float   pixelRatio = 1.0f,
@@ -52,7 +52,7 @@ public sealed class MbglMap : IDisposable
         // mln_map_create transfers ownership of the frontend pointer into the
         // native CabiMap struct. Calling mln_frontend_destroy afterwards would
         // be a double-free (0xc0000374 heap corruption). Zero the C# handle so
-        // MbglFrontend.Dispose() becomes a no-op from this point forward.
+        // MlnFrontend.Dispose() becomes a no-op from this point forward.
         frontend.TransferOwnership();
     }
 
@@ -254,10 +254,10 @@ public sealed class MbglMap : IDisposable
 
     // ── Debug overlays ─────────────────────────────────────────────────────────────
 
-    /// <summary>Get the current debug overlay bitmask (<see cref="MbglDebugOptions"/>).</summary>
+    /// <summary>Get the current debug overlay bitmask (<see cref="MlnDebugOptions"/>).</summary>
     public int GetDebugOptions() => NativeMethods.MapGetDebugOptions(Handle);
 
-    /// <summary>Set the debug overlay bitmask. Pass <see cref="MbglDebugOptions.None"/> to disable all.</summary>
+    /// <summary>Set the debug overlay bitmask. Pass <see cref="MlnDebugOptions.None"/> to disable all.</summary>
     public void SetDebugOptions(int options) => NativeMethods.MapSetDebugOptions(Handle, options);
 
     // ── Viewport bounds ────────────────────────────────────────────────────────
@@ -433,12 +433,12 @@ public sealed class MbglMap : IDisposable
         return result;
     }
 
-    public MbglStyle GetStyle()
+    public MlnStyle GetStyle()
     {
         var styleHandle = NativeMethods.MapGetStyle(Handle);
         if (styleHandle == IntPtr.Zero)
             throw new InvalidOperationException("Style is not yet loaded.");
-        return new MbglStyle(styleHandle);
+        return new MlnStyle(styleHandle);
     }
 
     public void Dispose()
@@ -453,7 +453,7 @@ public sealed class MbglMap : IDisposable
     }
 }
 
-/// <summary>Camera bounds returned by <see cref="MbglMap.GetBounds"/>.</summary>
+/// <summary>Camera bounds returned by <see cref="MlnMap.GetBounds"/>.</summary>
 /// <param name="LatSw">South latitude of the bounding box, or NaN if unset.</param>
 /// <param name="LonSw">West longitude of the bounding box, or NaN if unset.</param>
 /// <param name="LatNe">North latitude of the bounding box, or NaN if unset.</param>

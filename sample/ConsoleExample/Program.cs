@@ -110,10 +110,10 @@ class Program
         bool renderNeeded = false, mapIdle = false;
         string? failMsg = null;
 
-        using var runLoop  = new MbglRunLoop();
-        using var frontend = new MbglFrontend(IntPtr.Zero, IntPtr.Zero, Width, Height, 1.0f,
+        using var runLoop  = new MlnRunLoop();
+        using var frontend = new MlnFrontend(IntPtr.Zero, IntPtr.Zero, Width, Height, 1.0f,
             onRender: () => renderNeeded = true);
-        using var map = new MbglMap(frontend, runLoop,
+        using var map = new MlnMap(frontend, runLoop,
             observer: (evt, detail) =>
             {
                 switch (evt)
@@ -180,7 +180,7 @@ class Program
         // The Vulkan native renders off-screen (headless) and needs no WGL/Win32
         // context — take a separate, much simpler path. (Selected at runtime from
         // whichever mln-cabi.dll is loaded, so the same exe works for either backend.)
-        if (MbglFrontend.RenderBackend == MbglRenderBackend.Vulkan)
+        if (MlnFrontend.RenderBackend == MlnRenderBackend.Vulkan)
         {
             RunVulkan();
             return;
@@ -244,10 +244,10 @@ class Program
         bool mapIdle      = false;
         string? failMsg   = null;
 
-        using var runLoop  = new MbglRunLoop();
-        using var frontend = new MbglFrontend(hDC, hGLRC, Width, Height, 1.0f,
+        using var runLoop  = new MlnRunLoop();
+        using var frontend = new MlnFrontend(hDC, hGLRC, Width, Height, 1.0f,
             onRender: () => renderNeeded = true);
-        using var map = new MbglMap(frontend, runLoop,
+        using var map = new MlnMap(frontend, runLoop,
             observer: (evt, detail) =>
             {
                 switch (evt)

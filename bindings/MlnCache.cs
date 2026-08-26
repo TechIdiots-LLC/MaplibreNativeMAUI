@@ -1,6 +1,6 @@
 /**
- * MbglCache.cs — Default location of the persistent tile/resource cache
- * database shared by the map views and MbglOfflineManager.
+ * MlnCache.cs — Default location of the persistent tile/resource cache
+ * database shared by the map views and MlnOfflineManager.
  */
 using System.Diagnostics;
 
@@ -8,10 +8,10 @@ namespace MapLibreNative.Maui;
 
 /// <summary>
 /// Provides the default path of MapLibre's cache database. The map views and
-/// <see cref="MbglOfflineManager"/> both default to this path, so offline
+/// <see cref="MlnOfflineManager"/> both default to this path, so offline
 /// regions downloaded by the manager are served to the map automatically.
 /// </summary>
-public static class MbglCache
+public static class MlnCache
 {
     private static string? _defaultPath;
 

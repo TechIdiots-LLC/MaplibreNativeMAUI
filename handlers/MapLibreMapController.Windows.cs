@@ -15,7 +15,7 @@ namespace MapLibreNative.Maui.Handlers;
 
 /// <summary>
 /// Windows-specific IMapLibreMapController implementation backed by the C ABI
-/// mln-cabi.dll via MbglMap / MbglFrontend / MbglRunLoop P/Invoke bindings.
+/// mln-cabi.dll via MlnMap / MlnFrontend / MlnRunLoop P/Invoke bindings.
 /// </summary>
 public class MapLibreMapController : IMapLibreMapController
 {
@@ -49,8 +49,8 @@ public class MapLibreMapController : IMapLibreMapController
     // signature; the in-tree view derives its own surface and DPI, so neither is stored.
     private string? _styleString;
 
-    private MbglMap?      _map;
-    private MbglStyle?    _style;
+    private MlnMap?      _map;
+    private MlnStyle?    _style;
 
     // ── On-map control state ──────────────────────────────────────────────────
     private bool   _showNavControls = true;
@@ -831,14 +831,14 @@ public class MapLibreMapController : IMapLibreMapController
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static void ApplyLayerMeta(MbglLayer layer, string? sourceLayer, float minZoom, float maxZoom)
+    private static void ApplyLayerMeta(MlnLayer layer, string? sourceLayer, float minZoom, float maxZoom)
     {
         if (sourceLayer != null) layer.SetSourceLayer(sourceLayer);
         if (minZoom > 0) layer.SetMinZoom(minZoom);
         if (maxZoom > 0) layer.SetMaxZoom(maxZoom);
     }
 
-    private static void ApplyProperties(MbglLayer layer, IDictionary<string, object?> props)
+    private static void ApplyProperties(MlnLayer layer, IDictionary<string, object?> props)
     {
         foreach (var (k, v) in props)
         {
@@ -1068,7 +1068,7 @@ public class MapLibreMapController : IMapLibreMapController
         var parts = new System.Collections.Generic.List<string>(_style.GetSourceAttributions());
         if (!string.IsNullOrWhiteSpace(_customAttribution))
             parts.Add(_customAttribution!);
-        var attributions = MbglStyle.EnsureMapLibreAttribution(parts);
+        var attributions = MlnStyle.EnsureMapLibreAttribution(parts);
         // Strip HTML tags to plain text (attribution strings from OSM are like
         // "© <a href='...'>OpenStreetMap</a> contributors" — we strip the links for now).
         var sb = new System.Text.StringBuilder();
@@ -1322,7 +1322,7 @@ public class MapLibreMapController : IMapLibreMapController
     public void AddSourceJson(string sourceId, string sourceJson)
         => _style?.AddSourceJson(sourceId, sourceJson);
 
-    public MbglLayer? AddLayerJson(string layerJson, string? beforeLayerId = null)
+    public MlnLayer? AddLayerJson(string layerJson, string? beforeLayerId = null)
         => _style?.AddLayerJson(layerJson, beforeLayerId);
 
 
@@ -1407,7 +1407,7 @@ public class MapLibreMapController : IMapLibreMapController
     public bool ShowBearing    { get; set; } = true;
 
     private const string LocIndLayerId = "mln_maui_location";
-    private MbglLayer?   _locIndLayer;
+    private MlnLayer?   _locIndLayer;
     private record struct LocIndParams(double Lat, double Lon, float Bearing, float AccuracyM);
     private LocIndParams? _pendingLocInd;
 

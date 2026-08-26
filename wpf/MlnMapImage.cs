@@ -304,16 +304,16 @@ public partial class MlnMapImage : Grid
     private readonly Image _image = new() { Stretch = Stretch.Fill };
     private WriteableBitmap? _bitmap;
     private HiddenWglContext? _interop;
-    private MbglRunLoop? _runLoop;
-    private MbglFrontend? _frontend;
-    private MbglMap? _map;
-    private MbglStyle? _style;
+    private MlnRunLoop? _runLoop;
+    private MlnFrontend? _frontend;
+    private MlnMap? _map;
+    private MlnStyle? _style;
     private DispatcherTimer? _renderTimer;
 
     private bool _initialized, _renderNeedsUpdate = true, _styleReady;
     // Vulkan builds render off-screen (headless) and read pixels back through the
     // frontend; OpenGL builds render into a WGL FBO and read back via glReadPixels.
-    private static readonly bool _vulkan = MbglFrontend.RenderBackend == MbglRenderBackend.Vulkan;
+    private static readonly bool _vulkan = MlnFrontend.RenderBackend == MlnRenderBackend.Vulkan;
     private float _dpi = 1f;
     private int _physW = 1, _physH = 1;
 
@@ -376,17 +376,17 @@ public partial class MlnMapImage : Grid
         // sizes) — the surface dimensions above stay in real physical pixels.
         float pixelRatio = _dpi * (float)UiScale;
 
-        _runLoop = new MbglRunLoop();
+        _runLoop = new MlnRunLoop();
         // Vulkan renders headless (no surface handle); OpenGL needs the WGL HDC + context.
         // pixelRatio (= _dpi * UiScale) scales style-unit sizes; the surface dims above stay physical.
         _frontend = _vulkan
-            ? new MbglFrontend(IntPtr.Zero, IntPtr.Zero, _physW, _physH, pixelRatio,
+            ? new MlnFrontend(IntPtr.Zero, IntPtr.Zero, _physW, _physH, pixelRatio,
                 () => _renderNeedsUpdate = true)
-            : new MbglFrontend(_interop!.Hdc, _interop.GlContext, _physW, _physH, pixelRatio,
+            : new MlnFrontend(_interop!.Hdc, _interop.GlContext, _physW, _physH, pixelRatio,
                 () => _renderNeedsUpdate = true);
         // Persistent tile/resource cache (mbgl's default is :memory:), shared
-        // with MbglOfflineManager via MbglCache.DefaultPath.
-        _map = new MbglMap(_frontend, _runLoop, cachePath: MbglCache.DefaultPath,
+        // with MlnOfflineManager via MlnCache.DefaultPath.
+        _map = new MlnMap(_frontend, _runLoop, cachePath: MlnCache.DefaultPath,
                            pixelRatio: pixelRatio, observer: OnMapObserverEvent);
         _map.SetSize(_physW, _physH);
         _map.TerrainLoadMode = TerrainLoadMode;   // the DP may have been set before the map existed
@@ -601,7 +601,7 @@ public partial class MlnMapImage : Grid
     public void AddGeoJsonSource(string sourceId, string geojson)
     {
         if (_style == null) return;
-        MbglSource src = _style.HasSource(sourceId) ? _style.GetSource(sourceId)! : _style.AddGeoJsonSource(sourceId);
+        MlnSource src = _style.HasSource(sourceId) ? _style.GetSource(sourceId)! : _style.AddGeoJsonSource(sourceId);
         src.SetGeoJson(geojson);
         _renderNeedsUpdate = true;
     }
@@ -616,7 +616,7 @@ public partial class MlnMapImage : Grid
     public void AddGeoJsonSource(string sourceId, string geojson, string? optionsJson)
     {
         if (_style == null) return;
-        MbglSource src = _style.HasSource(sourceId)
+        MlnSource src = _style.HasSource(sourceId)
             ? _style.GetSource(sourceId)!
             : _style.AddGeoJsonSourceOptions(sourceId, optionsJson);
         src.SetGeoJson(geojson);
@@ -915,7 +915,7 @@ public partial class MlnMapImage : Grid
         "circle-sort-key",
     };
 
-    private static void ApplyLayerProperties(MbglLayer layer, IDictionary<string, object?> props)
+    private static void ApplyLayerProperties(MlnLayer layer, IDictionary<string, object?> props)
     {
         var ic = System.Globalization.CultureInfo.InvariantCulture;
         foreach (var (name, val) in props)
@@ -1292,7 +1292,7 @@ public partial class MlnMapImage : Grid
     // ── Location indicator ("blue dot") ────────────────────────────────────────
 
     private const string LocIndLayerId = "mln_image_location";
-    private MbglLayer? _locIndLayer;
+    private MlnLayer? _locIndLayer;
     private record struct LocIndParams(double Lat, double Lon, float Bearing, float AccuracyM);
     private LocIndParams? _pendingLocInd;
 
@@ -1712,7 +1712,7 @@ public partial class MlnMapImage : Grid
     private void RefreshAttribution()
     {
         if (_style == null || _attrTextBlock == null || _attrBorder == null) return;
-        var parts = MbglStyle.EnsureMapLibreAttribution(_style.GetSourceAttributions());
+        var parts = MlnStyle.EnsureMapLibreAttribution(_style.GetSourceAttributions());
         var sb = new System.Text.StringBuilder();
         foreach (var part in parts)
         {

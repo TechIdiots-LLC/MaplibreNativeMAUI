@@ -33,10 +33,10 @@
 
   <!--
     Pre-built native binaries — drop into native/ subfolder alongside this .csproj.
-    Override _MbglNativeDir in a Directory.Build.props to point elsewhere.
+    Override _MlnNativeDir in a Directory.Build.props to point elsewhere.
   -->
   <PropertyGroup>
-    <_MbglNativeDir Condition="'$(_MbglNativeDir)' == ''">$(MSBuildThisFileDirectory)native\</_MbglNativeDir>
+    <_MlnNativeDir Condition="'$(_MlnNativeDir)' == ''">$(MSBuildThisFileDirectory)native\</_MlnNativeDir>
   </PropertyGroup>
 
   <!--
@@ -46,13 +46,13 @@
     false and the DLL is silently excluded. Use only file-existence conditions here.
   -->
   <ItemGroup>
-    <None Include="$(_MbglNativeDir)win-x64\mln-cabi.dll"
-          Condition="Exists('$(_MbglNativeDir)win-x64\mln-cabi.dll')">
+    <None Include="$(_MlnNativeDir)win-x64\mln-cabi.dll"
+          Condition="Exists('$(_MlnNativeDir)win-x64\mln-cabi.dll')">
       <Pack>true</Pack>
       <PackagePath>runtimes/win-x64/native</PackagePath>
     </None>
-    <None Include="$(_MbglNativeDir)win-arm64\mln-cabi.dll"
-          Condition="Exists('$(_MbglNativeDir)win-arm64\mln-cabi.dll')">
+    <None Include="$(_MlnNativeDir)win-arm64\mln-cabi.dll"
+          Condition="Exists('$(_MlnNativeDir)win-arm64\mln-cabi.dll')">
       <Pack>true</Pack>
       <PackagePath>runtimes/win-arm64/native</PackagePath>
     </None>
@@ -62,15 +62,15 @@
       structure is preserved under buildTransitive/native/ios/libmln-cabi.xcframework/.
       The .targets file at buildTransitive/ references this path.
     -->
-    <None Include="$(_MbglNativeDir)ios\libmln-cabi.xcframework\**"
-          Condition="Exists('$(_MbglNativeDir)ios\libmln-cabi.xcframework')">
+    <None Include="$(_MlnNativeDir)ios\libmln-cabi.xcframework\**"
+          Condition="Exists('$(_MlnNativeDir)ios\libmln-cabi.xcframework')">
       <Pack>true</Pack>
       <PackagePath>buildTransitive/native/ios/libmln-cabi.xcframework/%(RecursiveDir)%(Filename)%(Extension)</PackagePath>
     </None>
 
     <!-- macCatalyst static library -->
-    <None Include="$(_MbglNativeDir)maccatalyst\libmln-cabi.a"
-          Condition="Exists('$(_MbglNativeDir)maccatalyst\libmln-cabi.a')">
+    <None Include="$(_MlnNativeDir)maccatalyst\libmln-cabi.a"
+          Condition="Exists('$(_MlnNativeDir)maccatalyst\libmln-cabi.a')">
       <Pack>true</Pack>
       <PackagePath>buildTransitive/native/maccatalyst</PackagePath>
     </None>
@@ -94,49 +94,49 @@
   <!-- CopyToOutputDirectory only applies when actually building for Windows.
        RID-aware: win-arm64 publish gets the arm64 DLL; everything else gets x64. -->
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
-    <None Include="$(_MbglNativeDir)win-x64\mln-cabi.dll"
-          Condition="Exists('$(_MbglNativeDir)win-x64\mln-cabi.dll') And '$(RuntimeIdentifier)' != 'win-arm64'">
+    <None Include="$(_MlnNativeDir)win-x64\mln-cabi.dll"
+          Condition="Exists('$(_MlnNativeDir)win-x64\mln-cabi.dll') And '$(RuntimeIdentifier)' != 'win-arm64'">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="$(_MbglNativeDir)win-arm64\mln-cabi.dll"
-          Condition="Exists('$(_MbglNativeDir)win-arm64\mln-cabi.dll') And '$(RuntimeIdentifier)' == 'win-arm64'">
+    <None Include="$(_MlnNativeDir)win-arm64\mln-cabi.dll"
+          Condition="Exists('$(_MlnNativeDir)win-arm64\mln-cabi.dll') And '$(RuntimeIdentifier)' == 'win-arm64'">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
 
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
-    <AndroidNativeLibrary Include="$(_MbglNativeDir)android-arm64\libmln-cabi.so"
-                          Condition="Exists('$(_MbglNativeDir)android-arm64\libmln-cabi.so')">
+    <AndroidNativeLibrary Include="$(_MlnNativeDir)android-arm64\libmln-cabi.so"
+                          Condition="Exists('$(_MlnNativeDir)android-arm64\libmln-cabi.so')">
       <Abi>arm64-v8a</Abi>
     </AndroidNativeLibrary>
-    <AndroidNativeLibrary Include="$(_MbglNativeDir)android-arm\libmln-cabi.so"
-                          Condition="Exists('$(_MbglNativeDir)android-arm\libmln-cabi.so')">
+    <AndroidNativeLibrary Include="$(_MlnNativeDir)android-arm\libmln-cabi.so"
+                          Condition="Exists('$(_MlnNativeDir)android-arm\libmln-cabi.so')">
       <Abi>armeabi-v7a</Abi>
     </AndroidNativeLibrary>
-    <AndroidNativeLibrary Include="$(_MbglNativeDir)android-x64\libmln-cabi.so"
-                          Condition="Exists('$(_MbglNativeDir)android-x64\libmln-cabi.so')">
+    <AndroidNativeLibrary Include="$(_MlnNativeDir)android-x64\libmln-cabi.so"
+                          Condition="Exists('$(_MlnNativeDir)android-x64\libmln-cabi.so')">
       <Abi>x86_64</Abi>
     </AndroidNativeLibrary>
   </ItemGroup>
 
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">
     <!-- Prefer XCFramework: bundles both device (ios-arm64) and simulator (iossimulator-arm64) slices. -->
-    <NativeReference Include="$(_MbglNativeDir)ios\libmln-cabi.xcframework"
-                     Condition="Exists('$(_MbglNativeDir)ios\libmln-cabi.xcframework')">
+    <NativeReference Include="$(_MlnNativeDir)ios\libmln-cabi.xcframework"
+                     Condition="Exists('$(_MlnNativeDir)ios\libmln-cabi.xcframework')">
       <Kind>Static</Kind>
       <ForceLoad>True</ForceLoad>
     </NativeReference>
     <!-- Fallback for local dev builds that only have the device .a (no XCFramework). -->
-    <NativeReference Include="$(_MbglNativeDir)ios-arm64\libmln-cabi.a"
-                     Condition="Exists('$(_MbglNativeDir)ios-arm64\libmln-cabi.a') And !Exists('$(_MbglNativeDir)ios\libmln-cabi.xcframework')">
+    <NativeReference Include="$(_MlnNativeDir)ios-arm64\libmln-cabi.a"
+                     Condition="Exists('$(_MlnNativeDir)ios-arm64\libmln-cabi.a') And !Exists('$(_MlnNativeDir)ios\libmln-cabi.xcframework')">
       <Kind>Static</Kind>
       <ForceLoad>True</ForceLoad>
     </NativeReference>
   </ItemGroup>
 
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">
-    <NativeReference Include="$(_MbglNativeDir)maccatalyst\libmln-cabi.a"
-                     Condition="Exists('$(_MbglNativeDir)maccatalyst\libmln-cabi.a')">
+    <NativeReference Include="$(_MlnNativeDir)maccatalyst\libmln-cabi.a"
+                     Condition="Exists('$(_MlnNativeDir)maccatalyst\libmln-cabi.a')">
       <Kind>Static</Kind>
       <ForceLoad>True</ForceLoad>
     </NativeReference>

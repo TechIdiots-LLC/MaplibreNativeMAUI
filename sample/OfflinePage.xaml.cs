@@ -7,9 +7,9 @@ public partial class OfflinePage : ContentPage
 {
     private readonly OfflineViewModel _vm = new();
 
-    // Shares MbglCache.DefaultPath with the map views, so downloaded regions
+    // Shares MlnCache.DefaultPath with the map views, so downloaded regions
     // are served to the map automatically.
-    private readonly MbglOfflineManager _offline = new();
+    private readonly MlnOfflineManager _offline = new();
 
     public OfflinePage()
     {
@@ -107,9 +107,9 @@ public partial class OfflinePage : ContentPage
 
     private void OnToggleOffline(object? sender, EventArgs e)
     {
-        MbglNetwork.Online = !MbglNetwork.Online;
-        OfflineToggle.Text = MbglNetwork.Online ? "Go offline" : "Go online";
-        _vm.Status = MbglNetwork.Online
+        MlnNetwork.Online = !MlnNetwork.Online;
+        OfflineToggle.Text = MlnNetwork.Online ? "Go offline" : "Go online";
+        _vm.Status = MlnNetwork.Online
             ? "Network ONLINE — tiles load normally."
             : "Network OFFLINE — only cached/offline tiles are served.";
     }

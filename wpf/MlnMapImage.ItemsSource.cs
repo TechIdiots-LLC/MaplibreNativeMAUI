@@ -96,7 +96,7 @@ public partial class MlnMapImage
         }
 
         string geojson = BuildFeatureCollection(markers);
-        MbglSource src = _style.HasSource(ItemsSourceId)
+        MlnSource src = _style.HasSource(ItemsSourceId)
             ? _style.GetSource(ItemsSourceId)!
             : _style.AddGeoJsonSource(ItemsSourceId);
         src.SetGeoJson(geojson);

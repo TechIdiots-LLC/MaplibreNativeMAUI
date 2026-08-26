@@ -118,7 +118,7 @@ public class MapLibreMapController : IMapLibreMapController
             catch (Exception ex)
             {
                 s_pendingRequests.TryRemove(requestId, out _);
-                RespondError(requestId, NativeMethods.MbglHttpError.Connection, ex.Message);
+                RespondError(requestId, NativeMethods.MlnHttpError.Connection, ex.Message);
                 return;
             }
 
@@ -141,26 +141,26 @@ public class MapLibreMapController : IMapLibreMapController
 
             if (status == 404)
             {
-                RespondError(requestId, NativeMethods.MbglHttpError.NotFound, "HTTP 404");
+                RespondError(requestId, NativeMethods.MlnHttpError.NotFound, "HTTP 404");
                 return;
             }
 
             if (status == 429)
             {
-                RespondError(requestId, NativeMethods.MbglHttpError.RateLimit, "HTTP 429");
+                RespondError(requestId, NativeMethods.MlnHttpError.RateLimit, "HTTP 429");
                 return;
             }
 
             if (status >= 500 && status < 600)
             {
-                RespondError(requestId, NativeMethods.MbglHttpError.Server, $"HTTP {status}");
+                RespondError(requestId, NativeMethods.MlnHttpError.Server, $"HTTP {status}");
                 return;
             }
 
             // 200 OK and 206 Partial Content are both treated as success.
             if (status != 200 && status != 206)
             {
-                RespondError(requestId, NativeMethods.MbglHttpError.Other, $"HTTP {status}");
+                RespondError(requestId, NativeMethods.MlnHttpError.Other, $"HTTP {status}");
                 return;
             }
 
@@ -182,7 +182,7 @@ public class MapLibreMapController : IMapLibreMapController
         catch (Exception ex)
         {
             s_pendingRequests.TryRemove(requestId, out _);
-            RespondError(requestId, NativeMethods.MbglHttpError.Connection, ex.Message);
+            RespondError(requestId, NativeMethods.MlnHttpError.Connection, ex.Message);
         }
     }
 
@@ -211,7 +211,7 @@ public class MapLibreMapController : IMapLibreMapController
             {
                 NativeMethods.HttpRespond(
                     requestId,
-                    NativeMethods.MbglHttpError.None,
+                    NativeMethods.MlnHttpError.None,
                     IntPtr.Zero,
                     200,
                     (nint)bodyPtr,
@@ -236,7 +236,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     private static void RespondNotModified(ulong requestId)
     {
-        NativeMethods.HttpRespond(requestId, NativeMethods.MbglHttpError.None,
+        NativeMethods.HttpRespond(requestId, NativeMethods.MlnHttpError.None,
             IntPtr.Zero, 304, IntPtr.Zero, 0,
             IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero,
             0, 1, 0);
@@ -244,13 +244,13 @@ public class MapLibreMapController : IMapLibreMapController
 
     private static void RespondNoContent(ulong requestId)
     {
-        NativeMethods.HttpRespond(requestId, NativeMethods.MbglHttpError.None,
+        NativeMethods.HttpRespond(requestId, NativeMethods.MlnHttpError.None,
             IntPtr.Zero, 204, IntPtr.Zero, 0,
             IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero,
             1, 0, 0);
     }
 
-    private static void RespondError(ulong requestId, NativeMethods.MbglHttpError error, string message)
+    private static void RespondError(ulong requestId, NativeMethods.MlnHttpError error, string message)
     {
         var msgBytes = ToNullTerminatedUtf8(message);
         unsafe
@@ -290,10 +290,10 @@ public class MapLibreMapController : IMapLibreMapController
     private readonly float   _pixelRatio;
 
     private IntPtr        _nativeWindow = IntPtr.Zero;
-    private MbglRunLoop?  _runLoop;
-    private MbglFrontend? _frontend;
-    private MbglMap?      _map;
-    private MbglStyle?    _style;
+    private MlnRunLoop?  _runLoop;
+    private MlnFrontend? _frontend;
+    private MlnMap?      _map;
+    private MlnStyle?    _style;
     private bool          _styleReady;
 
     // Render-loop state. mbgl's frontend.update() calls the render callback
@@ -364,7 +364,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     // Location indicator puck (portable style layer, shared with Windows impl)
     private const string LocIndLayerId = "__mln_location_indicator";
-    private MbglLayer? _locIndLayer;
+    private MlnLayer? _locIndLayer;
     private readonly record struct LocIndParams(double Lat, double Lon, float Bearing, float AccuracyM);
     private LocIndParams? _pendingLocInd;
 
@@ -839,13 +839,13 @@ public class MapLibreMapController : IMapLibreMapController
 
     private void InitMaplibre(int w, int h)
     {
-        _runLoop  = new MbglRunLoop();
-        _frontend = new MbglFrontend(_nativeWindow, IntPtr.Zero, w, h, _pixelRatio,
+        _runLoop  = new MlnRunLoop();
+        _frontend = new MlnFrontend(_nativeWindow, IntPtr.Zero, w, h, _pixelRatio,
             () => _renderNeedsUpdate = true);
         // Persistent tile/resource cache (mbgl's default is :memory:), shared
-        // with MbglOfflineManager via MbglCache.DefaultPath.
-        _map      = new MbglMap(_frontend, _runLoop,
-                                cachePath: MbglCache.DefaultPath,
+        // with MlnOfflineManager via MlnCache.DefaultPath.
+        _map      = new MlnMap(_frontend, _runLoop,
+                                cachePath: MlnCache.DefaultPath,
                                 pixelRatio: _pixelRatio,
                                 observer: OnMapObserverEvent);
         _map.SetSize(w, h);
@@ -1277,7 +1277,7 @@ public class MapLibreMapController : IMapLibreMapController
         var parts = new System.Collections.Generic.List<string>(_style.GetSourceAttributions());
         if (!string.IsNullOrWhiteSpace(_customAttribution))
             parts.Add(_customAttribution!);
-        var attributions = MbglStyle.EnsureMapLibreAttribution(parts);
+        var attributions = MlnStyle.EnsureMapLibreAttribution(parts);
 
         if (attributions.Count == 0 || !_showAttrControl)
         {
@@ -1620,7 +1620,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     // -- Helpers ---------------------------------------------------------------
 
-    private static void ApplyLayerMeta(MbglLayer layer, string? sourceLayer,
+    private static void ApplyLayerMeta(MlnLayer layer, string? sourceLayer,
         float minZoom, float maxZoom)
     {
         if (sourceLayer != null) layer.SetSourceLayer(sourceLayer);
@@ -1628,7 +1628,7 @@ public class MapLibreMapController : IMapLibreMapController
         if (maxZoom > 0) layer.SetMaxZoom(maxZoom);
     }
 
-    private void ApplyProperties(MbglLayer layer, IDictionary<string, object?> props)
+    private void ApplyProperties(MlnLayer layer, IDictionary<string, object?> props)
     {
         foreach (var (k, v) in props)
         {

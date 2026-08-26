@@ -1,14 +1,14 @@
 ﻿/**
- * MbglRunLoop.cs — Typed wrapper around mln_runloop_t.
+ * MlnRunLoop.cs — Typed wrapper around mln_runloop_t.
  */
 namespace MapLibreNative.Maui;
 
 /// <summary>Wraps <c>mln_runloop_t*</c>. Must be created and disposed on the map thread.</summary>
-public sealed class MbglRunLoop : IDisposable
+public sealed class MlnRunLoop : IDisposable
 {
     internal IntPtr Handle { get; private set; }
 
-    public MbglRunLoop()
+    public MlnRunLoop()
     {
         Handle = NativeMethods.RunLoopCreate();
         if (Handle == IntPtr.Zero)

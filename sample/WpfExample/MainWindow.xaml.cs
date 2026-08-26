@@ -648,7 +648,7 @@ public partial class MainWindow : Window
         try { File.Delete(cachePath); } catch { /* fresh DB preferred, stale is fine */ }
         try
         {
-            using var mgr = new MapLibreNative.Maui.MbglOfflineManager(cachePath);
+            using var mgr = new MapLibreNative.Maui.MlnOfflineManager(cachePath);
 
             int progressEvents = 0;
             // The observer's Complete flag is the authoritative completion signal —

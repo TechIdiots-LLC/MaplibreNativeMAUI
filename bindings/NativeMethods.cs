@@ -10,7 +10,7 @@ namespace MapLibreNative.Maui;
 
 /// <summary>Return status from every mutating C ABI function. Non-zero means failure;
 /// call <see cref="NativeMethods.GetLastError"/> for a diagnostic message.</summary>
-public enum MbglStatus : int
+public enum MlnStatus : int
 {
     Ok           =  0,
     InvalidArg   = -1,
@@ -21,7 +21,7 @@ public enum MbglStatus : int
 }
 
 /// <summary>Log severity levels emitted by MapLibre Native.</summary>
-public enum MbglLogLevel : int
+public enum MlnLogLevel : int
 {
     Debug   = 0,
     Info    = 1,
@@ -31,7 +31,7 @@ public enum MbglLogLevel : int
 
 /// <summary>Bitmask of debug visualisation overlays. OR together the flags you want.</summary>
 [Flags]
-public enum MbglDebugOptions : int
+public enum MlnDebugOptions : int
 {
     None        = 0,
     TileBorders = 1 << 1,
@@ -43,7 +43,7 @@ public enum MbglDebugOptions : int
     DepthBuffer = 1 << 7,
 }
 
-/// <summary>Raw P/Invoke bindings — prefer the typed wrappers in MbglMap etc.</summary>
+/// <summary>Raw P/Invoke bindings — prefer the typed wrappers in MlnMap etc.</summary>
 public static partial class NativeMethods
 {
 #if IOS || MACCATALYST
@@ -101,7 +101,7 @@ public static partial class NativeMethods
     /// <summary>Log intercept callback. Return non-zero to consume the record (suppress default output).</summary>
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     public delegate int LogFn(
-        MbglLogLevel level,
+        MlnLogLevel level,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string category,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string message,
         IntPtr userdata);
@@ -119,13 +119,13 @@ public static partial class NativeMethods
 
     /// <summary>Install a process-global log callback. Pass null to restore default logging.</summary>
     [LibraryImport(Lib, EntryPoint = "mln_install_log_callback")]
-    public static partial MbglStatus InstallLogCallback(LogFn? fn, IntPtr userdata);
+    public static partial MlnStatus InstallLogCallback(LogFn? fn, IntPtr userdata);
 
     // ── Network status ────────────────────────────────────────────────────────
     /// <summary>Toggle the process-global network state. Pass 0 to force offline
     /// mode (serve only cached resources), 1 to restore online mode.</summary>
     [LibraryImport(Lib, EntryPoint = "mln_network_status_set")]
-    public static partial MbglStatus NetworkStatusSet(int online);
+    public static partial MlnStatus NetworkStatusSet(int online);
 
     /// <summary>Returns 1 if the network is in online mode, 0 if offline.</summary>
     [LibraryImport(Lib, EntryPoint = "mln_network_status_get")]
@@ -136,10 +136,10 @@ public static partial class NativeMethods
     public static partial IntPtr RunLoopCreate();
 
     [LibraryImport(Lib, EntryPoint = "mln_runloop_destroy")]
-    public static partial MbglStatus RunLoopDestroy(IntPtr rl);
+    public static partial MlnStatus RunLoopDestroy(IntPtr rl);
 
     [LibraryImport(Lib, EntryPoint = "mln_runloop_run_once")]
-    public static partial MbglStatus RunLoopRunOnce(IntPtr rl);
+    public static partial MlnStatus RunLoopRunOnce(IntPtr rl);
 
     // ── Render backend ────────────────────────────────────────────────────────
     // The native returns a pointer to a STATIC string literal it owns. Marshalling the
@@ -178,16 +178,16 @@ public static partial class NativeMethods
 
     /// <summary>Copies the last rendered frame as premultiplied RGBA into outBuf (offscreen/Vulkan).</summary>
     [LibraryImport(Lib, EntryPoint = "mln_frontend_read_pixels")]
-    public static partial MbglStatus FrontendReadPixels(IntPtr fe, IntPtr outBuf, nuint bufLen);
+    public static partial MlnStatus FrontendReadPixels(IntPtr fe, IntPtr outBuf, nuint bufLen);
 
     [LibraryImport(Lib, EntryPoint = "mln_frontend_destroy")]
-    public static partial MbglStatus FrontendDestroy(IntPtr fe);
+    public static partial MlnStatus FrontendDestroy(IntPtr fe);
 
     [LibraryImport(Lib, EntryPoint = "mln_frontend_render")]
-    public static partial MbglStatus FrontendRender(IntPtr fe);
+    public static partial MlnStatus FrontendRender(IntPtr fe);
 
     [LibraryImport(Lib, EntryPoint = "mln_frontend_set_size")]
-    public static partial MbglStatus FrontendSetSize(IntPtr fe, int widthPx, int heightPx);
+    public static partial MlnStatus FrontendSetSize(IntPtr fe, int widthPx, int heightPx);
 
     [LibraryImport(Lib, EntryPoint = "mln_frontend_get_native_view")]
     public static partial IntPtr FrontendGetNativeView(IntPtr fe);
@@ -220,24 +220,24 @@ public static partial class NativeMethods
         IntPtr  observerUserdata);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_destroy")]
-    public static partial MbglStatus MapDestroy(IntPtr map);
+    public static partial MlnStatus MapDestroy(IntPtr map);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_set_style_url",
         StringMarshalling = StringMarshalling.Utf8)]
-    public static partial MbglStatus MapSetStyleUrl(IntPtr map, string url);
+    public static partial MlnStatus MapSetStyleUrl(IntPtr map, string url);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_set_style_json",
         StringMarshalling = StringMarshalling.Utf8)]
-    public static partial MbglStatus MapSetStyleJson(IntPtr map, string json);
+    public static partial MlnStatus MapSetStyleJson(IntPtr map, string json);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_set_size")]
-    public static partial MbglStatus MapSetSize(IntPtr map, int widthPx, int heightPx);
+    public static partial MlnStatus MapSetSize(IntPtr map, int widthPx, int heightPx);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_jump_to")]
-    public static partial MbglStatus MapJumpTo(IntPtr map, double lat, double lon, double zoom, double bearing, double pitch);
+    public static partial MlnStatus MapJumpTo(IntPtr map, double lat, double lon, double zoom, double bearing, double pitch);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_ease_to")]
-    public static partial MbglStatus MapEaseTo(IntPtr map, double lat, double lon, double zoom, double bearing, double pitch, long durationMs);
+    public static partial MlnStatus MapEaseTo(IntPtr map, double lat, double lon, double zoom, double bearing, double pitch, long durationMs);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_get_zoom")]
     public static partial double MapGetZoom(IntPtr map);
@@ -252,84 +252,84 @@ public static partial class NativeMethods
     public static partial void MapGetCenter(IntPtr map, out double lat, out double lon);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_set_min_zoom")]
-    public static partial MbglStatus MapSetMinZoom(IntPtr map, double zoom);
+    public static partial MlnStatus MapSetMinZoom(IntPtr map, double zoom);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_set_max_zoom")]
-    public static partial MbglStatus MapSetMaxZoom(IntPtr map, double zoom);
+    public static partial MlnStatus MapSetMaxZoom(IntPtr map, double zoom);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_on_scroll")]
-    public static partial MbglStatus MapOnScroll(IntPtr map, double delta, double cx, double cy);
+    public static partial MlnStatus MapOnScroll(IntPtr map, double delta, double cx, double cy);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_on_double_tap")]
-    public static partial MbglStatus MapOnDoubleTap(IntPtr map, double x, double y);
+    public static partial MlnStatus MapOnDoubleTap(IntPtr map, double x, double y);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_on_pan_start")]
-    public static partial MbglStatus MapOnPanStart(IntPtr map, double x, double y);
+    public static partial MlnStatus MapOnPanStart(IntPtr map, double x, double y);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_on_pan_move")]
-    public static partial MbglStatus MapOnPanMove(IntPtr map, double dx, double dy);
+    public static partial MlnStatus MapOnPanMove(IntPtr map, double dx, double dy);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_on_pan_end")]
-    public static partial MbglStatus MapOnPanEnd(IntPtr map);
+    public static partial MlnStatus MapOnPanEnd(IntPtr map);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_on_pinch")]
-    public static partial MbglStatus MapOnPinch(IntPtr map, double scaleFactor, double cx, double cy);
+    public static partial MlnStatus MapOnPinch(IntPtr map, double scaleFactor, double cx, double cy);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_trigger_repaint")]
-    public static partial MbglStatus MapTriggerRepaint(IntPtr map);
+    public static partial MlnStatus MapTriggerRepaint(IntPtr map);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_cancel_transitions")]
-    public static partial MbglStatus MapCancelTransitions(IntPtr map);
+    public static partial MlnStatus MapCancelTransitions(IntPtr map);
 
     // ── Map – debug overlays ──────────────────────────────────────────────────
     [LibraryImport(Lib, EntryPoint = "mln_map_get_debug_options")]
     public static partial int MapGetDebugOptions(IntPtr map);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_set_debug_options")]
-    public static partial MbglStatus MapSetDebugOptions(IntPtr map, int options);
+    public static partial MlnStatus MapSetDebugOptions(IntPtr map, int options);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_is_fully_loaded")]
     public static partial int MapIsFullyLoaded(IntPtr map);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_fly_to")]
-    public static partial MbglStatus MapFlyTo(IntPtr map, double lat, double lon,
+    public static partial MlnStatus MapFlyTo(IntPtr map, double lat, double lon,
         double zoom, double bearing, double pitch, long durationMs);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_set_bounds")]
-    public static partial MbglStatus MapSetBounds(IntPtr map,
+    public static partial MlnStatus MapSetBounds(IntPtr map,
         double latSw, double lonSw, double latNe, double lonNe,
         double minZoom, double maxZoom, double minPitch, double maxPitch);
 
     // ── Map – camera with edge padding ────────────────────────────────────────
     [LibraryImport(Lib, EntryPoint = "mln_map_jump_to_padded")]
-    public static partial MbglStatus MapJumpToPadded(IntPtr map,
+    public static partial MlnStatus MapJumpToPadded(IntPtr map,
         double lat, double lon, double zoom, double bearing, double pitch,
         double padTop, double padLeft, double padBottom, double padRight);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_ease_to_padded")]
-    public static partial MbglStatus MapEaseToPadded(IntPtr map,
+    public static partial MlnStatus MapEaseToPadded(IntPtr map,
         double lat, double lon, double zoom, double bearing, double pitch,
         double padTop, double padLeft, double padBottom, double padRight,
         long durationMs);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_fly_to_padded")]
-    public static partial MbglStatus MapFlyToPadded(IntPtr map,
+    public static partial MlnStatus MapFlyToPadded(IntPtr map,
         double lat, double lon, double zoom, double bearing, double pitch,
         double padTop, double padLeft, double padBottom, double padRight,
         long durationMs);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_get_camera")]
-    public static partial MbglStatus MapGetCamera(IntPtr map,
+    public static partial MlnStatus MapGetCamera(IntPtr map,
         double padTop, double padLeft, double padBottom, double padRight,
         out double outLat, out double outLon,
         out double outZoom, out double outBearing, out double outPitch);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_scale_by")]
-    public static partial MbglStatus MapScaleBy(IntPtr map,
+    public static partial MlnStatus MapScaleBy(IntPtr map,
         double scale, double anchorX, double anchorY, long durationMs);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_camera_for_bounds")]
-    public static partial MbglStatus MapCameraForBounds(IntPtr map,
+    public static partial MlnStatus MapCameraForBounds(IntPtr map,
         double latSw, double lonSw, double latNe, double lonNe,
         double padTop, double padLeft, double padBottom, double padRight,
         out double outLat, out double outLon,
@@ -344,7 +344,7 @@ public static partial class NativeMethods
         out double outLat, out double outLon);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_set_projection_mode")]
-    public static partial MbglStatus MapSetProjectionMode(IntPtr map,
+    public static partial MlnStatus MapSetProjectionMode(IntPtr map,
         int axonometric, double xSkew, double ySkew);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_query_rendered_features_at_point",
@@ -390,11 +390,11 @@ public static partial class NativeMethods
 
     [LibraryImport(Lib, EntryPoint = "mln_geojson_source_set_data",
         StringMarshalling = StringMarshalling.Utf8)]
-    public static partial MbglStatus GeoJsonSourceSetData(IntPtr source, string geojson);
+    public static partial MlnStatus GeoJsonSourceSetData(IntPtr source, string geojson);
 
     [LibraryImport(Lib, EntryPoint = "mln_geojson_source_set_url",
         StringMarshalling = StringMarshalling.Utf8)]
-    public static partial MbglStatus GeoJsonSourceSetUrl(IntPtr source, string url);
+    public static partial MlnStatus GeoJsonSourceSetUrl(IntPtr source, string url);
 
     [LibraryImport(Lib, EntryPoint = "mln_style_add_vector_source",
         StringMarshalling = StringMarshalling.Utf8)]
@@ -416,7 +416,7 @@ public static partial class NativeMethods
 
     [LibraryImport(Lib, EntryPoint = "mln_style_remove_source",
         StringMarshalling = StringMarshalling.Utf8)]
-    public static partial MbglStatus StyleRemoveSource(IntPtr style, string sourceId);
+    public static partial MlnStatus StyleRemoveSource(IntPtr style, string sourceId);
 
     [LibraryImport(Lib, EntryPoint = "mln_style_has_source",
         StringMarshalling = StringMarshalling.Utf8)]
@@ -469,26 +469,26 @@ public static partial class NativeMethods
 
     [LibraryImport(Lib, EntryPoint = "mln_style_add_image",
         StringMarshalling = StringMarshalling.Utf8)]
-    public static unsafe partial MbglStatus StyleAddImage(IntPtr style, string imageId,
+    public static unsafe partial MlnStatus StyleAddImage(IntPtr style, string imageId,
         int width, int height, float pixelRatio, int sdf, byte* rgbaPremultiplied);
 
     [LibraryImport(Lib, EntryPoint = "mln_style_remove_image",
         StringMarshalling = StringMarshalling.Utf8)]
-    public static partial MbglStatus StyleRemoveImage(IntPtr style, string imageId);
+    public static partial MlnStatus StyleRemoveImage(IntPtr style, string imageId);
 
     [LibraryImport(Lib, EntryPoint = "mln_style_get_json")]
     public static partial IntPtr StyleGetJson(IntPtr style);
 
     [LibraryImport(Lib, EntryPoint = "mln_style_set_transition")]
-    public static partial MbglStatus StyleSetTransition(IntPtr style, long durationMs, long delayMs);
+    public static partial MlnStatus StyleSetTransition(IntPtr style, long durationMs, long delayMs);
 
     [LibraryImport(Lib, EntryPoint = "mln_style_set_light_property",
         StringMarshalling = StringMarshalling.Utf8)]
-    public static partial MbglStatus StyleSetLightProperty(IntPtr style, string name, string valueJson);
+    public static partial MlnStatus StyleSetLightProperty(IntPtr style, string name, string valueJson);
 
     [LibraryImport(Lib, EntryPoint = "mln_style_remove_layer",
         StringMarshalling = StringMarshalling.Utf8)]
-    public static partial MbglStatus StyleRemoveLayer(IntPtr style, string layerId);
+    public static partial MlnStatus StyleRemoveLayer(IntPtr style, string layerId);
 
     [LibraryImport(Lib, EntryPoint = "mln_style_has_layer",
         StringMarshalling = StringMarshalling.Utf8)]
@@ -496,32 +496,32 @@ public static partial class NativeMethods
 
     [LibraryImport(Lib, EntryPoint = "mln_layer_set_source_layer",
         StringMarshalling = StringMarshalling.Utf8)]
-    public static partial MbglStatus LayerSetSourceLayer(IntPtr layer, string sourceLayer);
+    public static partial MlnStatus LayerSetSourceLayer(IntPtr layer, string sourceLayer);
 
     [LibraryImport(Lib, EntryPoint = "mln_layer_set_filter",
         StringMarshalling = StringMarshalling.Utf8)]
-    public static partial MbglStatus LayerSetFilter(IntPtr layer, string filterJson);
+    public static partial MlnStatus LayerSetFilter(IntPtr layer, string filterJson);
 
     [LibraryImport(Lib, EntryPoint = "mln_layer_set_min_zoom")]
-    public static partial MbglStatus LayerSetMinZoom(IntPtr layer, float zoom);
+    public static partial MlnStatus LayerSetMinZoom(IntPtr layer, float zoom);
 
     [LibraryImport(Lib, EntryPoint = "mln_layer_set_max_zoom")]
-    public static partial MbglStatus LayerSetMaxZoom(IntPtr layer, float zoom);
+    public static partial MlnStatus LayerSetMaxZoom(IntPtr layer, float zoom);
 
     [LibraryImport(Lib, EntryPoint = "mln_layer_set_visibility")]
-    public static partial MbglStatus LayerSetVisibility(IntPtr layer, int visible);
+    public static partial MlnStatus LayerSetVisibility(IntPtr layer, int visible);
 
     [LibraryImport(Lib, EntryPoint = "mln_layer_set_paint_property",
         StringMarshalling = StringMarshalling.Utf8)]
-    public static partial MbglStatus LayerSetPaintProperty(IntPtr layer, string name, string valueJson);
+    public static partial MlnStatus LayerSetPaintProperty(IntPtr layer, string name, string valueJson);
 
     [LibraryImport(Lib, EntryPoint = "mln_layer_set_layout_property",
         StringMarshalling = StringMarshalling.Utf8)]
-    public static partial MbglStatus LayerSetLayoutProperty(IntPtr layer, string name, string valueJson);
+    public static partial MlnStatus LayerSetLayoutProperty(IntPtr layer, string name, string valueJson);
 
     // ── Map – gesture / interactive movement (Tier 1) ─────────────────────────
     [LibraryImport(Lib, EntryPoint = "mln_map_set_gesture_in_progress")]
-    public static partial MbglStatus MapSetGestureInProgress(IntPtr map, int inProgress);
+    public static partial MlnStatus MapSetGestureInProgress(IntPtr map, int inProgress);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_is_gesture_in_progress")]
     public static partial int MapIsGestureInProgress(IntPtr map);
@@ -536,23 +536,23 @@ public static partial class NativeMethods
     public static partial int MapIsPanning(IntPtr map);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_move_by")]
-    public static partial MbglStatus MapMoveBy(IntPtr map, double dx, double dy, long durationMs);
+    public static partial MlnStatus MapMoveBy(IntPtr map, double dx, double dy, long durationMs);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_rotate_by")]
-    public static partial MbglStatus MapRotateBy(IntPtr map, double x0, double y0, double x1, double y1);
+    public static partial MlnStatus MapRotateBy(IntPtr map, double x0, double y0, double x1, double y1);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_pitch_by")]
-    public static partial MbglStatus MapPitchBy(IntPtr map, double deltaDegrees, long durationMs);
+    public static partial MlnStatus MapPitchBy(IntPtr map, double deltaDegrees, long durationMs);
 
     // ── Map – option setters (Tier 1) ─────────────────────────────────────────
     [LibraryImport(Lib, EntryPoint = "mln_map_set_north_orientation")]
-    public static partial MbglStatus MapSetNorthOrientation(IntPtr map, int orientation);
+    public static partial MlnStatus MapSetNorthOrientation(IntPtr map, int orientation);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_set_constrain_mode")]
-    public static partial MbglStatus MapSetConstrainMode(IntPtr map, int mode);
+    public static partial MlnStatus MapSetConstrainMode(IntPtr map, int mode);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_set_viewport_mode")]
-    public static partial MbglStatus MapSetViewportMode(IntPtr map, int mode);
+    public static partial MlnStatus MapSetViewportMode(IntPtr map, int mode);
 
     // ── Map – bounds read-back (Tier 1) ───────────────────────────────────────
     [LibraryImport(Lib, EntryPoint = "mln_map_get_bounds")]
@@ -564,36 +564,36 @@ public static partial class NativeMethods
 
     // ── Map – tile LOD controls (Tier 2) ─────────────────────────────────────
     [LibraryImport(Lib, EntryPoint = "mln_map_set_prefetch_zoom_delta")]
-    public static partial MbglStatus MapSetPrefetchZoomDelta(IntPtr map, int delta);
+    public static partial MlnStatus MapSetPrefetchZoomDelta(IntPtr map, int delta);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_get_prefetch_zoom_delta")]
     public static partial int MapGetPrefetchZoomDelta(IntPtr map);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_set_tile_lod_min_radius")]
-    public static partial MbglStatus MapSetTileLodMinRadius(IntPtr map, double radius);
+    public static partial MlnStatus MapSetTileLodMinRadius(IntPtr map, double radius);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_set_tile_lod_scale")]
-    public static partial MbglStatus MapSetTileLodScale(IntPtr map, double scale);
+    public static partial MlnStatus MapSetTileLodScale(IntPtr map, double scale);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_set_tile_lod_pitch_threshold")]
-    public static partial MbglStatus MapSetTileLodPitchThreshold(IntPtr map, double thresholdRad);
+    public static partial MlnStatus MapSetTileLodPitchThreshold(IntPtr map, double thresholdRad);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_set_tile_lod_zoom_shift")]
-    public static partial MbglStatus MapSetTileLodZoomShift(IntPtr map, double shift);
+    public static partial MlnStatus MapSetTileLodZoomShift(IntPtr map, double shift);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_set_tile_lod_mode")]
-    public static partial MbglStatus MapSetTileLodMode(IntPtr map, int mode);
+    public static partial MlnStatus MapSetTileLodMode(IntPtr map, int mode);
 
     // ── Map – 3D terrain progressive-loading budget ─────────────────────
     [LibraryImport(Lib, EntryPoint = "mln_map_set_terrain_load_mode")]
-    public static partial MbglStatus MapSetTerrainLoadMode(IntPtr map, int mode);
+    public static partial MlnStatus MapSetTerrainLoadMode(IntPtr map, int mode);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_get_terrain_load_mode")]
     public static partial int MapGetTerrainLoadMode(IntPtr map);
 
     // ── Map – camera for point set (Tier 2) ───────────────────────────────────
     [LibraryImport(Lib, EntryPoint = "mln_map_camera_for_latlngs")]
-    public static unsafe partial MbglStatus MapCameraForLatLngs(IntPtr map,
+    public static unsafe partial MlnStatus MapCameraForLatLngs(IntPtr map,
         double* latLngs, int count,
         double padTop, double padLeft, double padBottom, double padRight,
         out double outLat, out double outLon,
@@ -601,11 +601,11 @@ public static partial class NativeMethods
 
     // ── Map – batch projection (Tier 2) ───────────────────────────────────────
     [LibraryImport(Lib, EntryPoint = "mln_map_pixels_for_latlngs")]
-    public static unsafe partial MbglStatus MapPixelsForLatLngs(IntPtr map,
+    public static unsafe partial MlnStatus MapPixelsForLatLngs(IntPtr map,
         double* latLngs, int count, double* outXy);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_latlngs_for_pixels")]
-    public static unsafe partial MbglStatus MapLatLngsForPixels(IntPtr map,
+    public static unsafe partial MlnStatus MapLatLngsForPixels(IntPtr map,
         double* xy, int count, double* outLatLngs);
 
     // ── Style – enumeration (Tier 1) ─────────────────────────────────────────
@@ -647,20 +647,20 @@ public static partial class NativeMethods
 
     // ── Viewport bounds ────────────────────────────────────────────────────────
     [LibraryImport(Lib, EntryPoint = "mln_map_latlng_bounds_for_camera")]
-    public static unsafe partial MbglStatus MapLatLngBoundsForCamera(IntPtr map,
+    public static unsafe partial MlnStatus MapLatLngBoundsForCamera(IntPtr map,
         double* outLatSw, double* outLonSw, double* outLatNe, double* outLonNe);
 
     // ── Memory / debug ─────────────────────────────────────────────────────────
     [LibraryImport(Lib, EntryPoint = "mln_map_reduce_memory_use")]
-    public static partial MbglStatus MapReduceMemoryUse(IntPtr map);
+    public static partial MlnStatus MapReduceMemoryUse(IntPtr map);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_dump_debug_logs")]
-    public static partial MbglStatus MapDumpDebugLogs(IntPtr map);
+    public static partial MlnStatus MapDumpDebugLogs(IntPtr map);
 
     // ── Feature state ──────────────────────────────────────────────────────────
     [LibraryImport(Lib, EntryPoint = "mln_map_set_feature_state",
         StringMarshalling = StringMarshalling.Utf8)]
-    public static partial MbglStatus MapSetFeatureState(IntPtr map,
+    public static partial MlnStatus MapSetFeatureState(IntPtr map,
         string sourceId, string? sourceLayerId, string featureId, string stateJson);
 
     [LibraryImport(Lib, EntryPoint = "mln_map_get_feature_state",
@@ -670,13 +670,13 @@ public static partial class NativeMethods
 
     [LibraryImport(Lib, EntryPoint = "mln_map_remove_feature_state",
         StringMarshalling = StringMarshalling.Utf8)]
-    public static partial MbglStatus MapRemoveFeatureState(IntPtr map,
+    public static partial MlnStatus MapRemoveFeatureState(IntPtr map,
         string sourceId, string? sourceLayerId, string? featureId, string? stateKey);
 
     // ── Style – generic JSON add ───────────────────────────────────────────────
     [LibraryImport(Lib, EntryPoint = "mln_style_add_source_json",
         StringMarshalling = StringMarshalling.Utf8)]
-    public static partial MbglStatus StyleAddSourceJson(IntPtr style, string sourceId, string sourceJson);
+    public static partial MlnStatus StyleAddSourceJson(IntPtr style, string sourceId, string sourceJson);
 
     [LibraryImport(Lib, EntryPoint = "mln_style_add_layer_json",
         StringMarshalling = StringMarshalling.Utf8)]
@@ -685,10 +685,10 @@ public static partial class NativeMethods
     // ── Style – 3D terrain ─────────────────────────────────────────────────────
     [LibraryImport(Lib, EntryPoint = "mln_style_set_terrain",
         StringMarshalling = StringMarshalling.Utf8)]
-    public static partial MbglStatus StyleSetTerrain(IntPtr style, string sourceId, float exaggeration);
+    public static partial MlnStatus StyleSetTerrain(IntPtr style, string sourceId, float exaggeration);
 
     [LibraryImport(Lib, EntryPoint = "mln_style_remove_terrain")]
-    public static partial MbglStatus StyleRemoveTerrain(IntPtr style);
+    public static partial MlnStatus StyleRemoveTerrain(IntPtr style);
 
     [LibraryImport(Lib, EntryPoint = "mln_style_is_terrain_enabled")]
     public static partial int StyleIsTerrainEnabled(IntPtr style);
@@ -718,7 +718,7 @@ public static partial class NativeMethods
         IntPtr      userdata);
 
     /// <summary>Error codes for <see cref="HttpRespond"/>.</summary>
-    public enum MbglHttpError : int
+    public enum MlnHttpError : int
     {
         None       = 0,
         NotFound   = 2,
@@ -758,7 +758,7 @@ public static partial class NativeMethods
     [DllImport(Lib, EntryPoint = "mln_http_respond")]
     public static extern void HttpRespond(
         ulong         requestId,
-        MbglHttpError error,
+        MlnHttpError error,
         IntPtr        errorMessage,
         int           httpStatus,
         IntPtr        data,
@@ -782,14 +782,14 @@ public static partial class NativeMethods
     /// <summary>One-shot completion callback for offline operations with no payload.</summary>
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     public delegate void OfflineDoneFn(
-        MbglStatus status,
+        MlnStatus status,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string? errorMessage,
         IntPtr userdata);
 
     /// <summary>One-shot callback delivering a JSON array of offline regions.</summary>
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     public delegate void OfflineRegionsFn(
-        MbglStatus status,
+        MlnStatus status,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string? errorMessage,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string? regionsJson,
         IntPtr userdata);
@@ -797,7 +797,7 @@ public static partial class NativeMethods
     /// <summary>One-shot callback delivering a region status JSON object.</summary>
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     public delegate void OfflineStatusFn(
-        MbglStatus status,
+        MlnStatus status,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string? errorMessage,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string? statusJson,
         IntPtr userdata);
@@ -832,14 +832,14 @@ public static partial class NativeMethods
         string? cachePath, string? assetPath, string? apiKey, ulong maxCacheSizeBytes);
 
     [LibraryImport(Lib, EntryPoint = "mln_offline_manager_destroy")]
-    public static partial MbglStatus OfflineManagerDestroy(IntPtr m);
+    public static partial MlnStatus OfflineManagerDestroy(IntPtr m);
 
     [LibraryImport(Lib, EntryPoint = "mln_offline_list_regions")]
-    public static partial MbglStatus OfflineListRegions(IntPtr m, OfflineRegionsFn cb, IntPtr userdata);
+    public static partial MlnStatus OfflineListRegions(IntPtr m, OfflineRegionsFn cb, IntPtr userdata);
 
     [LibraryImport(Lib, EntryPoint = "mln_offline_create_region",
         StringMarshalling = StringMarshalling.Utf8)]
-    public static partial MbglStatus OfflineCreateRegion(IntPtr m,
+    public static partial MlnStatus OfflineCreateRegion(IntPtr m,
         string styleUrl,
         double latSw, double lonSw, double latNe, double lonNe,
         double minZoom, double maxZoom, float pixelRatio, int includeIdeographs,
@@ -848,33 +848,33 @@ public static partial class NativeMethods
 
     [LibraryImport(Lib, EntryPoint = "mln_offline_create_region_geometry",
         StringMarshalling = StringMarshalling.Utf8)]
-    public static partial MbglStatus OfflineCreateRegionGeometry(IntPtr m,
+    public static partial MlnStatus OfflineCreateRegionGeometry(IntPtr m,
         string styleUrl, string geometryGeoJson,
         double minZoom, double maxZoom, float pixelRatio, int includeIdeographs,
         byte[]? metadata, int metadataLen,
         OfflineRegionsFn cb, IntPtr userdata);
 
     [LibraryImport(Lib, EntryPoint = "mln_offline_delete_region")]
-    public static partial MbglStatus OfflineDeleteRegion(IntPtr m, long regionId,
+    public static partial MlnStatus OfflineDeleteRegion(IntPtr m, long regionId,
         OfflineDoneFn cb, IntPtr userdata);
 
     [LibraryImport(Lib, EntryPoint = "mln_offline_invalidate_region")]
-    public static partial MbglStatus OfflineInvalidateRegion(IntPtr m, long regionId,
+    public static partial MlnStatus OfflineInvalidateRegion(IntPtr m, long regionId,
         OfflineDoneFn cb, IntPtr userdata);
 
     [LibraryImport(Lib, EntryPoint = "mln_offline_set_region_download_state")]
-    public static partial MbglStatus OfflineSetRegionDownloadState(IntPtr m, long regionId, int active);
+    public static partial MlnStatus OfflineSetRegionDownloadState(IntPtr m, long regionId, int active);
 
     [LibraryImport(Lib, EntryPoint = "mln_offline_set_region_observer")]
-    public static partial MbglStatus OfflineSetRegionObserver(IntPtr m, long regionId,
+    public static partial MlnStatus OfflineSetRegionObserver(IntPtr m, long regionId,
         OfflineProgressFn? progress, OfflineRegionErrorFn? error, IntPtr userdata);
 
     [LibraryImport(Lib, EntryPoint = "mln_offline_get_region_status")]
-    public static partial MbglStatus OfflineGetRegionStatus(IntPtr m, long regionId,
+    public static partial MlnStatus OfflineGetRegionStatus(IntPtr m, long regionId,
         OfflineStatusFn cb, IntPtr userdata);
 
     [LibraryImport(Lib, EntryPoint = "mln_offline_update_region_metadata")]
-    public static partial MbglStatus OfflineUpdateRegionMetadata(IntPtr m, long regionId,
+    public static partial MlnStatus OfflineUpdateRegionMetadata(IntPtr m, long regionId,
         byte[]? metadata, int metadataLen, OfflineDoneFn cb, IntPtr userdata);
 
     [LibraryImport(Lib, EntryPoint = "mln_offline_region_get_metadata")]
@@ -882,28 +882,28 @@ public static partial class NativeMethods
 
     [LibraryImport(Lib, EntryPoint = "mln_offline_merge_database",
         StringMarshalling = StringMarshalling.Utf8)]
-    public static partial MbglStatus OfflineMergeDatabase(IntPtr m, string sideDbPath,
+    public static partial MlnStatus OfflineMergeDatabase(IntPtr m, string sideDbPath,
         OfflineRegionsFn cb, IntPtr userdata);
 
     [LibraryImport(Lib, EntryPoint = "mln_offline_set_tile_count_limit")]
-    public static partial MbglStatus OfflineSetTileCountLimit(IntPtr m, ulong limit);
+    public static partial MlnStatus OfflineSetTileCountLimit(IntPtr m, ulong limit);
 
     [LibraryImport(Lib, EntryPoint = "mln_offline_set_maximum_ambient_cache_size")]
-    public static partial MbglStatus OfflineSetMaximumAmbientCacheSize(IntPtr m, ulong bytes,
+    public static partial MlnStatus OfflineSetMaximumAmbientCacheSize(IntPtr m, ulong bytes,
         OfflineDoneFn cb, IntPtr userdata);
 
     [LibraryImport(Lib, EntryPoint = "mln_offline_clear_ambient_cache")]
-    public static partial MbglStatus OfflineClearAmbientCache(IntPtr m, OfflineDoneFn cb, IntPtr userdata);
+    public static partial MlnStatus OfflineClearAmbientCache(IntPtr m, OfflineDoneFn cb, IntPtr userdata);
 
     [LibraryImport(Lib, EntryPoint = "mln_offline_invalidate_ambient_cache")]
-    public static partial MbglStatus OfflineInvalidateAmbientCache(IntPtr m, OfflineDoneFn cb, IntPtr userdata);
+    public static partial MlnStatus OfflineInvalidateAmbientCache(IntPtr m, OfflineDoneFn cb, IntPtr userdata);
 
     [LibraryImport(Lib, EntryPoint = "mln_offline_pack_database")]
-    public static partial MbglStatus OfflinePackDatabase(IntPtr m, OfflineDoneFn cb, IntPtr userdata);
+    public static partial MlnStatus OfflinePackDatabase(IntPtr m, OfflineDoneFn cb, IntPtr userdata);
 
     [LibraryImport(Lib, EntryPoint = "mln_offline_reset_database")]
-    public static partial MbglStatus OfflineResetDatabase(IntPtr m, OfflineDoneFn cb, IntPtr userdata);
+    public static partial MlnStatus OfflineResetDatabase(IntPtr m, OfflineDoneFn cb, IntPtr userdata);
 
     [LibraryImport(Lib, EntryPoint = "mln_offline_set_pack_database_automatically")]
-    public static partial MbglStatus OfflineSetPackDatabaseAutomatically(IntPtr m, int enabled);
+    public static partial MlnStatus OfflineSetPackDatabaseAutomatically(IntPtr m, int enabled);
 }

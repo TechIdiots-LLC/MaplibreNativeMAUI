@@ -310,7 +310,7 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
         IReadOnlyList<(double X, double Y)> pixels);
 
     // ── Debug overlays ────────────────────────────────────────────────────────
-    /// <summary>Get current debug overlay bitmask (see <c>MbglDebugOptions</c>).</summary>
+    /// <summary>Get current debug overlay bitmask (see <c>MlnDebugOptions</c>).</summary>
     int  GetDebugOptions();
     /// <summary>Set debug overlay bitmask. Use 0 to disable all overlays.</summary>
     void SetDebugOptions(int options);

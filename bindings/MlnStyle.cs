@@ -1,6 +1,6 @@
 ﻿/**
- * MbglStyle.cs — Typed wrapper around mln_style_t (non-owning, valid for the
- * lifetime of its parent MbglMap).
+ * MlnStyle.cs — Typed wrapper around mln_style_t (non-owning, valid for the
+ * lifetime of its parent MlnMap).
  */
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -9,23 +9,23 @@ namespace MapLibreNative.Maui;
 
 /// <summary>
 /// Provides access to sources and layers.  This is a <em>non-owning</em> handle
-/// — do not dispose it; it is invalidated when the parent <see cref="MbglMap"/> is disposed.
+/// — do not dispose it; it is invalidated when the parent <see cref="MlnMap"/> is disposed.
 /// </summary>
-public sealed class MbglStyle
+public sealed class MlnStyle
 {
     internal IntPtr Handle { get; }
 
-    internal MbglStyle(IntPtr handle) => Handle = handle;
+    internal MlnStyle(IntPtr handle) => Handle = handle;
 
     // ── Sources ───────────────────────────────────────────────────────────────
 
     public bool HasSource(string sourceId)
         => NativeMethods.StyleHasSource(Handle, sourceId) != 0;
 
-    public MbglSource AddGeoJsonSource(string sourceId)
+    public MlnSource AddGeoJsonSource(string sourceId)
         => new(NativeMethods.StyleAddGeoJsonSource(Handle, sourceId));
 
-    public MbglSource AddGeoJsonSourceUrl(string sourceId, string url)
+    public MlnSource AddGeoJsonSourceUrl(string sourceId, string url)
         => new(NativeMethods.StyleAddGeoJsonSourceUrl(Handle, sourceId, url));
 
     /// <summary>
@@ -34,18 +34,18 @@ public sealed class MbglStyle
     /// the style-spec keys minus <c>type</c>/<c>data</c>: <c>cluster</c>,
     /// <c>clusterRadius</c>, <c>clusterMaxZoom</c>, <c>clusterMinPoints</c>,
     /// <c>clusterProperties</c>, <c>maxzoom</c>, <c>buffer</c>, <c>tolerance</c>,
-    /// <c>lineMetrics</c>. Set data afterwards with <see cref="MbglSource.SetGeoJson"/>.
+    /// <c>lineMetrics</c>. Set data afterwards with <see cref="MlnSource.SetGeoJson"/>.
     /// </summary>
-    public MbglSource AddGeoJsonSourceOptions(string sourceId, string? optionsJson)
+    public MlnSource AddGeoJsonSourceOptions(string sourceId, string? optionsJson)
         => new(NativeMethods.StyleAddGeoJsonSourceOptions(Handle, sourceId, optionsJson));
 
-    public MbglSource AddVectorSource(string sourceId, string url)
+    public MlnSource AddVectorSource(string sourceId, string url)
         => new(NativeMethods.StyleAddVectorSource(Handle, sourceId, url));
 
-    public MbglSource AddRasterSource(string sourceId, string url, int tileSize = 512)
+    public MlnSource AddRasterSource(string sourceId, string url, int tileSize = 512)
         => new(NativeMethods.StyleAddRasterSource(Handle, sourceId, url, tileSize));
 
-    public MbglSource AddRasterDemSource(string sourceId, string url, int tileSize = 512)
+    public MlnSource AddRasterDemSource(string sourceId, string url, int tileSize = 512)
         => new(NativeMethods.StyleAddRasterDemSource(Handle, sourceId, url, tileSize));
 
     /// <summary>
@@ -105,7 +105,7 @@ public sealed class MbglStyle
     /// Add an image source with an explicit lat/lng quad defining the four corners.
     /// Corner order: top-right, top-left, bottom-right, bottom-left (matches MapLibre style spec).
     /// </summary>
-    public MbglSource AddImageSource(string sourceId, string url,
+    public MlnSource AddImageSource(string sourceId, string url,
         double lat0, double lon0, double lat1, double lon1,
         double lat2, double lon2, double lat3, double lon3)
         => new(NativeMethods.StyleAddImageSource(Handle, sourceId, url,
@@ -119,37 +119,37 @@ public sealed class MbglStyle
     public bool HasLayer(string layerId)
         => NativeMethods.StyleHasLayer(Handle, layerId) != 0;
 
-    public MbglLayer AddFillLayer(string layerId, string sourceId, string? beforeLayerId = null)
+    public MlnLayer AddFillLayer(string layerId, string sourceId, string? beforeLayerId = null)
         => new(NativeMethods.StyleAddFillLayer(Handle, layerId, sourceId, beforeLayerId));
 
-    public MbglLayer AddLineLayer(string layerId, string sourceId, string? beforeLayerId = null)
+    public MlnLayer AddLineLayer(string layerId, string sourceId, string? beforeLayerId = null)
         => new(NativeMethods.StyleAddLineLayer(Handle, layerId, sourceId, beforeLayerId));
 
-    public MbglLayer AddCircleLayer(string layerId, string sourceId, string? beforeLayerId = null)
+    public MlnLayer AddCircleLayer(string layerId, string sourceId, string? beforeLayerId = null)
         => new(NativeMethods.StyleAddCircleLayer(Handle, layerId, sourceId, beforeLayerId));
 
-    public MbglLayer AddSymbolLayer(string layerId, string sourceId, string? beforeLayerId = null)
+    public MlnLayer AddSymbolLayer(string layerId, string sourceId, string? beforeLayerId = null)
         => new(NativeMethods.StyleAddSymbolLayer(Handle, layerId, sourceId, beforeLayerId));
 
-    public MbglLayer AddRasterLayer(string layerId, string sourceId, string? beforeLayerId = null)
+    public MlnLayer AddRasterLayer(string layerId, string sourceId, string? beforeLayerId = null)
         => new(NativeMethods.StyleAddRasterLayer(Handle, layerId, sourceId, beforeLayerId));
 
-    public MbglLayer AddHeatmapLayer(string layerId, string sourceId, string? beforeLayerId = null)
+    public MlnLayer AddHeatmapLayer(string layerId, string sourceId, string? beforeLayerId = null)
         => new(NativeMethods.StyleAddHeatmapLayer(Handle, layerId, sourceId, beforeLayerId));
 
-    public MbglLayer AddHillshadeLayer(string layerId, string sourceId, string? beforeLayerId = null)
+    public MlnLayer AddHillshadeLayer(string layerId, string sourceId, string? beforeLayerId = null)
         => new(NativeMethods.StyleAddHillshadeLayer(Handle, layerId, sourceId, beforeLayerId));
 
-    public MbglLayer AddFillExtrusionLayer(string layerId, string sourceId, string? beforeLayerId = null)
+    public MlnLayer AddFillExtrusionLayer(string layerId, string sourceId, string? beforeLayerId = null)
         => new(NativeMethods.StyleAddFillExtrusionLayer(Handle, layerId, sourceId, beforeLayerId));
 
-    public MbglLayer AddBackgroundLayer(string layerId, string? beforeLayerId = null)
+    public MlnLayer AddBackgroundLayer(string layerId, string? beforeLayerId = null)
         => new(NativeMethods.StyleAddBackgroundLayer(Handle, layerId, beforeLayerId));
 
-    public MbglLayer AddLocationIndicatorLayer(string layerId, string? beforeLayerId = null)
+    public MlnLayer AddLocationIndicatorLayer(string layerId, string? beforeLayerId = null)
         => new(NativeMethods.StyleAddLocationIndicatorLayer(Handle, layerId, beforeLayerId));
 
-    public MbglLayer AddColorReliefLayer(string layerId, string sourceId, string? beforeLayerId = null)
+    public MlnLayer AddColorReliefLayer(string layerId, string sourceId, string? beforeLayerId = null)
         => new(NativeMethods.StyleAddColorReliefLayer(Handle, layerId, sourceId, beforeLayerId));
 
     public void RemoveLayer(string layerId)
@@ -326,17 +326,17 @@ public sealed class MbglStyle
         => ParseIdArray(NativeMethods.StyleGetLayerIds(Handle));
 
     /// <summary>Gets a layer handle by ID, or <c>null</c> if not found.</summary>
-    public MbglLayer? GetLayer(string layerId)
+    public MlnLayer? GetLayer(string layerId)
     {
         var ptr = NativeMethods.StyleGetLayer(Handle, layerId);
-        return ptr == IntPtr.Zero ? null : new MbglLayer(ptr);
+        return ptr == IntPtr.Zero ? null : new MlnLayer(ptr);
     }
 
     /// <summary>Gets a source handle by ID, or <c>null</c> if not found.</summary>
-    public MbglSource? GetSource(string sourceId)
+    public MlnSource? GetSource(string sourceId)
     {
         var ptr = NativeMethods.StyleGetSource(Handle, sourceId);
-        return ptr == IntPtr.Zero ? null : new MbglSource(ptr);
+        return ptr == IntPtr.Zero ? null : new MlnSource(ptr);
     }
 
     // ── Generic JSON add ───────────────────────────────────────────────────────
@@ -352,22 +352,22 @@ public sealed class MbglStyle
     /// <summary>
     /// Add a layer from a complete MapLibre layer-spec JSON object
     /// (must include "id" and "type" fields).
-    /// Returns a non-owning <see cref="MbglLayer"/> handle, or <c>null</c> on error.
+    /// Returns a non-owning <see cref="MlnLayer"/> handle, or <c>null</c> on error.
     /// </summary>
-    public MbglLayer? AddLayerJson(string layerJson, string? beforeLayerId = null)
+    public MlnLayer? AddLayerJson(string layerJson, string? beforeLayerId = null)
     {
         var ptr = NativeMethods.StyleAddLayerJson(Handle, layerJson, beforeLayerId);
-        return ptr == IntPtr.Zero ? null : new MbglLayer(ptr);
+        return ptr == IntPtr.Zero ? null : new MlnLayer(ptr);
     }
 }
 
 // ── Source handle ─────────────────────────────────────────────────────────────
 
 /// <summary>Non-owning handle to a source inside a loaded style.</summary>
-public sealed class MbglSource
+public sealed class MlnSource
 {
     internal IntPtr Handle { get; }
-    internal MbglSource(IntPtr handle) => Handle = handle;
+    internal MlnSource(IntPtr handle) => Handle = handle;
 
     public void SetGeoJson(string geojson)
         => NativeMethods.GeoJsonSourceSetData(Handle, geojson);
@@ -389,10 +389,10 @@ public sealed class MbglSource
 // ── Layer handle ──────────────────────────────────────────────────────────────
 
 /// <summary>Non-owning handle to a layer inside a loaded style.</summary>
-public sealed class MbglLayer
+public sealed class MlnLayer
 {
     internal IntPtr Handle { get; }
-    internal MbglLayer(IntPtr handle) => Handle = handle;
+    internal MlnLayer(IntPtr handle) => Handle = handle;
 
     public void SetSourceLayer(string sourceLayer)
         => NativeMethods.LayerSetSourceLayer(Handle, sourceLayer);

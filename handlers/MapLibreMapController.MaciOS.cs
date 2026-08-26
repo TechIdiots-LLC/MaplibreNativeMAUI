@@ -71,10 +71,10 @@ public class MapLibreMapController : IMapLibreMapController
     private readonly string? _styleString;
     private readonly float   _pixelRatio;
 
-    private MbglRunLoop?  _runLoop;
-    private MbglFrontend? _frontend;
-    private MbglMap?      _map;
-    private MbglStyle?    _style;
+    private MlnRunLoop?  _runLoop;
+    private MlnFrontend? _frontend;
+    private MlnMap?      _map;
+    private MlnStyle?    _style;
     private bool          _styleReady;
     private UITextView    _attrView    = null!;  // expanded full text
     private UIButton      _attrButton  = null!;  // collapsed ⓘ button
@@ -128,7 +128,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     // Location indicator puck (portable style layer, shared with Windows impl)
     private const string LocIndLayerId = "__mln_location_indicator";
-    private MbglLayer? _locIndLayer;
+    private MlnLayer? _locIndLayer;
     private readonly record struct LocIndParams(double Lat, double Lon, float Bearing, float AccuracyM);
     private LocIndParams? _pendingLocInd;
 
@@ -459,9 +459,9 @@ public class MapLibreMapController : IMapLibreMapController
     {
         if (_frontend != null || w < 1 || h < 1) return;
 
-        _runLoop  = new MbglRunLoop();
+        _runLoop  = new MlnRunLoop();
         // surface_handle unused on Apple (Metal backend creates its own MTKView).
-        _frontend = new MbglFrontend(
+        _frontend = new MlnFrontend(
             IntPtr.Zero,
             IntPtr.Zero,
             w, h, _pixelRatio, OnRender);
@@ -482,9 +482,9 @@ public class MapLibreMapController : IMapLibreMapController
         View.BringSubviewToFront(_gpsPanel);
 
         // Persistent tile/resource cache (mbgl's default is :memory:), shared
-        // with MbglOfflineManager via MbglCache.DefaultPath.
-        _map = new MbglMap(_frontend, _runLoop,
-                           cachePath: MbglCache.DefaultPath,
+        // with MlnOfflineManager via MlnCache.DefaultPath.
+        _map = new MlnMap(_frontend, _runLoop,
+                           cachePath: MlnCache.DefaultPath,
                            pixelRatio: _pixelRatio,
                            observer: OnMapObserverEvent);
         _map.SetSize(w, h);
@@ -891,7 +891,7 @@ public class MapLibreMapController : IMapLibreMapController
         var parts = new System.Collections.Generic.List<string>(_style.GetSourceAttributions());
         if (!string.IsNullOrWhiteSpace(_customAttribution))
             parts.Add(_customAttribution!);
-        var attributions = MbglStyle.EnsureMapLibreAttribution(parts);
+        var attributions = MlnStyle.EnsureMapLibreAttribution(parts);
 
         if (attributions.Count == 0 || !_showAttrControl)
         {
@@ -1242,7 +1242,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     // -- Helpers ---------------------------------------------------------------
 
-    private static void ApplyLayerMeta(MbglLayer layer, string? sourceLayer,
+    private static void ApplyLayerMeta(MlnLayer layer, string? sourceLayer,
         float minZoom, float maxZoom)
     {
         if (sourceLayer != null) layer.SetSourceLayer(sourceLayer);
@@ -1250,7 +1250,7 @@ public class MapLibreMapController : IMapLibreMapController
         if (maxZoom > 0) layer.SetMaxZoom(maxZoom);
     }
 
-    private void ApplyProperties(MbglLayer layer, IDictionary<string, object?> props)
+    private void ApplyProperties(MlnLayer layer, IDictionary<string, object?> props)
     {
         foreach (var (k, v) in props)
         {
@@ -1368,7 +1368,7 @@ public class MapLibreMapController : IMapLibreMapController
     public void AddSourceJson(string sourceId, string sourceJson)
         => _style?.AddSourceJson(sourceId, sourceJson);
 
-    public MbglLayer? AddLayerJson(string layerJson, string? beforeLayerId = null)
+    public MlnLayer? AddLayerJson(string layerJson, string? beforeLayerId = null)
         => _style?.AddLayerJson(layerJson, beforeLayerId);
 
     // -- Tier 1 – gesture / interactive movement ───────────────────────────────

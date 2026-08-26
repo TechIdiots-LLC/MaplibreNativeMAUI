@@ -14,8 +14,8 @@
         <VerticalStackLayout Spacing="0">
 
             <!--
-                Offline regions demo. The map and MbglOfflineManager share the same
-                cache database (MbglCache.DefaultPath), so a downloaded region is
+                Offline regions demo. The map and MlnOfflineManager share the same
+                cache database (MlnCache.DefaultPath), so a downloaded region is
                 served to the map even with the network forced offline.
             -->
             <maplibre:MapLibreMap
