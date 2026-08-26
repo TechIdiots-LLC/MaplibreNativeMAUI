@@ -605,6 +605,25 @@ MLN_CABI_API mbgl_status_t   mbgl_style_remove_terrain(mbgl_style_t* st) MLN_CAB
 /** Returns 1 when 3D terrain is currently enabled, 0 otherwise. */
 MLN_CABI_API int             mbgl_style_is_terrain_enabled(mbgl_style_t* st) MLN_CABI_NOEXCEPT;
 
+/**
+ * Progressive-loading budget for 3D terrain. Trades initial-load sharpness for smoother
+ * interaction on weaker GPUs, so it is a per-map, hardware-driven choice. Values match
+ * mln::TerrainLoadMode. Has no effect while terrain is off.
+ */
+typedef enum mbgl_terrain_load_mode_t {
+    MBGL_TERRAIN_LOAD_QUALITY     = 0, /**< No budget: every revealed tile/drape builds at once.
+                                        *   Sharp, but a big burst (zooming in over new coverage)
+                                        *   can stall a frame. Default. */
+    MBGL_TERRAIN_LOAD_BALANCED    = 1, /**< 32 new-tile builds + 16 drape re-renders per frame. */
+    MBGL_TERRAIN_LOAD_PERFORMANCE = 2, /**< 8 new-tile builds + 4 drape re-renders per frame:
+                                        *   smoothest on weak GPUs, most progressive fill-in. */
+} mbgl_terrain_load_mode_t;
+
+MLN_CABI_API mbgl_status_t   mbgl_map_set_terrain_load_mode(mbgl_map_t* map,
+                                                            mbgl_terrain_load_mode_t mode) MLN_CABI_NOEXCEPT;
+/** Returns the current mode, or MBGL_TERRAIN_LOAD_QUALITY for a null handle. */
+MLN_CABI_API mbgl_terrain_load_mode_t mbgl_map_get_terrain_load_mode(mbgl_map_t* map) MLN_CABI_NOEXCEPT;
+
 /* ── Offline regions + ambient cache ─────────────────────────────────────────
  *
  * Wraps mln::DatabaseFileSource. The manager shares the map's cache database

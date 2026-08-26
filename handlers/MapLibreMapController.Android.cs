@@ -331,7 +331,8 @@ public class MapLibreMapController : IMapLibreMapController
     private LinearLayout _navPanel        = null!;  // d-pad / zoom-in / zoom-out
     private LinearLayout _gpsPanel        = null!;  // tracking / bearing mode
     private LinearLayout _terrainPanel    = null!;  // 3D-terrain toggle button
-    private TextView     _terrainIcon     = null!;
+    private ImageView    _terrainIcon     = null!;
+    private Android.Graphics.Drawables.ShapeDrawable? _terrainIconDrawable;
     private Android.Views.View _navNorthTick = null!;  // rotates with map bearing
     private TextView     _gpsTrackingIcon = null!;  // reflects tracking mode
     private TextView     _gpsBearingIcon  = null!;
@@ -650,7 +651,7 @@ public class MapLibreMapController : IMapLibreMapController
         _terrainPanel.SetBackgroundColor(Android.Graphics.Color.Argb(230, 255, 255, 255));
         _terrainPanel.Clickable = true;
 
-        _terrainIcon = MakeOverlayButton(ctx, "⛰", btn); // ⛰
+        (_terrainIcon, _terrainIconDrawable) = MakeTerrainIcon(ctx, btn);
         _terrainIcon.Click += (_, _) => ToggleTerrainControl();
         _terrainPanel.AddView(_terrainIcon);
 
@@ -671,14 +672,55 @@ public class MapLibreMapController : IMapLibreMapController
     /// <summary>Colours the terrain button to reflect whether terrain is currently enabled.</summary>
     private void RefreshTerrainIcon()
     {
-        if (_terrainIcon == null) return;
+        if (_terrainIcon == null || _terrainIconDrawable == null) return;
         bool on = IsTerrainEnabled;
-        _terrainIcon.SetTextColor(on
+        _terrainIconDrawable.Paint!.Color = on
             ? Android.Graphics.Color.Argb(255, 0x00, 0x70, 0xC5)
-            : Android.Graphics.Color.Argb(230, 40, 40, 40));
+            : Android.Graphics.Color.Argb(230, 40, 40, 40);
+        _terrainIcon.Invalidate();
         _terrainPanel?.SetBackgroundColor(on
             ? Android.Graphics.Color.Argb(255, 0xE0, 0xF3, 0xFF)
             : Android.Graphics.Color.Argb(230, 255, 255, 255));
+    }
+
+    /// <summary>
+    /// The terrain button's icon: maplibre-gl-js's terrain shape (see <see cref="TerrainIcon"/>)
+    /// as a <see cref="Android.Graphics.Drawables.Shapes.PathShape"/>, which scales the 22x22
+    /// geometry to whatever bounds the view is given. The drawable comes back with it because
+    /// the on/off recolour goes through its paint.
+    /// </summary>
+    private static (ImageView View, Android.Graphics.Drawables.ShapeDrawable Drawable)
+        MakeTerrainIcon(global::Android.Content.Context ctx, int sizePx)
+    {
+        var path = new Android.Graphics.Path();
+        AddClosedPolygon(path, TerrainIcon.Mountain);
+        AddClosedPolygon(path, TerrainIcon.Base);
+
+        var drawable = new Android.Graphics.Drawables.ShapeDrawable(
+            new Android.Graphics.Drawables.Shapes.PathShape(
+                path, (float)TerrainIcon.Size, (float)TerrainIcon.Size));
+        drawable.Paint!.Color = Android.Graphics.Color.Argb(230, 40, 40, 40);
+
+        // gl-js draws its 22px icon in a 29px button; keep that ratio at our button size.
+        int icon = (int)Math.Round(sizePx * TerrainIcon.Size / 29.0);
+        int pad  = Math.Max(0, (sizePx - icon) / 2);
+
+        var view = new ImageView(ctx)
+        {
+            LayoutParameters = new LinearLayout.LayoutParams(sizePx, sizePx),
+            Clickable = true,
+        };
+        view.SetImageDrawable(drawable);
+        view.SetScaleType(ImageView.ScaleType.FitCenter);
+        view.SetPadding(pad, pad, pad, pad);
+        return (view, drawable);
+
+        static void AddClosedPolygon(Android.Graphics.Path p, (double X, double Y)[] pts)
+        {
+            p.MoveTo((float)pts[0].X, (float)pts[0].Y);
+            for (int i = 1; i < pts.Length; i++) p.LineTo((float)pts[i].X, (float)pts[i].Y);
+            p.Close();
+        }
     }
 
     private static TextView MakeOverlayButton(global::Android.Content.Context ctx, string text, int sizePx)
@@ -807,6 +849,7 @@ public class MapLibreMapController : IMapLibreMapController
                                 pixelRatio: _pixelRatio,
                                 observer: OnMapObserverEvent);
         _map.SetSize(w, h);
+        _map.TerrainLoadMode = _terrainLoadMode;   // may have been set before the map existed
 
         if (!string.IsNullOrEmpty(_styleString))
         {
@@ -1703,6 +1746,22 @@ public class MapLibreMapController : IMapLibreMapController
     public void SetTileLodPitchThreshold(double thresholdRadians) => _map?.SetTileLodPitchThreshold(thresholdRadians);
     public void SetTileLodZoomShift(double shift) => _map?.SetTileLodZoomShift(shift);
     public void SetTileLodMode(int mode) => _map?.SetTileLodMode(mode);
+
+    // Cached so a value set before the map exists (a bindable property applied at
+    // construction) is not lost; re-applied from the map-ready path.
+    private TerrainLoadMode _terrainLoadMode = TerrainLoadMode.Quality;
+
+    public TerrainLoadMode TerrainLoadMode
+    {
+        get => _map?.TerrainLoadMode ?? _terrainLoadMode;
+        set
+        {
+            _terrainLoadMode = value;
+            if (_map != null) _map.TerrainLoadMode = value;
+        }
+    }
+
+    public void SetTerrainLoadMode(TerrainLoadMode mode) => TerrainLoadMode = mode;
 
     // -- Tier 2 – camera / batch projection ───────────────────────────────────
     public CameraResult CameraForLatLngs(

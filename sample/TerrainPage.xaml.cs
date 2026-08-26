@@ -1,3 +1,5 @@
+using MapLibreNative.Maui;
+
 namespace MauiSample;
 
 /// <summary>
@@ -63,6 +65,9 @@ public partial class TerrainPage : ContentPage
         TerrainPicker.SelectedIndex = 0;
         TerrainPicker.SelectedIndexChanged += OnTerrainSourceChanged;
 
+        LoadModePicker.ItemsSource = Enum.GetNames<TerrainLoadMode>().ToList();
+        LoadModePicker.SelectedIndex = (int)Map.TerrainLoadMode;
+
         Map.StyleLoaded += (_, _) =>
         {
             // A reloaded style drops runtime sources/layers, so re-add the DEM + hillshade
@@ -125,6 +130,14 @@ public partial class TerrainPage : ContentPage
         }
         Map.ToggleTerrain(TerrainSourceId, Exaggeration);
         UpdateStatus();
+    }
+
+    // The load-mode budget only binds while terrain is building, so switching it mid-flight
+    // shows up on the next burst of tiles rather than immediately.
+    private void OnLoadModeChanged(object? sender, EventArgs e)
+    {
+        if (LoadModePicker.SelectedIndex < 0) return;
+        Map.TerrainLoadMode = (TerrainLoadMode)LoadModePicker.SelectedIndex;
     }
 
     private void UpdateStatus()

@@ -1526,6 +1526,21 @@ int mbgl_style_is_terrain_enabled(mbgl_style_t* st) noexcept {
     } catch (const std::exception&) { return 0; }
 }
 
+mbgl_status_t mbgl_map_set_terrain_load_mode(mbgl_map_t* map, mbgl_terrain_load_mode_t mode) noexcept {
+    if (!map) return set_error(MBGL_INVALID_ARG, "mbgl_map_set_terrain_load_mode: null handle");
+    try {
+        map_ptr(map)->map->setTerrainLoadMode(static_cast<mln::TerrainLoadMode>(mode));
+        return MBGL_OK;
+    } catch (const std::exception& e) { return set_native_error(e); }
+}
+
+mbgl_terrain_load_mode_t mbgl_map_get_terrain_load_mode(mbgl_map_t* map) noexcept {
+    if (!map) return MBGL_TERRAIN_LOAD_QUALITY;
+    try {
+        return static_cast<mbgl_terrain_load_mode_t>(map_ptr(map)->map->getTerrainLoadMode());
+    } catch (const std::exception&) { return MBGL_TERRAIN_LOAD_QUALITY; }
+}
+
 /* ─── Gesture helpers ───────────────────────────────────────────────────────── */
 
 mbgl_status_t mbgl_map_set_gesture_in_progress(mbgl_map_t* map, int in_progress) noexcept {

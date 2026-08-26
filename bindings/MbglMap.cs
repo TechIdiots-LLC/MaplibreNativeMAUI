@@ -364,6 +364,16 @@ public sealed class MbglMap : IDisposable
     public void SetTileLodMode(int mode)
         => NativeMethods.MapSetTileLodMode(Handle, mode);
 
+    /// <summary>
+    /// How much terrain tile/drape work a frame may do while terrain loads. Defaults to
+    /// <see cref="TerrainLoadMode.Quality"/> (no budget); no effect while terrain is off.
+    /// </summary>
+    public TerrainLoadMode TerrainLoadMode
+    {
+        get => (TerrainLoadMode)NativeMethods.MapGetTerrainLoadMode(Handle);
+        set => NativeMethods.MapSetTerrainLoadMode(Handle, (int)value);
+    }
+
     // ── Tier 2 – camera for point set ────────────────────────────────────────
     public unsafe CameraResult CameraForLatLngs(
         IReadOnlyList<(double Lat, double Lon)> points,

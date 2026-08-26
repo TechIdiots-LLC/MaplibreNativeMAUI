@@ -584,6 +584,13 @@ public static partial class NativeMethods
     [LibraryImport(Lib, EntryPoint = "mbgl_map_set_tile_lod_mode")]
     public static partial MbglStatus MapSetTileLodMode(IntPtr map, int mode);
 
+    // ── Map – 3D terrain progressive-loading budget ─────────────────────
+    [LibraryImport(Lib, EntryPoint = "mbgl_map_set_terrain_load_mode")]
+    public static partial MbglStatus MapSetTerrainLoadMode(IntPtr map, int mode);
+
+    [LibraryImport(Lib, EntryPoint = "mbgl_map_get_terrain_load_mode")]
+    public static partial int MapGetTerrainLoadMode(IntPtr map);
+
     // ── Map – camera for point set (Tier 2) ───────────────────────────────────
     [LibraryImport(Lib, EntryPoint = "mbgl_map_camera_for_latlngs")]
     public static unsafe partial MbglStatus MapCameraForLatLngs(IntPtr map,

@@ -193,6 +193,24 @@ public partial class MlnMapImage : Grid
         get => (MapControlCorner)GetValue(TerrainControlPositionProperty);
         set => SetValue(TerrainControlPositionProperty, value);
     }
+    /// <summary>
+    /// Caps how much terrain tile/drape work each frame may do while terrain loads.
+    /// Lower budgets trade load sharpness for smoother interaction on weaker GPUs;
+    /// the setting does nothing while terrain is off.
+    /// </summary>
+    public TerrainLoadMode TerrainLoadMode
+    {
+        get => (TerrainLoadMode)GetValue(TerrainLoadModeProperty);
+        set => SetValue(TerrainLoadModeProperty, value);
+    }
+    public static readonly DependencyProperty TerrainLoadModeProperty =
+        DependencyProperty.Register(nameof(TerrainLoadMode), typeof(TerrainLoadMode), typeof(MlnMapImage),
+            new PropertyMetadata(MapLibreNative.Maui.TerrainLoadMode.Quality, (d, e) =>
+            {
+                if (d is MlnMapImage m && m._map != null)
+                    m._map.TerrainLoadMode = (TerrainLoadMode)e.NewValue;
+            }));
+
     public static readonly DependencyProperty TerrainControlPositionProperty =
         DependencyProperty.Register(nameof(TerrainControlPosition), typeof(MapControlCorner), typeof(MlnMapImage),
             new PropertyMetadata(MapControlCorner.TopRight, OnControlPositionChanged));
@@ -371,6 +389,7 @@ public partial class MlnMapImage : Grid
         _map = new MbglMap(_frontend, _runLoop, cachePath: MbglCache.DefaultPath,
                            pixelRatio: pixelRatio, observer: OnMapObserverEvent);
         _map.SetSize(_physW, _physH);
+        _map.TerrainLoadMode = TerrainLoadMode;   // the DP may have been set before the map existed
 
         var url = StyleUrl;
         if (!string.IsNullOrEmpty(url))
@@ -1539,7 +1558,7 @@ public partial class MlnMapImage : Grid
     }
 
     private StackPanel? _terrainPanel;
-    private TextBlock? _terrainIcon;
+    private System.Windows.Shapes.Path? _terrainIcon;
     private Border? _terrainBtn;
 
     private void BuildTerrainOverlay()
@@ -1549,15 +1568,23 @@ public partial class MlnMapImage : Grid
             Width = NavPanelW,
             Visibility = ShowTerrainControl ? Visibility.Visible : Visibility.Collapsed,
         };
-        _terrainIcon = new TextBlock
+        _terrainIcon = new System.Windows.Shapes.Path
         {
-            Text = "⛰",
-            FontSize = 15,
-            Foreground = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
+            Data = TerrainIconGeometry,
+            Fill = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
+        };
+        // The geometry is padded inside its 22x22 box, so it is drawn at its own
+        // coordinates (Path defaults to Stretch.None) in a box of exactly that size
+        // rather than stretched to its own bounds, which would enlarge and offset it.
+        var iconBox = new Canvas
+        {
+            Width = TerrainIcon.Size,
+            Height = TerrainIcon.Size,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        _terrainBtn = MakeSoloButton(_terrainIcon, ToggleTerrainControl);
+        iconBox.Children.Add(_terrainIcon);
+        _terrainBtn = MakeSoloButton(iconBox, ToggleTerrainControl);
         _terrainPanel.Children.Add(_terrainBtn);
         Children.Add(_terrainPanel);
         RefreshTerrainButton();
@@ -1575,13 +1602,40 @@ public partial class MlnMapImage : Grid
     {
         if (_terrainIcon == null || _terrainBtn == null) return;
         bool on = IsTerrainEnabled;
-        _terrainIcon.Foreground = new SolidColorBrush(on ? Color.FromRgb(0x00, 0x70, 0xC5) : Color.FromRgb(0x55, 0x55, 0x55));
+        _terrainIcon.Fill = new SolidColorBrush(on ? Color.FromRgb(0x00, 0x70, 0xC5) : Color.FromRgb(0x55, 0x55, 0x55));
         _terrainBtn.Background = on ? new SolidColorBrush(Color.FromRgb(0xE3, 0xF2, 0xFF)) : Brushes.White;
         _terrainBtn.ToolTip = on ? "Disable 3D terrain" : "Enable 3D terrain";
     }
 
+    /// <summary>
+    /// maplibre-gl-js's terrain icon (see <see cref="TerrainIcon"/>) as a filled
+    /// geometry: two closed polygons in a 22x22 box. Frozen and shared - the button
+    /// only ever swaps the brush.
+    /// </summary>
+    private static readonly System.Windows.Media.Geometry TerrainIconGeometry = BuildTerrainIconGeometry();
+
+    private static System.Windows.Media.Geometry BuildTerrainIconGeometry()
+    {
+        var group = new GeometryGroup();
+        group.Children.Add(ClosedPolygon(TerrainIcon.Mountain));
+        group.Children.Add(ClosedPolygon(TerrainIcon.Base));
+        group.Freeze();
+        return group;
+
+        static PathGeometry ClosedPolygon((double X, double Y)[] pts)
+        {
+            var line = new PolyLineSegment();
+            for (int i = 1; i < pts.Length; i++) line.Points.Add(new Point(pts[i].X, pts[i].Y));
+            var figure = new PathFigure { StartPoint = new Point(pts[0].X, pts[0].Y), IsClosed = true, IsFilled = true };
+            figure.Segments.Add(line);
+            var geometry = new PathGeometry();
+            geometry.Figures.Add(figure);
+            return geometry;
+        }
+    }
+
     // A standalone rounded icon button (all four corners), for single-button panels.
-    private static Border MakeSoloButton(TextBlock icon, Action onClick)
+    private static Border MakeSoloButton(UIElement icon, Action onClick)
     {
         var b = new Border
         {

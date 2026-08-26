@@ -36,6 +36,11 @@
                        Placeholder="…or paste a custom tilejson/tiles URL (overrides the picker)"
                        Keyboard="Url" />
 
+                <Label Text="Terrain load mode:" FontAttributes="Bold" />
+                <Label TextColor="Gray" FontSize="12" Text=
+                    "How much terrain tile/drape work each frame may do while terrain loads. Quality (the default) builds everything at once and can stall a frame on a big burst; Balanced and Performance spread the work out for smoother interaction on weaker GPUs, at the cost of visible fill-in." />
+                <Picker x:Name="LoadModePicker" SelectedIndexChanged="OnLoadModeChanged" />
+
                 <Button x:Name="ToggleButton"
                         Text="Enable 3D Terrain"
                         Clicked="OnToggleTerrain"

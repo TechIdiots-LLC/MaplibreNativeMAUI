@@ -9,6 +9,7 @@ using Location = Microsoft.Maui.Devices.Sensors.Location;
 using WUX = Microsoft.UI.Xaml;
 using WUXC = Microsoft.UI.Xaml.Controls;
 using WUXM = Microsoft.UI.Xaml.Media;
+using WUXS = Microsoft.UI.Xaml.Shapes;
 
 namespace MapLibreNative.Maui.Handlers;
 
@@ -95,7 +96,7 @@ public class MapLibreMapController : IMapLibreMapController
     private WUXC.TextBlock?  _gpsBottomIcon;
     private WUXC.StackPanel? _terrainPanel;
     private WUXC.Border?     _terrainBtn;
-    private WUXC.TextBlock?  _terrainIcon;
+    private WUXS.Path?      _terrainIcon;
     private WUXC.Border?     _attrBorder;
     private WUXC.TextBlock?  _attrTextBlock;
 
@@ -161,6 +162,7 @@ public class MapLibreMapController : IMapLibreMapController
         {
             if (_mapView == null) return;
             _map = _mapView.Map;
+            if (_map != null) _map.TerrainLoadMode = _terrainLoadMode;  // set before the map existed
             // Rebuild after a tab switch: restore the camera saved at teardown
             // before the app's MapReady handlers run (so they can still override).
             if (_savedCamera is { } cam)
@@ -217,8 +219,7 @@ public class MapLibreMapController : IMapLibreMapController
             Width = 30,
             Visibility = _showTerrainControl ? WUX.Visibility.Visible : WUX.Visibility.Collapsed,
         };
-        _terrainBtn = MakeTerrainButton("⛰", ToggleTerrainControl);
-        _terrainIcon = (WUXC.TextBlock)_terrainBtn.Child;
+        (_terrainBtn, _terrainIcon) = MakeTerrainButton(ToggleTerrainControl);
         _terrainPanel.Children.Add(_terrainBtn);
         View.Children.Add(_terrainPanel);
 
@@ -316,8 +317,30 @@ public class MapLibreMapController : IMapLibreMapController
         return b;
     }
 
-    private static WUXC.Border MakeTerrainButton(string glyph, Action onClick)
+    /// <summary>
+    /// The terrain button: maplibre-gl-js's terrain icon (see <see cref="TerrainIcon"/>)
+    /// filled with a brush the caller swaps to show the on/off state. Returns the button
+    /// and the shape, since the shape is what gets recoloured.
+    /// </summary>
+    private static (WUXC.Border Button, WUXS.Path Icon) MakeTerrainButton(Action onClick)
     {
+        var icon = new WUXS.Path
+        {
+            Data = BuildTerrainIconGeometry(),
+            Fill = new WUXM.SolidColorBrush(Rgb(0x55, 0x55, 0x55)),
+        };
+        // The geometry is padded inside its 22x22 box, so draw it at its own coordinates
+        // (Path defaults to Stretch.None) in a box of exactly that size; stretching it to
+        // its own bounds instead would enlarge the icon and push it off-centre.
+        var iconBox = new WUXC.Canvas
+        {
+            Width = TerrainIcon.Size,
+            Height = TerrainIcon.Size,
+            HorizontalAlignment = WUX.HorizontalAlignment.Center,
+            VerticalAlignment = WUX.VerticalAlignment.Center,
+        };
+        iconBox.Children.Add(icon);
+
         var b = new WUXC.Border
         {
             Height = 30,
@@ -325,18 +348,36 @@ public class MapLibreMapController : IMapLibreMapController
             BorderBrush = new WUXM.SolidColorBrush(Windows.UI.Color.FromArgb(255, 218, 218, 218)),
             BorderThickness = new WUX.Thickness(1),
             CornerRadius = new WUX.CornerRadius(4),
-            Child = new WUXC.TextBlock
-            {
-                Text = glyph,
-                FontSize = 18,
-                FontWeight = Microsoft.UI.Text.FontWeights.Bold,
-                HorizontalAlignment = WUX.HorizontalAlignment.Center,
-                VerticalAlignment = WUX.VerticalAlignment.Center,
-            },
+            Child = iconBox,
         };
         b.Tapped       += (_, e) => { onClick(); e.Handled = true; };
         b.DoubleTapped += (_, e) => { onClick(); e.Handled = true; };
-        return b;
+        return (b, icon);
+    }
+
+    private static WUXM.Geometry BuildTerrainIconGeometry()
+    {
+        var group = new WUXM.GeometryGroup();
+        group.Children.Add(ClosedPolygon(TerrainIcon.Mountain));
+        group.Children.Add(ClosedPolygon(TerrainIcon.Base));
+        return group;
+
+        static WUXM.PathGeometry ClosedPolygon((double X, double Y)[] pts)
+        {
+            var line = new WUXM.PolyLineSegment();
+            for (int i = 1; i < pts.Length; i++)
+                line.Points.Add(new Windows.Foundation.Point(pts[i].X, pts[i].Y));
+            var figure = new WUXM.PathFigure
+            {
+                StartPoint = new Windows.Foundation.Point(pts[0].X, pts[0].Y),
+                IsClosed = true,
+                IsFilled = true,
+            };
+            figure.Segments.Add(line);
+            var geometry = new WUXM.PathGeometry();
+            geometry.Figures.Add(figure);
+            return geometry;
+        }
     }
 
     private static WUXC.Border MakeDivider()
@@ -491,7 +532,7 @@ public class MapLibreMapController : IMapLibreMapController
     {
         if (_terrainIcon == null || _terrainBtn == null) return;
         bool on = IsTerrainEnabled;
-        _terrainIcon.Foreground = new WUXM.SolidColorBrush(on ? Rgb(0x00, 0x70, 0xC5) : Rgb(0x55, 0x55, 0x55));
+        _terrainIcon.Fill = new WUXM.SolidColorBrush(on ? Rgb(0x00, 0x70, 0xC5) : Rgb(0x55, 0x55, 0x55));
         _terrainBtn.Background  = new WUXM.SolidColorBrush(on ? Rgb(0xE0, 0xF3, 0xFF) : Rgb(255, 255, 255));
         WUXC.ToolTipService.SetToolTip(_terrainBtn, on ? "Disable 3D terrain" : "Enable 3D terrain");
     }
@@ -1306,6 +1347,22 @@ public class MapLibreMapController : IMapLibreMapController
     public void SetTileLodPitchThreshold(double thresholdRadians) => _map?.SetTileLodPitchThreshold(thresholdRadians);
     public void SetTileLodZoomShift(double shift) => _map?.SetTileLodZoomShift(shift);
     public void SetTileLodMode(int mode) => _map?.SetTileLodMode(mode);
+
+    // Cached so a value set before the map exists (a bindable property applied at
+    // construction) is not lost; re-applied from the map-ready path.
+    private TerrainLoadMode _terrainLoadMode = TerrainLoadMode.Quality;
+
+    public TerrainLoadMode TerrainLoadMode
+    {
+        get => _map?.TerrainLoadMode ?? _terrainLoadMode;
+        set
+        {
+            _terrainLoadMode = value;
+            if (_map != null) _map.TerrainLoadMode = value;
+        }
+    }
+
+    public void SetTerrainLoadMode(TerrainLoadMode mode) => TerrainLoadMode = mode;
 
     // ── Tier 2 – camera / batch projection ───────────────────────────────────
     public CameraResult CameraForLatLngs(

@@ -202,7 +202,8 @@ public class MapLibreMapController : IMapLibreMapController
     {
         _terrainPanel = MakeOverlayPanel();
 
-        _terrainButton = MakeOverlayButton("⛰");   // ⛰
+        _terrainButton = MakeOverlayButton(string.Empty);
+        _terrainButton.SetImage(TerrainIconImage, UIControlState.Normal);
         _terrainButton.TouchUpInside += (_, _) => ToggleTerrainControl();
 
         _terrainPanel.AddArrangedSubview(_terrainButton);
@@ -224,9 +225,10 @@ public class MapLibreMapController : IMapLibreMapController
     {
         if (_terrainButton == null) return;
         bool on = IsTerrainEnabled;
-        _terrainButton.SetTitleColor(on
+        // The icon is a template image, so the state shows through the tint.
+        _terrainButton.TintColor = on
             ? UIColor.FromRGBA((byte)0x00, (byte)0x70, (byte)0xC5, (byte)255)
-            : UIColor.FromRGBA((byte)40, (byte)40, (byte)40, (byte)230), UIControlState.Normal);
+            : UIColor.FromRGBA((byte)40, (byte)40, (byte)40, (byte)230);
         if (_terrainPanel != null)
             _terrainPanel.BackgroundColor = on
                 ? UIColor.FromRGBA((byte)0xE0, (byte)0xF3, (byte)0xFF, (byte)255)
@@ -343,6 +345,37 @@ public class MapLibreMapController : IMapLibreMapController
         return panel;
     }
 
+    /// <summary>
+    /// maplibre-gl-js's terrain icon (see <see cref="TerrainIcon"/>) rendered once as a
+    /// template image, so the button shows its on/off state purely through its tint.
+    /// gl-js draws its 22px icon in a 29px button; that ratio is kept at our button size.
+    /// </summary>
+    private static readonly UIImage TerrainIconImage =
+        RenderTerrainIcon(OverlayBtn * TerrainIcon.Size / 29.0);
+
+    private static UIImage RenderTerrainIcon(double size)
+    {
+        double scale = size / TerrainIcon.Size;
+        var renderer = new UIGraphicsImageRenderer(new CGSize(size, size));
+        var image = renderer.CreateImage(_ =>
+        {
+            var path = new UIBezierPath();
+            AddClosedPolygon(path, TerrainIcon.Mountain, scale);
+            AddClosedPolygon(path, TerrainIcon.Base, scale);
+            UIColor.Black.SetFill();
+            path.Fill();
+        });
+        return image.ImageWithRenderingMode(UIImageRenderingMode.AlwaysTemplate);
+
+        static void AddClosedPolygon(UIBezierPath path, (double X, double Y)[] pts, double scale)
+        {
+            path.MoveTo(new CGPoint(pts[0].X * scale, pts[0].Y * scale));
+            for (int i = 1; i < pts.Length; i++)
+                path.AddLineTo(new CGPoint(pts[i].X * scale, pts[i].Y * scale));
+            path.ClosePath();
+        }
+    }
+
     private static UIButton MakeOverlayButton(string title)
     {
         var b = new UIButton(UIButtonType.System);
@@ -455,6 +488,7 @@ public class MapLibreMapController : IMapLibreMapController
                            pixelRatio: _pixelRatio,
                            observer: OnMapObserverEvent);
         _map.SetSize(w, h);
+        _map.TerrainLoadMode = _terrainLoadMode;   // may have been set before the map existed
 
         if (!string.IsNullOrEmpty(_styleString))
         {
@@ -1359,6 +1393,22 @@ public class MapLibreMapController : IMapLibreMapController
     public void SetTileLodPitchThreshold(double thresholdRadians) => _map?.SetTileLodPitchThreshold(thresholdRadians);
     public void SetTileLodZoomShift(double shift) => _map?.SetTileLodZoomShift(shift);
     public void SetTileLodMode(int mode) => _map?.SetTileLodMode(mode);
+
+    // Cached so a value set before the map exists (a bindable property applied at
+    // construction) is not lost; re-applied from the map-ready path.
+    private TerrainLoadMode _terrainLoadMode = TerrainLoadMode.Quality;
+
+    public TerrainLoadMode TerrainLoadMode
+    {
+        get => _map?.TerrainLoadMode ?? _terrainLoadMode;
+        set
+        {
+            _terrainLoadMode = value;
+            if (_map != null) _map.TerrainLoadMode = value;
+        }
+    }
+
+    public void SetTerrainLoadMode(TerrainLoadMode mode) => TerrainLoadMode = mode;
 
     // -- Tier 2 – camera / batch projection ───────────────────────────────────
     public CameraResult CameraForLatLngs(

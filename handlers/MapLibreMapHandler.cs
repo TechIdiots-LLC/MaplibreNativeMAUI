@@ -34,6 +34,7 @@ public partial class MapLibreMapHandler
             [nameof(MapLibreMap.TerrainControlSourceId)]     = MapTerrainControlSettings,
             [nameof(MapLibreMap.TerrainControlExaggeration)] = MapTerrainControlSettings,
             [nameof(MapLibreMap.TerrainControlPosition)]     = MapTerrainControlPosition,
+            [nameof(MapLibreMap.TerrainLoadMode)]            = MapTerrainLoadMode,
         };
         
     public static void MapStyleUrl(MapLibreMapHandler handler, MapLibreMap view)
@@ -127,4 +128,7 @@ public partial class MapLibreMapHandler
 
     public static void MapTerrainControlPosition(MapLibreMapHandler handler, MapLibreMap view)
         => handler.UpdateTerrainControlPosition(view.TerrainControlPosition);
+
+    public static void MapTerrainLoadMode(MapLibreMapHandler handler, MapLibreMap view)
+        => handler.UpdateTerrainLoadMode(view.TerrainLoadMode);
 }
