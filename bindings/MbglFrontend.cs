@@ -1,5 +1,5 @@
 ﻿/**
- * MbglFrontend.cs — Typed wrapper around mbgl_frontend_t.
+ * MbglFrontend.cs — Typed wrapper around mln_frontend_t.
  */
 using System.Runtime.InteropServices;
 
@@ -9,11 +9,11 @@ namespace MapLibreNative.Maui;
 public enum MbglRenderBackend { OpenGL, Vulkan, Metal }
 
 /// <summary>
-/// Wraps <c>mbgl_frontend_t*</c>.
+/// Wraps <c>mln_frontend_t*</c>.
 /// <para>
 /// <b>Ownership note:</b> once passed to <see cref="MbglMap"/>, the map takes
 /// ownership of the underlying native pointer and will destroy it via
-/// <c>mbgl_map_destroy</c>. <see cref="Dispose"/> becomes a no-op after
+/// <c>mln_map_destroy</c>. <see cref="Dispose"/> becomes a no-op after
 /// <see cref="TransferOwnership"/> is called. Do <em>not</em> call
 /// <see cref="Dispose"/> after <see cref="MbglMap.Dispose"/>.
 /// </para>
@@ -41,8 +41,8 @@ public sealed class MbglFrontend : IDisposable
     /// <summary>
     /// Marks the native pointer as owned by the <see cref="MbglMap"/>.
     /// Called automatically by the <see cref="MbglMap"/> constructor.
-    /// After this, <see cref="Dispose"/> will not call <c>mbgl_frontend_destroy</c>
-    /// (since <c>mbgl_map_destroy</c> already does so), but <see cref="Handle"/>
+    /// After this, <see cref="Dispose"/> will not call <c>mln_frontend_destroy</c>
+    /// (since <c>mln_map_destroy</c> already does so), but <see cref="Handle"/>
     /// remains valid for <see cref="Render"/> / <see cref="SetSize"/> calls.
     /// </summary>
     internal void TransferOwnership() => _ownershipTransferred = true;
@@ -74,7 +74,7 @@ public sealed class MbglFrontend : IDisposable
             _renderDelegate, IntPtr.Zero);
 
         if (Handle == IntPtr.Zero)
-            throw new InvalidOperationException("mbgl_frontend_create returned null.");
+            throw new InvalidOperationException("mln_frontend_create returned null.");
     }
 
     /// <summary>
@@ -102,8 +102,8 @@ public sealed class MbglFrontend : IDisposable
 
     public void Dispose()
     {
-        // If MbglMap took ownership, mbgl_map_destroy already freed this pointer.
-        // Do not call mbgl_frontend_destroy — that would be a double-free.
+        // If MbglMap took ownership, mln_map_destroy already freed this pointer.
+        // Do not call mln_frontend_destroy — that would be a double-free.
         if (!_ownershipTransferred && Handle != IntPtr.Zero)
         {
             NativeMethods.FrontendDestroy(Handle);

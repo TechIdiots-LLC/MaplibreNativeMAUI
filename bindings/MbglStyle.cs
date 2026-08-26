@@ -1,5 +1,5 @@
 ﻿/**
- * MbglStyle.cs — Typed wrapper around mbgl_style_t (non-owning, valid for the
+ * MbglStyle.cs — Typed wrapper around mln_style_t (non-owning, valid for the
  * lifetime of its parent MbglMap).
  */
 using System.Runtime.InteropServices;

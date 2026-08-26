@@ -1,5 +1,5 @@
 /**
- * MbglOfflineManager.cs — Typed wrapper around mbgl_offline_manager_t:
+ * MbglOfflineManager.cs — Typed wrapper around mln_offline_manager_t:
  * offline region downloads and ambient-cache maintenance.
  *
  * Create it with the same cachePath / assetPath / apiKey as the map so the
@@ -64,7 +64,7 @@ public readonly record struct MbglOfflineError(long RegionId, int Reason, string
 
 /// <summary>
 /// Manages offline region downloads and the ambient cache. Wraps
-/// <c>mbgl_offline_manager_t</c>. Dispose when done; in-flight operations
+/// <c>mln_offline_manager_t</c>. Dispose when done; in-flight operations
 /// complete safely after disposal.
 /// </summary>
 public sealed class MbglOfflineManager : IDisposable
@@ -101,7 +101,7 @@ public sealed class MbglOfflineManager : IDisposable
                                                      assetPath, apiKey, maxCacheSizeBytes);
         if (_handle == IntPtr.Zero)
             throw new InvalidOperationException(
-                "mbgl_offline_manager_create failed: " + NativeMethods.GetLastError());
+                "mln_offline_manager_create failed: " + NativeMethods.GetLastError());
     }
 
     // ── Regions ────────────────────────────────────────────────────────────────

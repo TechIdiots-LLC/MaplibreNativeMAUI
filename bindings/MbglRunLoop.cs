@@ -1,9 +1,9 @@
 ﻿/**
- * MbglRunLoop.cs — Typed wrapper around mbgl_runloop_t.
+ * MbglRunLoop.cs — Typed wrapper around mln_runloop_t.
  */
 namespace MapLibreNative.Maui;
 
-/// <summary>Wraps <c>mbgl_runloop_t*</c>. Must be created and disposed on the map thread.</summary>
+/// <summary>Wraps <c>mln_runloop_t*</c>. Must be created and disposed on the map thread.</summary>
 public sealed class MbglRunLoop : IDisposable
 {
     internal IntPtr Handle { get; private set; }
@@ -12,7 +12,7 @@ public sealed class MbglRunLoop : IDisposable
     {
         Handle = NativeMethods.RunLoopCreate();
         if (Handle == IntPtr.Zero)
-            throw new InvalidOperationException("mbgl_runloop_create returned null.");
+            throw new InvalidOperationException("mln_runloop_create returned null.");
     }
 
     /// <summary>Drains pending scheduled callbacks without blocking.</summary>

@@ -63,7 +63,7 @@ struct CabiOfflineManager {
     std::shared_ptr<OfflineState> state;
 };
 
-CabiOfflineManager* mgr_ptr(mbgl_offline_manager_t* m) noexcept {
+CabiOfflineManager* mgr_ptr(mln_offline_manager_t* m) noexcept {
     return reinterpret_cast<CabiOfflineManager*>(m);
 }
 
@@ -153,14 +153,14 @@ std::string status_to_json(const mln::OfflineRegionStatus& s) {
 /** Wraps a done_fn into mbgl's std::exception_ptr completion callback.
  *  Captures the state shared_ptr so it outlives the manager handle. */
 std::function<void(std::exception_ptr)> wrap_done(std::shared_ptr<OfflineState> state,
-                                                  mbgl_offline_done_fn cb, void* ud) {
+                                                  mln_offline_done_fn cb, void* ud) {
     return [state = std::move(state), cb, ud](std::exception_ptr err) {
         if (!cb) return;
         if (err) {
             std::string msg = exception_message(err);
-            cb(MBGL_NATIVE_ERROR, msg.c_str(), ud);
+            cb(MLN_NATIVE_ERROR, msg.c_str(), ud);
         } else {
-            cb(MBGL_OK, nullptr, ud);
+            cb(MLN_OK, nullptr, ud);
         }
     };
 }
@@ -168,25 +168,25 @@ std::function<void(std::exception_ptr)> wrap_done(std::shared_ptr<OfflineState> 
 /** Wraps a regions_fn into mbgl's expected<OfflineRegions> callback, caching
  *  the returned regions so later per-region calls can find them. */
 std::function<void(mln::expected<mln::OfflineRegions, std::exception_ptr>)>
-wrap_regions(std::shared_ptr<OfflineState> state, mbgl_offline_regions_fn cb, void* ud) {
+wrap_regions(std::shared_ptr<OfflineState> state, mln_offline_regions_fn cb, void* ud) {
     return [state = std::move(state), cb, ud](
                mln::expected<mln::OfflineRegions, std::exception_ptr> result) {
         if (!result) {
             std::string msg = exception_message(result.error());
-            cb(MBGL_NATIVE_ERROR, msg.c_str(), nullptr, ud);
+            cb(MLN_NATIVE_ERROR, msg.c_str(), nullptr, ud);
             return;
         }
         std::string json = regions_to_json(*result);
         for (auto& r : *result) state->cache(std::move(r));
-        cb(MBGL_OK, nullptr, json.c_str(), ud);
+        cb(MLN_OK, nullptr, json.c_str(), ud);
     };
 }
 
 /** Observer bridging mbgl's region callbacks to the C function pointers. */
 class CabiRegionObserver : public mln::OfflineRegionObserver {
 public:
-    CabiRegionObserver(int64_t id_, mbgl_offline_progress_fn progress_,
-                       mbgl_offline_region_error_fn error_, void* ud_)
+    CabiRegionObserver(int64_t id_, mln_offline_progress_fn progress_,
+                       mln_offline_region_error_fn error_, void* ud_)
         : id(id_), progress(progress_), error(error_), ud(ud_) {}
 
     void statusChanged(mln::OfflineRegionStatus s) override {
@@ -210,13 +210,13 @@ public:
     void mapboxTileCountLimitExceeded(uint64_t limit) override {
         if (!error) return;
         std::string msg = "Mapbox tile count limit exceeded: " + std::to_string(limit);
-        error(id, MBGL_OFFLINE_TILE_COUNT_LIMIT, msg.c_str(), ud);
+        error(id, MLN_OFFLINE_TILE_COUNT_LIMIT, msg.c_str(), ud);
     }
 
 private:
     int64_t                      id;
-    mbgl_offline_progress_fn     progress;
-    mbgl_offline_region_error_fn error;
+    mln_offline_progress_fn     progress;
+    mln_offline_region_error_fn error;
     void*                        ud;
 };
 
@@ -229,7 +229,7 @@ std::vector<uint8_t> to_metadata(const uint8_t* data, int len) {
 
 /* ─── Manager lifecycle ─────────────────────────────────────────────────────── */
 
-mbgl_offline_manager_t* mbgl_offline_manager_create(const char* cache_path,
+mln_offline_manager_t* mln_offline_manager_create(const char* cache_path,
                                                     const char* asset_path,
                                                     const char* api_key,
                                                     uint64_t    max_cache_size_bytes) noexcept {
@@ -243,40 +243,40 @@ mbgl_offline_manager_t* mbgl_offline_manager_create(const char* cache_path,
         auto fs = mln::FileSourceManager::get()->getFileSource(
             mln::FileSourceType::Database, resOpts, mln::ClientOptions());
         if (!fs) {
-            cabi_set_error(MBGL_NATIVE_ERROR, "mbgl_offline_manager_create: no Database file source available");
+            cabi_set_error(MLN_NATIVE_ERROR, "mln_offline_manager_create: no Database file source available");
             return nullptr;
         }
 
         auto* mgr  = new CabiOfflineManager{};
         mgr->state       = std::make_shared<OfflineState>();
         mgr->state->db   = std::static_pointer_cast<mln::DatabaseFileSource>(fs);
-        return reinterpret_cast<mbgl_offline_manager_t*>(mgr);
+        return reinterpret_cast<mln_offline_manager_t*>(mgr);
     } catch (const std::exception& e) { cabi_set_native_error(e); return nullptr; }
 }
 
-mbgl_status_t mbgl_offline_manager_destroy(mbgl_offline_manager_t* m) noexcept {
-    if (!m) return cabi_set_error(MBGL_INVALID_ARG, "mbgl_offline_manager_destroy: null handle");
-    try { delete mgr_ptr(m); return MBGL_OK; }
+mln_status_t mln_offline_manager_destroy(mln_offline_manager_t* m) noexcept {
+    if (!m) return cabi_set_error(MLN_INVALID_ARG, "mln_offline_manager_destroy: null handle");
+    try { delete mgr_ptr(m); return MLN_OK; }
     catch (const std::exception& e) { return cabi_set_native_error(e); }
 }
 
 /* ─── Regions ───────────────────────────────────────────────────────────────── */
 
-mbgl_status_t mbgl_offline_list_regions(mbgl_offline_manager_t* m,
-                                        mbgl_offline_regions_fn cb,
+mln_status_t mln_offline_list_regions(mln_offline_manager_t* m,
+                                        mln_offline_regions_fn cb,
                                         void* userdata) noexcept {
-    if (!m || !cb) return cabi_set_error(MBGL_INVALID_ARG, "mbgl_offline_list_regions: null arg");
+    if (!m || !cb) return cabi_set_error(MLN_INVALID_ARG, "mln_offline_list_regions: null arg");
     try {
         auto state = mgr_ptr(m)->state;
         state->db->listOfflineRegions(wrap_regions(state, cb, userdata));
-        return MBGL_OK;
+        return MLN_OK;
     } catch (const std::exception& e) { return cabi_set_native_error(e); }
 }
 
-static mbgl_status_t create_region_impl(mbgl_offline_manager_t* m,
+static mln_status_t create_region_impl(mln_offline_manager_t* m,
                                         mln::OfflineRegionDefinition definition,
                                         const uint8_t* metadata, int metadata_len,
-                                        mbgl_offline_regions_fn cb, void* userdata,
+                                        mln_offline_regions_fn cb, void* userdata,
                                         const char* fn_name) noexcept {
     try {
         auto state = mgr_ptr(m)->state;
@@ -285,20 +285,20 @@ static mbgl_status_t create_region_impl(mbgl_offline_manager_t* m,
             [state, cb, userdata](mln::expected<mln::OfflineRegion, std::exception_ptr> result) {
                 if (!result) {
                     std::string msg = exception_message(result.error());
-                    cb(MBGL_NATIVE_ERROR, msg.c_str(), nullptr, userdata);
+                    cb(MLN_NATIVE_ERROR, msg.c_str(), nullptr, userdata);
                     return;
                 }
                 std::string json = region_to_json_array(*result);
                 state->cache(std::move(*result));
-                cb(MBGL_OK, nullptr, json.c_str(), userdata);
+                cb(MLN_OK, nullptr, json.c_str(), userdata);
             });
-        return MBGL_OK;
+        return MLN_OK;
     } catch (const std::exception& e) {
-        return cabi_set_error(MBGL_NATIVE_ERROR, std::string(fn_name) + ": " + e.what());
+        return cabi_set_error(MLN_NATIVE_ERROR, std::string(fn_name) + ": " + e.what());
     }
 }
 
-mbgl_status_t mbgl_offline_create_region(mbgl_offline_manager_t* m,
+mln_status_t mln_offline_create_region(mln_offline_manager_t* m,
                                          const char* style_url,
                                          double lat_sw, double lon_sw,
                                          double lat_ne, double lon_ne,
@@ -306,35 +306,35 @@ mbgl_status_t mbgl_offline_create_region(mbgl_offline_manager_t* m,
                                          float  pixel_ratio,
                                          int    include_ideographs,
                                          const uint8_t* metadata, int metadata_len,
-                                         mbgl_offline_regions_fn cb,
+                                         mln_offline_regions_fn cb,
                                          void* userdata) noexcept {
     if (!m || !style_url || !cb)
-        return cabi_set_error(MBGL_INVALID_ARG, "mbgl_offline_create_region: null arg");
+        return cabi_set_error(MLN_INVALID_ARG, "mln_offline_create_region: null arg");
     auto bounds = mln::LatLngBounds::hull(mln::LatLng{lat_sw, lon_sw}, mln::LatLng{lat_ne, lon_ne});
     return create_region_impl(
         m,
         mln::OfflineTilePyramidRegionDefinition(style_url, bounds, min_zoom, max_zoom,
                                                  pixel_ratio, include_ideographs != 0),
-        metadata, metadata_len, cb, userdata, "mbgl_offline_create_region");
+        metadata, metadata_len, cb, userdata, "mln_offline_create_region");
 }
 
-mbgl_status_t mbgl_offline_create_region_geometry(mbgl_offline_manager_t* m,
+mln_status_t mln_offline_create_region_geometry(mln_offline_manager_t* m,
                                                   const char* style_url,
                                                   const char* geometry_geojson,
                                                   double min_zoom, double max_zoom,
                                                   float  pixel_ratio,
                                                   int    include_ideographs,
                                                   const uint8_t* metadata, int metadata_len,
-                                                  mbgl_offline_regions_fn cb,
+                                                  mln_offline_regions_fn cb,
                                                   void* userdata) noexcept {
     if (!m || !style_url || !geometry_geojson || !cb)
-        return cabi_set_error(MBGL_INVALID_ARG, "mbgl_offline_create_region_geometry: null arg");
+        return cabi_set_error(MLN_INVALID_ARG, "mln_offline_create_region_geometry: null arg");
 
     mln::style::conversion::Error err;
     auto geojson = mln::style::conversion::parseGeoJSON(geometry_geojson, err);
     if (!geojson)
-        return cabi_set_error(MBGL_INVALID_ARG,
-                              "mbgl_offline_create_region_geometry: " + err.message);
+        return cabi_set_error(MLN_INVALID_ARG,
+                              "mln_offline_create_region_geometry: " + err.message);
 
     mln::Geometry<double> geometry;
     if (geojson->is<mapbox::geojson::geometry>()) {
@@ -345,8 +345,8 @@ mbgl_status_t mbgl_offline_create_region_geometry(mbgl_offline_manager_t* m,
                geojson->get<mapbox::geojson::feature_collection>().size() == 1) {
         geometry = geojson->get<mapbox::geojson::feature_collection>().front().geometry;
     } else {
-        return cabi_set_error(MBGL_INVALID_ARG,
-                              "mbgl_offline_create_region_geometry: expected a GeoJSON Geometry, "
+        return cabi_set_error(MLN_INVALID_ARG,
+                              "mln_offline_create_region_geometry: expected a GeoJSON Geometry, "
                               "Feature, or single-feature FeatureCollection");
     }
 
@@ -354,7 +354,7 @@ mbgl_status_t mbgl_offline_create_region_geometry(mbgl_offline_manager_t* m,
         m,
         mln::OfflineGeometryRegionDefinition(style_url, std::move(geometry), min_zoom, max_zoom,
                                               pixel_ratio, include_ideographs != 0),
-        metadata, metadata_len, cb, userdata, "mbgl_offline_create_region_geometry");
+        metadata, metadata_len, cb, userdata, "mln_offline_create_region_geometry");
 }
 
 /** Looks up a cached region; returns nullptr (and sets last-error) if unknown.
@@ -365,7 +365,7 @@ static mln::OfflineRegion* find_region(const std::shared_ptr<OfflineState>& stat
     std::lock_guard<std::mutex> lock(state->mutex);
     auto it = state->regions.find(region_id);
     if (it == state->regions.end()) {
-        cabi_set_error(MBGL_INVALID_ARG,
+        cabi_set_error(MLN_INVALID_ARG,
                        std::string(fn_name) + ": unknown region id " + std::to_string(region_id) +
                            " (regions must come from list/create/merge on this manager)");
         return nullptr;
@@ -373,15 +373,15 @@ static mln::OfflineRegion* find_region(const std::shared_ptr<OfflineState>& stat
     return &it->second;
 }
 
-mbgl_status_t mbgl_offline_delete_region(mbgl_offline_manager_t* m,
+mln_status_t mln_offline_delete_region(mln_offline_manager_t* m,
                                          int64_t region_id,
-                                         mbgl_offline_done_fn cb,
+                                         mln_offline_done_fn cb,
                                          void* userdata) noexcept {
-    if (!m) return cabi_set_error(MBGL_INVALID_ARG, "mbgl_offline_delete_region: null handle");
+    if (!m) return cabi_set_error(MLN_INVALID_ARG, "mln_offline_delete_region: null handle");
     try {
         auto state   = mgr_ptr(m)->state;
-        auto* region = find_region(state, region_id, "mbgl_offline_delete_region");
-        if (!region) return MBGL_INVALID_ARG;
+        auto* region = find_region(state, region_id, "mln_offline_delete_region");
+        if (!region) return MLN_INVALID_ARG;
         // The region object must stay cached (alive) until the operation
         // completes; drop it from the cache in the completion callback.
         state->db->deleteOfflineRegion(
@@ -392,105 +392,105 @@ mbgl_status_t mbgl_offline_delete_region(mbgl_offline_manager_t* m,
                 }
                 wrap_done(state, cb, userdata)(err);
             });
-        return MBGL_OK;
+        return MLN_OK;
     } catch (const std::exception& e) { return cabi_set_native_error(e); }
 }
 
-mbgl_status_t mbgl_offline_invalidate_region(mbgl_offline_manager_t* m,
+mln_status_t mln_offline_invalidate_region(mln_offline_manager_t* m,
                                              int64_t region_id,
-                                             mbgl_offline_done_fn cb,
+                                             mln_offline_done_fn cb,
                                              void* userdata) noexcept {
-    if (!m) return cabi_set_error(MBGL_INVALID_ARG, "mbgl_offline_invalidate_region: null handle");
+    if (!m) return cabi_set_error(MLN_INVALID_ARG, "mln_offline_invalidate_region: null handle");
     try {
         auto state   = mgr_ptr(m)->state;
-        auto* region = find_region(state, region_id, "mbgl_offline_invalidate_region");
-        if (!region) return MBGL_INVALID_ARG;
+        auto* region = find_region(state, region_id, "mln_offline_invalidate_region");
+        if (!region) return MLN_INVALID_ARG;
         state->db->invalidateOfflineRegion(*region, wrap_done(state, cb, userdata));
-        return MBGL_OK;
+        return MLN_OK;
     } catch (const std::exception& e) { return cabi_set_native_error(e); }
 }
 
-mbgl_status_t mbgl_offline_set_region_download_state(mbgl_offline_manager_t* m,
+mln_status_t mln_offline_set_region_download_state(mln_offline_manager_t* m,
                                                      int64_t region_id,
                                                      int active) noexcept {
-    if (!m) return cabi_set_error(MBGL_INVALID_ARG, "mbgl_offline_set_region_download_state: null handle");
+    if (!m) return cabi_set_error(MLN_INVALID_ARG, "mln_offline_set_region_download_state: null handle");
     try {
         auto state   = mgr_ptr(m)->state;
-        auto* region = find_region(state, region_id, "mbgl_offline_set_region_download_state");
-        if (!region) return MBGL_INVALID_ARG;
+        auto* region = find_region(state, region_id, "mln_offline_set_region_download_state");
+        if (!region) return MLN_INVALID_ARG;
         state->db->setOfflineRegionDownloadState(
             *region, active ? mln::OfflineRegionDownloadState::Active
                             : mln::OfflineRegionDownloadState::Inactive);
-        return MBGL_OK;
+        return MLN_OK;
     } catch (const std::exception& e) { return cabi_set_native_error(e); }
 }
 
-mbgl_status_t mbgl_offline_set_region_observer(mbgl_offline_manager_t* m,
+mln_status_t mln_offline_set_region_observer(mln_offline_manager_t* m,
                                                int64_t region_id,
-                                               mbgl_offline_progress_fn progress,
-                                               mbgl_offline_region_error_fn error,
+                                               mln_offline_progress_fn progress,
+                                               mln_offline_region_error_fn error,
                                                void* userdata) noexcept {
-    if (!m) return cabi_set_error(MBGL_INVALID_ARG, "mbgl_offline_set_region_observer: null handle");
+    if (!m) return cabi_set_error(MLN_INVALID_ARG, "mln_offline_set_region_observer: null handle");
     try {
         auto state   = mgr_ptr(m)->state;
-        auto* region = find_region(state, region_id, "mbgl_offline_set_region_observer");
-        if (!region) return MBGL_INVALID_ARG;
+        auto* region = find_region(state, region_id, "mln_offline_set_region_observer");
+        if (!region) return MLN_INVALID_ARG;
         state->db->setOfflineRegionObserver(
             *region, std::make_unique<CabiRegionObserver>(region_id, progress, error, userdata));
-        return MBGL_OK;
+        return MLN_OK;
     } catch (const std::exception& e) { return cabi_set_native_error(e); }
 }
 
-mbgl_status_t mbgl_offline_get_region_status(mbgl_offline_manager_t* m,
+mln_status_t mln_offline_get_region_status(mln_offline_manager_t* m,
                                              int64_t region_id,
-                                             mbgl_offline_status_fn cb,
+                                             mln_offline_status_fn cb,
                                              void* userdata) noexcept {
-    if (!m || !cb) return cabi_set_error(MBGL_INVALID_ARG, "mbgl_offline_get_region_status: null arg");
+    if (!m || !cb) return cabi_set_error(MLN_INVALID_ARG, "mln_offline_get_region_status: null arg");
     try {
         auto state   = mgr_ptr(m)->state;
-        auto* region = find_region(state, region_id, "mbgl_offline_get_region_status");
-        if (!region) return MBGL_INVALID_ARG;
+        auto* region = find_region(state, region_id, "mln_offline_get_region_status");
+        if (!region) return MLN_INVALID_ARG;
         state->db->getOfflineRegionStatus(
             *region,
             [state, cb, userdata](mln::expected<mln::OfflineRegionStatus, std::exception_ptr> result) {
                 if (!result) {
                     std::string msg = exception_message(result.error());
-                    cb(MBGL_NATIVE_ERROR, msg.c_str(), nullptr, userdata);
+                    cb(MLN_NATIVE_ERROR, msg.c_str(), nullptr, userdata);
                     return;
                 }
                 std::string json = status_to_json(*result);
-                cb(MBGL_OK, nullptr, json.c_str(), userdata);
+                cb(MLN_OK, nullptr, json.c_str(), userdata);
             });
-        return MBGL_OK;
+        return MLN_OK;
     } catch (const std::exception& e) { return cabi_set_native_error(e); }
 }
 
-mbgl_status_t mbgl_offline_update_region_metadata(mbgl_offline_manager_t* m,
+mln_status_t mln_offline_update_region_metadata(mln_offline_manager_t* m,
                                                   int64_t region_id,
                                                   const uint8_t* metadata, int metadata_len,
-                                                  mbgl_offline_done_fn cb,
+                                                  mln_offline_done_fn cb,
                                                   void* userdata) noexcept {
-    if (!m) return cabi_set_error(MBGL_INVALID_ARG, "mbgl_offline_update_region_metadata: null handle");
+    if (!m) return cabi_set_error(MLN_INVALID_ARG, "mln_offline_update_region_metadata: null handle");
     try {
         auto state   = mgr_ptr(m)->state;
-        auto* region = find_region(state, region_id, "mbgl_offline_update_region_metadata");
-        if (!region) return MBGL_INVALID_ARG;
+        auto* region = find_region(state, region_id, "mln_offline_update_region_metadata");
+        if (!region) return MLN_INVALID_ARG;
         state->db->updateOfflineMetadata(
             region_id, to_metadata(metadata, metadata_len),
             [state, cb, userdata](mln::expected<mln::OfflineRegionMetadata, std::exception_ptr> result) {
                 if (!cb) return;
                 if (!result) {
                     std::string msg = exception_message(result.error());
-                    cb(MBGL_NATIVE_ERROR, msg.c_str(), userdata);
+                    cb(MLN_NATIVE_ERROR, msg.c_str(), userdata);
                 } else {
-                    cb(MBGL_OK, nullptr, userdata);
+                    cb(MLN_OK, nullptr, userdata);
                 }
             });
-        return MBGL_OK;
+        return MLN_OK;
     } catch (const std::exception& e) { return cabi_set_native_error(e); }
 }
 
-char* mbgl_offline_region_get_metadata(mbgl_offline_manager_t* m,
+char* mln_offline_region_get_metadata(mln_offline_manager_t* m,
                                        int64_t region_id,
                                        int* out_len) noexcept {
     if (out_len) *out_len = 0;
@@ -510,87 +510,87 @@ char* mbgl_offline_region_get_metadata(mbgl_offline_manager_t* m,
     } catch (...) { return nullptr; }
 }
 
-mbgl_status_t mbgl_offline_merge_database(mbgl_offline_manager_t* m,
+mln_status_t mln_offline_merge_database(mln_offline_manager_t* m,
                                           const char* side_db_path,
-                                          mbgl_offline_regions_fn cb,
+                                          mln_offline_regions_fn cb,
                                           void* userdata) noexcept {
     if (!m || !side_db_path || !cb)
-        return cabi_set_error(MBGL_INVALID_ARG, "mbgl_offline_merge_database: null arg");
+        return cabi_set_error(MLN_INVALID_ARG, "mln_offline_merge_database: null arg");
     try {
         auto state = mgr_ptr(m)->state;
         state->db->mergeOfflineRegions(side_db_path, wrap_regions(state, cb, userdata));
-        return MBGL_OK;
+        return MLN_OK;
     } catch (const std::exception& e) { return cabi_set_native_error(e); }
 }
 
-mbgl_status_t mbgl_offline_set_tile_count_limit(mbgl_offline_manager_t* m,
+mln_status_t mln_offline_set_tile_count_limit(mln_offline_manager_t* m,
                                                 uint64_t limit) noexcept {
-    if (!m) return cabi_set_error(MBGL_INVALID_ARG, "mbgl_offline_set_tile_count_limit: null handle");
-    try { mgr_ptr(m)->state->db->setOfflineMapboxTileCountLimit(limit); return MBGL_OK; }
+    if (!m) return cabi_set_error(MLN_INVALID_ARG, "mln_offline_set_tile_count_limit: null handle");
+    try { mgr_ptr(m)->state->db->setOfflineMapboxTileCountLimit(limit); return MLN_OK; }
     catch (const std::exception& e) { return cabi_set_native_error(e); }
 }
 
 /* ─── Ambient cache / database maintenance ──────────────────────────────────── */
 
-mbgl_status_t mbgl_offline_set_maximum_ambient_cache_size(mbgl_offline_manager_t* m,
+mln_status_t mln_offline_set_maximum_ambient_cache_size(mln_offline_manager_t* m,
                                                           uint64_t bytes,
-                                                          mbgl_offline_done_fn cb,
+                                                          mln_offline_done_fn cb,
                                                           void* userdata) noexcept {
-    if (!m) return cabi_set_error(MBGL_INVALID_ARG, "mbgl_offline_set_maximum_ambient_cache_size: null handle");
+    if (!m) return cabi_set_error(MLN_INVALID_ARG, "mln_offline_set_maximum_ambient_cache_size: null handle");
     try {
         auto state = mgr_ptr(m)->state;
         state->db->setMaximumAmbientCacheSize(bytes, wrap_done(state, cb, userdata));
-        return MBGL_OK;
+        return MLN_OK;
     } catch (const std::exception& e) { return cabi_set_native_error(e); }
 }
 
-mbgl_status_t mbgl_offline_clear_ambient_cache(mbgl_offline_manager_t* m,
-                                               mbgl_offline_done_fn cb,
+mln_status_t mln_offline_clear_ambient_cache(mln_offline_manager_t* m,
+                                               mln_offline_done_fn cb,
                                                void* userdata) noexcept {
-    if (!m) return cabi_set_error(MBGL_INVALID_ARG, "mbgl_offline_clear_ambient_cache: null handle");
+    if (!m) return cabi_set_error(MLN_INVALID_ARG, "mln_offline_clear_ambient_cache: null handle");
     try {
         auto state = mgr_ptr(m)->state;
         state->db->clearAmbientCache(wrap_done(state, cb, userdata));
-        return MBGL_OK;
+        return MLN_OK;
     } catch (const std::exception& e) { return cabi_set_native_error(e); }
 }
 
-mbgl_status_t mbgl_offline_invalidate_ambient_cache(mbgl_offline_manager_t* m,
-                                                    mbgl_offline_done_fn cb,
+mln_status_t mln_offline_invalidate_ambient_cache(mln_offline_manager_t* m,
+                                                    mln_offline_done_fn cb,
                                                     void* userdata) noexcept {
-    if (!m) return cabi_set_error(MBGL_INVALID_ARG, "mbgl_offline_invalidate_ambient_cache: null handle");
+    if (!m) return cabi_set_error(MLN_INVALID_ARG, "mln_offline_invalidate_ambient_cache: null handle");
     try {
         auto state = mgr_ptr(m)->state;
         state->db->invalidateAmbientCache(wrap_done(state, cb, userdata));
-        return MBGL_OK;
+        return MLN_OK;
     } catch (const std::exception& e) { return cabi_set_native_error(e); }
 }
 
-mbgl_status_t mbgl_offline_pack_database(mbgl_offline_manager_t* m,
-                                         mbgl_offline_done_fn cb,
+mln_status_t mln_offline_pack_database(mln_offline_manager_t* m,
+                                         mln_offline_done_fn cb,
                                          void* userdata) noexcept {
-    if (!m) return cabi_set_error(MBGL_INVALID_ARG, "mbgl_offline_pack_database: null handle");
+    if (!m) return cabi_set_error(MLN_INVALID_ARG, "mln_offline_pack_database: null handle");
     try {
         auto state = mgr_ptr(m)->state;
         state->db->packDatabase(wrap_done(state, cb, userdata));
-        return MBGL_OK;
+        return MLN_OK;
     } catch (const std::exception& e) { return cabi_set_native_error(e); }
 }
 
-mbgl_status_t mbgl_offline_reset_database(mbgl_offline_manager_t* m,
-                                          mbgl_offline_done_fn cb,
+mln_status_t mln_offline_reset_database(mln_offline_manager_t* m,
+                                          mln_offline_done_fn cb,
                                           void* userdata) noexcept {
-    if (!m) return cabi_set_error(MBGL_INVALID_ARG, "mbgl_offline_reset_database: null handle");
+    if (!m) return cabi_set_error(MLN_INVALID_ARG, "mln_offline_reset_database: null handle");
     try {
         auto state = mgr_ptr(m)->state;
         state->db->resetDatabase(wrap_done(state, cb, userdata));
-        return MBGL_OK;
+        return MLN_OK;
     } catch (const std::exception& e) { return cabi_set_native_error(e); }
 }
 
-mbgl_status_t mbgl_offline_set_pack_database_automatically(mbgl_offline_manager_t* m,
+mln_status_t mln_offline_set_pack_database_automatically(mln_offline_manager_t* m,
                                                            int enabled) noexcept {
-    if (!m) return cabi_set_error(MBGL_INVALID_ARG, "mbgl_offline_set_pack_database_automatically: null handle");
-    try { mgr_ptr(m)->state->db->runPackDatabaseAutomatically(enabled != 0); return MBGL_OK; }
+    if (!m) return cabi_set_error(MLN_INVALID_ARG, "mln_offline_set_pack_database_automatically: null handle");
+    try { mgr_ptr(m)->state->db->runPackDatabaseAutomatically(enabled != 0); return MLN_OK; }
     catch (const std::exception& e) { return cabi_set_native_error(e); }
 }

@@ -1,5 +1,5 @@
 ﻿/**
- * MbglMap.cs — Typed C# wrapper around the native mbgl_map_t handle.
+ * MbglMap.cs — Typed C# wrapper around the native mln_map_t handle.
  *
  * Lifetime: must be disposed on the same thread as its MbglRunLoop.
  * The MbglFrontend must outlive the MbglMap.
@@ -8,7 +8,7 @@ using System.Runtime.InteropServices;
 
 namespace MapLibreNative.Maui;
 
-/// <summary>Wraps <c>mbgl_map_t*</c>. Dispose on the render thread.</summary>
+/// <summary>Wraps <c>mln_map_t*</c>. Dispose on the render thread.</summary>
 public sealed class MbglMap : IDisposable
 {
     internal IntPtr Handle { get; private set; }
@@ -47,10 +47,10 @@ public sealed class MbglMap : IDisposable
                 nativeObserver, IntPtr.Zero);
 
         if (Handle == IntPtr.Zero)
-            throw new InvalidOperationException("mbgl_map_create returned null.");
+            throw new InvalidOperationException("mln_map_create returned null.");
 
-        // mbgl_map_create transfers ownership of the frontend pointer into the
-        // native CabiMap struct. Calling mbgl_frontend_destroy afterwards would
+        // mln_map_create transfers ownership of the frontend pointer into the
+        // native CabiMap struct. Calling mln_frontend_destroy afterwards would
         // be a double-free (0xc0000374 heap corruption). Zero the C# handle so
         // MbglFrontend.Dispose() becomes a no-op from this point forward.
         frontend.TransferOwnership();

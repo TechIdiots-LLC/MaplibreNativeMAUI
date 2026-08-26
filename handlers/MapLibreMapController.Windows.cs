@@ -1406,7 +1406,7 @@ public class MapLibreMapController : IMapLibreMapController
     public bool FollowLocation { get; set; } = true;
     public bool ShowBearing    { get; set; } = true;
 
-    private const string LocIndLayerId = "mbgl_maui_location";
+    private const string LocIndLayerId = "mln_maui_location";
     private MbglLayer?   _locIndLayer;
     private record struct LocIndParams(double Lat, double Lon, float Bearing, float AccuracyM);
     private LocIndParams? _pendingLocInd;

@@ -80,7 +80,7 @@ public class MapLibreMapController : IMapLibreMapController
         var cts = new CancellationTokenSource();
         s_pendingRequests[requestId] = cts;
 
-        // Fire-and-forget; errors are delivered via mbgl_http_respond.
+        // Fire-and-forget; errors are delivered via mln_http_respond.
         _ = FetchAsync(requestId, url, etag, modified, rangeStart, rangeEnd, cts.Token);
     }
 
@@ -2083,8 +2083,8 @@ public class MapLibreMapController : IMapLibreMapController
         _map?.Dispose();      _map      = null;
         // Drain pending libuv tasks scheduled by Map destruction.
         for (int i = 0; i < 8 && _runLoop != null; i++) _runLoop.RunOnce();
-        // mbgl_map_create transfers ownership of the frontend pointer to the
-        // native CabiMap; mbgl_map_destroy already destroyed it. Do not call
+        // mln_map_create transfers ownership of the frontend pointer to the
+        // native CabiMap; mln_map_destroy already destroyed it. Do not call
         // Dispose() on _frontend — it is a no-op after TransferOwnership() but
         // we null it here explicitly to avoid confusion.
         _frontend = null;

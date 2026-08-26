@@ -11,12 +11,12 @@
 // knowing the difference.
 //
 // Protocol:
-//   1. mbgl_set_http_provider(fn, userdata) -- called once at map init from C#.
+//   1. mln_set_http_provider(fn, userdata) -- called once at map init from C#.
 //   2. request() -- assigns a unique request_id, calls fn().
-//   3. C# fetches the URL, then calls mbgl_http_respond(request_id, ...).
-//   4. mbgl_http_respond posts a closure onto the RunLoop and calls callback.
+//   3. C# fetches the URL, then calls mln_http_respond(request_id, ...).
+//   4. mln_http_respond posts a closure onto the RunLoop and calls callback.
 //   5. If the AsyncRequest is destroyed before the response arrives,
-//      mbgl_http_cancel(request_id) is called and the response is silently dropped.
+//      mln_http_cancel(request_id) is called and the response is silently dropped.
 //
 // Two routes into that machinery, because the platforms differ:
 //
@@ -27,10 +27,10 @@
 //     defining a second one would collide. Instead a FileSource is registered
 //     at runtime for FileSourceType::Network, which needs no build changes and
 //     is opt-in: the factory is installed only when a provider is actually set,
-//     so an application that never calls mbgl_set_http_provider keeps
+//     so an application that never calls mln_set_http_provider keeps
 //     maplibre's own network stack, unchanged.
 
-// Include the C ABI header for mbgl_http_provider_fn / mbgl_http_error_t typedefs.
+// Include the C ABI header for mln_http_provider_fn / mln_http_error_t typedefs.
 #include "mln_cabi.h"
 
 #include <mln/storage/file_source.hpp>
@@ -67,9 +67,9 @@ struct PendingRequest {
 
 struct HttpProviderState {
     std::mutex                                    mutex;
-    mbgl_http_provider_fn                         fn      = nullptr;
+    mln_http_provider_fn                         fn      = nullptr;
     void*                                         userdata = nullptr;
-    mbgl_http_cancel_fn                           cancelFn = nullptr;
+    mln_http_cancel_fn                           cancelFn = nullptr;
     void*                                         cancelUserdata = nullptr;
     std::atomic<uint64_t>                         nextId{1};
     std::unordered_map<uint64_t, std::shared_ptr<PendingRequest>> pending;
@@ -90,9 +90,9 @@ HttpProviderState& state() {
 extern "C" {
 
 // Defined at the bottom of this file, once ProviderFileSource is in scope.
-void mbgl_install_provider_file_source() noexcept;
+void mln_install_provider_file_source() noexcept;
 
-void mbgl_set_http_provider_impl(mbgl_http_provider_fn fn, void* userdata) noexcept {
+void mln_set_http_provider_impl(mln_http_provider_fn fn, void* userdata) noexcept {
     {
         auto& s = state();
         std::lock_guard<std::mutex> lock(s.mutex);
@@ -112,33 +112,33 @@ void mbgl_set_http_provider_impl(mbgl_http_provider_fn fn, void* userdata) noexc
     // throw that away, which would be a regression on the one platform that
     // already worked.
     if (fn) {
-        mbgl_install_provider_file_source();
+        mln_install_provider_file_source();
     }
 #endif
 }
 
-void mbgl_http_provider_claim_prefix_impl(const char* url_prefix) noexcept {
+void mln_http_provider_claim_prefix_impl(const char* url_prefix) noexcept {
     if (!url_prefix || !*url_prefix) return;
     auto& s = state();
     std::lock_guard<std::mutex> lock(s.mutex);
     s.claims.emplace_back(url_prefix);
 }
 
-void mbgl_http_provider_clear_claims_impl() noexcept {
+void mln_http_provider_clear_claims_impl() noexcept {
     auto& s = state();
     std::lock_guard<std::mutex> lock(s.mutex);
     s.claims.clear();
 }
 
-void mbgl_set_http_cancel_provider_impl(mbgl_http_cancel_fn fn, void* userdata) noexcept {
+void mln_set_http_cancel_provider_impl(mln_http_cancel_fn fn, void* userdata) noexcept {
     auto& s = state();
     std::lock_guard<std::mutex> lock(s.mutex);
     s.cancelFn       = fn;
     s.cancelUserdata = userdata;
 }
 
-void mbgl_http_respond_impl(uint64_t request_id,
-                             mbgl_http_error_t error,
+void mln_http_respond_impl(uint64_t request_id,
+                             mln_http_error_t error,
                              const char*       error_message,
                              int               http_status,
                              const char*       data,
@@ -172,14 +172,14 @@ void mbgl_http_respond_impl(uint64_t request_id,
     // are owned by C# and may be freed after this call returns).
     mln::Response response;
 
-    if (error != MBGL_HTTP_ERROR_NONE) {
+    if (error != MLN_HTTP_ERROR_NONE) {
         using Reason = mln::Response::Error::Reason;
         Reason reason;
         switch (error) {
-            case MBGL_HTTP_ERROR_NOT_FOUND:  reason = Reason::NotFound;    break;
-            case MBGL_HTTP_ERROR_SERVER:     reason = Reason::Server;      break;
-            case MBGL_HTTP_ERROR_CONNECTION: reason = Reason::Connection;  break;
-            case MBGL_HTTP_ERROR_RATE_LIMIT: reason = Reason::RateLimit;   break;
+            case MLN_HTTP_ERROR_NOT_FOUND:  reason = Reason::NotFound;    break;
+            case MLN_HTTP_ERROR_SERVER:     reason = Reason::Server;      break;
+            case MLN_HTTP_ERROR_CONNECTION: reason = Reason::Connection;  break;
+            case MLN_HTTP_ERROR_RATE_LIMIT: reason = Reason::RateLimit;   break;
             default:                          reason = Reason::Other;       break;
         }
         response.error = std::make_unique<const mln::Response::Error>(
@@ -227,7 +227,7 @@ void mbgl_http_respond_impl(uint64_t request_id,
 
     // Marshal the callback back onto the requesting thread's RunLoop. The closure
     // re-checks the cancelled flag when it runs: the AsyncRequest destructor
-    // (which sets the flag via mbgl_http_cancel_impl) executes on this same
+    // (which sets the flag via mln_http_cancel_impl) executes on this same
     // RunLoop thread, so by execution time the flag conclusively says whether
     // the callback target is still alive. The map entry is erased only now.
     auto response_copy = response;
@@ -242,8 +242,8 @@ void mbgl_http_respond_impl(uint64_t request_id,
     });
 }
 
-void mbgl_http_cancel_impl(uint64_t request_id) noexcept {
-    mbgl_http_cancel_fn cancelFn = nullptr;
+void mln_http_cancel_impl(uint64_t request_id) noexcept {
+    mln_http_cancel_fn cancelFn = nullptr;
     void*               cancelUserdata = nullptr;
     {
         auto& s = state();
@@ -278,7 +278,7 @@ class ProviderRequest : public AsyncRequest {
 public:
     explicit ProviderRequest(uint64_t id) : _id(id) {}
 
-    ~ProviderRequest() override { mbgl_http_cancel_impl(_id); }
+    ~ProviderRequest() override { mln_http_cancel_impl(_id); }
 
 private:
     uint64_t _id;
@@ -290,7 +290,7 @@ std::unique_ptr<AsyncRequest> dispatchToProvider(const Resource&        resource
                                                  FileSource::Callback&& callback) {
     auto& s = state();
 
-    mbgl_http_provider_fn fn;
+    mln_http_provider_fn fn;
     void* userdata;
     uint64_t id;
     {
@@ -303,7 +303,7 @@ std::unique_ptr<AsyncRequest> dispatchToProvider(const Resource&        resource
             Response response;
             response.error = std::make_unique<const Response::Error>(
                 Response::Error::Reason::Connection,
-                "No HTTP provider registered (call mbgl_set_http_provider first)");
+                "No HTTP provider registered (call mln_set_http_provider first)");
             callback(std::move(response));
             return nullptr;
         }
@@ -339,7 +339,7 @@ std::unique_ptr<AsyncRequest> dispatchToProvider(const Resource&        resource
     }
 
     // Invoke the provider (may be called from any thread — C# will dispatch
-    // the fetch to a thread pool and call back via mbgl_http_respond).
+    // the fetch to a thread pool and call back via mln_http_respond).
     fn(id, resource.url.c_str(), etag, modified, range_start, range_end, userdata);
 
     return std::make_unique<ProviderRequest>(id);
@@ -495,7 +495,7 @@ extern "C" {
 /**
  * Install the provider-backed network file source.
  *
- * Called from mbgl_set_http_provider once a provider exists, so an application
+ * Called from mln_set_http_provider once a provider exists, so an application
  * that never registers one keeps maplibre's own network stack untouched.
  *
  * Registration is idempotent and one-way. mbgl caches file source instances, so
@@ -503,7 +503,7 @@ extern "C" {
  * which is why the public API documents that the provider must be set before
  * the first map is created.
  */
-void mbgl_install_provider_file_source() noexcept {
+void mln_install_provider_file_source() noexcept {
     static std::once_flag once;
     std::call_once(once, [] {
         mln::FileSourceManager::get()->registerFileSourceFactory(

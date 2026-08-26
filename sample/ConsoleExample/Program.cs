@@ -195,11 +195,11 @@ class Program
             style         = CS_OWNDC,
             lpfnWndProc   = Marshal.GetFunctionPointerForDelegate(wndProc),
             hInstance     = hInst,
-            lpszClassName = "mbgl_console_ctx",
+            lpszClassName = "mln_console_ctx",
         };
         RegisterClassEx(ref wc);
 
-        var hwnd = CreateWindowEx(0, "mbgl_console_ctx", "offscreen",
+        var hwnd = CreateWindowEx(0, "mln_console_ctx", "offscreen",
             WS_OVERLAPPEDWINDOW, 0, 0, Width, Height,
             IntPtr.Zero, IntPtr.Zero, hInst, IntPtr.Zero);
         if (hwnd == IntPtr.Zero) { Console.Error.WriteLine("CreateWindowEx failed."); return; }

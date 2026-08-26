@@ -150,7 +150,7 @@ void EGLRenderableResource::bind() {
 class EGLFrontend : public PlatformFrontend {
 public:
     EGLFrontend(ANativeWindow* window, mln::Size sz, float pixelRatio,
-                mbgl_render_fn renderCb, void* renderUd)
+                mln_render_fn renderCb, void* renderUd)
         : _backend(window, sz)
         , _renderer(std::make_unique<mln::Renderer>(_backend, pixelRatio))
         , _renderCb(renderCb), _renderUd(renderUd)
@@ -203,7 +203,7 @@ public:
 private:
     EGLBackend                              _backend;
     std::unique_ptr<mln::Renderer>         _renderer;
-    mbgl_render_fn                          _renderCb;
+    mln_render_fn                          _renderCb;
     void*                                   _renderUd;
     std::shared_ptr<mln::UpdateParameters> _updateParams;
     std::mutex                              _mutex;
@@ -213,7 +213,7 @@ private:
 PlatformFrontend* createPlatformFrontend(
     void* surface_handle, void* /*gl_context*/,
     mln::Size sz, float pixelRatio,
-    mbgl_render_fn renderCb, void* renderUd)
+    mln_render_fn renderCb, void* renderUd)
 {
     return new EGLFrontend(
         reinterpret_cast<ANativeWindow*>(surface_handle),
@@ -304,7 +304,7 @@ void AndroidVulkanResource::createPlatformSurface() {
 PlatformFrontend* createPlatformFrontend(
     void* surface_handle, void* /*context*/,
     mln::Size sz, float pixelRatio,
-    mbgl_render_fn renderCb, void* renderUd)
+    mln_render_fn renderCb, void* renderUd)
 {
     return new VulkanFrontendT<AndroidVulkanBackend>(
         pixelRatio, renderCb, renderUd,

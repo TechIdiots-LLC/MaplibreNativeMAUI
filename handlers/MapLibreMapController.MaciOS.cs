@@ -1461,8 +1461,8 @@ public class MapLibreMapController : IMapLibreMapController
         _map?.Dispose();      _map      = null;
         // Drain pending libuv tasks scheduled by Map destruction.
         for (int i = 0; i < 8 && _runLoop != null; i++) _runLoop.RunOnce();
-        // mbgl_map_create transfers ownership of the frontend pointer to the
-        // native CabiMap; mbgl_map_destroy already destroyed it. Do not call
+        // mln_map_create transfers ownership of the frontend pointer to the
+        // native CabiMap; mln_map_destroy already destroyed it. Do not call
         // Dispose() on _frontend — it is a no-op after TransferOwnership() but
         // we null it here explicitly to avoid confusion.
         _frontend = null;
