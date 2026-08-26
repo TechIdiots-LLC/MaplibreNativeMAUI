@@ -569,6 +569,9 @@ jobs:
           artifacts:    "artifacts/*.nupkg,artifacts/*.zip,artifacts/*.apk"
           draft:        false
           allowUpdates: true
+          # A version carrying a suffix (5.0.0-pre.2) is a prerelease; without this the
+          # release is published as the latest stable one and has to be corrected by hand.
+          prerelease:   ${{ contains(needs.version-check.outputs.version, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
