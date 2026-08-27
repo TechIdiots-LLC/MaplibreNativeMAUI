@@ -347,7 +347,7 @@ public partial class MlnMapImage : Grid
 
         Loaded += (_, _) => TryInitialize();
         Unloaded += (_, _) => Teardown();
-        SizeChanged += (_, _) => UpdateSize();
+        SizeChanged += (_, _) => { UpdateSize(); UpdateAttributionMaxWidth(); };
     }
 
     private double GetDpiScale()
@@ -1677,6 +1677,18 @@ public partial class MlnMapImage : Grid
     private string? _appliedAttribution; // content currently shown — banner re-expands only when this changes
     private DispatcherTimer? _attrCollapseTimer;
 
+    /// <summary>
+    /// Wraps the attribution banner at the control's width rather than a fixed cap, leaving
+    /// room for its 10px margin on each side plus the border and padding.
+    /// </summary>
+    private void UpdateAttributionMaxWidth()
+    {
+        if (_attrTextBlock == null) return;
+        const double sideMargins = 10 + 10;   // Margin.Left + breathing room on the right
+        const double chrome      = 2 + 12;    // BorderThickness*2 + Padding.Left+Right
+        _attrTextBlock.MaxWidth = Math.Max(120, ActualWidth - sideMargins - chrome);
+    }
+
     private void BuildAttributionOverlay()
     {
         _attrTextBlock = new TextBlock
@@ -1685,7 +1697,8 @@ public partial class MlnMapImage : Grid
             FontSize = 10,
             Foreground = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
             TextWrapping = TextWrapping.Wrap,
-            MaxWidth = 320,
+            // MaxWidth comes from the control's own width (UpdateAttributionMaxWidth):
+            // a fixed cap wrapped the banner early on any map wider than it.
         };
         _attrBorder = new Border
         {

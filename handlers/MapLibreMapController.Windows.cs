@@ -262,7 +262,8 @@ public class MapLibreMapController : IMapLibreMapController
             FontSize = 11,
             Foreground = new WUXM.SolidColorBrush(Windows.UI.Color.FromArgb(255, 85, 85, 85)),
             TextWrapping = WUX.TextWrapping.Wrap,
-            MaxWidth = 320,
+            // MaxWidth is set from the map's own width (see UpdateAttributionMaxWidth):
+            // a fixed cap wrapped the banner early on any map wider than it.
         };
         _attrBorder = new WUXC.Border
         {
@@ -287,8 +288,25 @@ public class MapLibreMapController : IMapLibreMapController
         _attrBorder.DoubleTapped += (_, e) => e.Handled = true;
         View.Children.Add(_attrBorder);
 
+        View.SizeChanged += (_, _) => UpdateAttributionMaxWidth();
+        UpdateAttributionMaxWidth();
+
         RefreshGpsControl();
         RefreshTerrainControl();
+    }
+
+    /// <summary>
+    /// Wraps the attribution banner at the map's width rather than a fixed cap, leaving room
+    /// for its 10px margin on each side plus the border and padding. Without this the banner
+    /// wrapped at a constant width and looked cramped on any map wider than it.
+    /// </summary>
+    private void UpdateAttributionMaxWidth()
+    {
+        if (_attrTextBlock == null) return;
+        const double sideMargins = 10 + 10;   // Margin.Left + breathing room on the right
+        const double chrome      = 2 + 12;    // BorderThickness*2 + Padding.Left+Right
+        double available = View.ActualWidth - sideMargins - chrome;
+        _attrTextBlock.MaxWidth = Math.Max(120, available);
     }
 
     private static WUXC.Border MakeGpsButton(string glyph, Action onClick, bool top)

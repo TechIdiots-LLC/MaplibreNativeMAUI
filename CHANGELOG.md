@@ -9,6 +9,7 @@
 
 ### 🐞 Bug fixes
 - **Android 16 KB page alignment** — the 64-bit `libmln-cabi.so` was linked for 4 KB pages, which Google Play now rejects; fixed in 4.5.1 (see its entry below) and carried here. This branch keys the fix off ELF class rather than the arm64-v8a/x86_64 allowlist 4.5.1 shipped, because it builds a third ABI — `armeabi-v7a` — that the allowlist form skipped without a trace, and a 64-bit ABI added later would have been skipped the same way.
+- **The attribution banner wrapped early, well short of the map's width** — the expanded banner's `MaxWidth` was a hard-coded 320px on both the MAUI WinUI overlay and the WPF control, so on any map wider than that it wrapped into several lines with empty space beside it. It now wraps at the map's own width less its 10px margins, border and padding, and re-measures whenever the map resizes.
 - _...Add new stuff here..._
 
 ## 5.0.0-pre.1
