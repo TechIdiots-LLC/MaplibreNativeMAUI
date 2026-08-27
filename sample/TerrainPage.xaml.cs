@@ -36,7 +36,10 @@ public partial class TerrainPage : ContentPage
         string[]? TileUrlTemplates = null,
         string? Encoding           = null,
         string? Attribution        = null,
-        int TileSize               = 256,
+        // The style spec's default, and what a DEM serves unless it says otherwise. It is
+        // what the source selects tiles with, so a wrong value loads a different zoom than
+        // the terrain meshes; maplibre-native ignores tileSize in TileJSON, so it is set here.
+        int TileSize               = 512,
         int MaxZoom                = 15);
 
     // Preset raster-dem (terrain) sources. The custom-URL entry overrides these,
@@ -49,7 +52,8 @@ public partial class TerrainPage : ContentPage
             TileJsonUrl:      null,
             TileUrlTemplates: ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],
             Encoding:         "terrarium",
-            Attribution:      "<a href=\"https://registry.opendata.aws/terrain-tiles/\">Open Data</a>"),
+            Attribution:      "<a href=\"https://registry.opendata.aws/terrain-tiles/\">Open Data</a>",
+            TileSize:         256),
     };
 
     // Whether the picked DEM source has been added to the currently loaded style.

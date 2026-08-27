@@ -102,7 +102,10 @@ public partial class MainWindow : Window
         string[]? TileUrlTemplates = null,
         string? Encoding           = null,
         string? Attribution        = null,
-        int TileSize               = 256,
+        // The style spec's default, and what a DEM serves unless it says otherwise. It is
+        // what the source selects tiles with, so a wrong value loads a different zoom than
+        // the terrain meshes; maplibre-native ignores tileSize in TileJSON, so it is set here.
+        int TileSize               = 512,
         int MaxZoom                = 15);
 
     private static readonly Dictionary<string, TerrainSource> TerrainSources = new()
@@ -113,7 +116,8 @@ public partial class MainWindow : Window
             TileJsonUrl:      null,
             TileUrlTemplates: ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],
             Encoding:         "terrarium",
-            Attribution:      "<a href=\"https://registry.opendata.aws/terrain-tiles/\">Open Data</a>"),
+            Attribution:      "<a href=\"https://registry.opendata.aws/terrain-tiles/\">Open Data</a>",
+            TileSize:         256),
     };
 
     // Internal source ID the toggle adds the picked raster-dem under.
