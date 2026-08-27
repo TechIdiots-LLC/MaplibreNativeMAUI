@@ -120,11 +120,6 @@ public:
 
     void setSize(mln::Size sz) { this->size = sz; }
 
-    void updateAssumedState() override {
-        assumeFramebufferBinding(ImplicitFramebufferBinding);
-        assumeViewport(0, 0, getResource<MetalRenderableResource>().framebufferSize());
-    }
-
     void activate() override {}
     void deactivate() override {}
 
