@@ -102,9 +102,7 @@ public partial class MainWindow : Window
         string[]? TileUrlTemplates = null,
         string? Encoding           = null,
         string? Attribution        = null,
-        // The style spec's default, and what a DEM serves unless it says otherwise. It is
-        // what the source selects tiles with, so a wrong value loads a different zoom than
-        // the terrain meshes; maplibre-native ignores tileSize in TileJSON, so it is set here.
+        // The style spec's default; a TileJSON that declares its own tileSize overrides it.
         int TileSize               = 512,
         int MaxZoom                = 15);
 
