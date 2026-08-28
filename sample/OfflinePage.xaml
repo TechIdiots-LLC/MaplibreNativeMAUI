@@ -7,21 +7,27 @@
              x:Class="MauiSample.OfflinePage"
              Title="Offline">
 
-    <!-- Single continuous scroll: map at the top (bounded height set in
-         code-behind) with controls flowing directly beneath. Dragging the map
-         pans it; dragging the controls scrolls the page. -->
-    <ScrollView>
-        <VerticalStackLayout Spacing="0">
+    <!-- The map is pinned in row 0 and only the controls beneath it scroll. It used to
+         share one ScrollView with them, but the on-map controls are children of the map,
+         so scrolling the page carried them out of view - the terrain button first, being
+         the topmost. The map's height is still set in code-behind to a fraction of the
+         page so a strip of controls always shows below it, which is what keeps "drag the
+         map to pan" and "drag the controls to scroll" unambiguous. -->
+    <Grid RowDefinitions="Auto,*">
 
-            <!--
-                Offline regions demo. The map and MlnOfflineManager share the same
-                cache database (MlnCache.DefaultPath), so a downloaded region is
-                served to the map even with the network forced offline.
-            -->
-            <maplibre:MapLibreMap
-                x:Name="Map"
-                HeightRequest="400"
-                StyleUrl="https://demotiles.maplibre.org/style.json" />
+        <!--
+            Offline regions demo. The map and MlnOfflineManager share the same
+            cache database (MlnCache.DefaultPath), so a downloaded region is
+            served to the map even with the network forced offline.
+        -->
+
+        <maplibre:MapLibreMap
+            Grid.Row="0"
+            x:Name="Map"
+            HeightRequest="400"
+            StyleUrl="https://demotiles.maplibre.org/style.json" />
+
+        <ScrollView Grid.Row="1">
 
             <VerticalStackLayout Spacing="8" Padding="12">
 
@@ -50,7 +56,7 @@
                 <Label Text="{Binding Status}" FontSize="12" TextColor="Gray" />
 
             </VerticalStackLayout>
-        </VerticalStackLayout>
-    </ScrollView>
+        </ScrollView>
+    </Grid>
 
 </ContentPage>

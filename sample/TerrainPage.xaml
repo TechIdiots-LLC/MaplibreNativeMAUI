@@ -5,20 +5,26 @@
              x:Class="MauiSample.TerrainPage"
              Title="3D Terrain">
 
-    <!-- Single-scroll layout: the map has a bounded height (set in code-behind)
-         with the controls flowing beneath it. -->
-    <ScrollView>
-        <VerticalStackLayout Spacing="0">
+    <!-- The map is pinned in row 0 and only the controls beneath it scroll. It used to
+         share one ScrollView with them, but the on-map controls are children of the map,
+         so scrolling the page carried them out of view - the terrain button first, being
+         the topmost. The map's height is still set in code-behind to a fraction of the
+         page so a strip of controls always shows below it, which is what keeps "drag the
+         map to pan" and "drag the controls to scroll" unambiguous. -->
+    <Grid RowDefinitions="Auto,*">
 
-            <maplibre:MapLibreMap
-                x:Name="Map"
-                HeightRequest="400"
-                ShowNavigationControls="True"
-                ShowTerrainControl="True"
-                TerrainControlSourceId="__terrain-dem"
-                NavigationControlPosition="TopRight"
-                TerrainControlPosition="TopRight"
-                AttributionControlPosition="BottomLeft" />
+        <maplibre:MapLibreMap
+            Grid.Row="0"
+            x:Name="Map"
+            HeightRequest="400"
+            ShowNavigationControls="True"
+            ShowTerrainControl="True"
+            TerrainControlSourceId="__terrain-dem"
+            NavigationControlPosition="TopRight"
+            TerrainControlPosition="TopRight"
+            AttributionControlPosition="BottomLeft" />
+
+        <ScrollView Grid.Row="1">
 
             <VerticalStackLayout Spacing="8" Padding="12">
 
@@ -50,7 +56,7 @@
                 <Label x:Name="StatusLabel" FontSize="12" TextColor="Gray" Text="Terrain: off" />
 
             </VerticalStackLayout>
-        </VerticalStackLayout>
-    </ScrollView>
+        </ScrollView>
+    </Grid>
 
 </ContentPage>

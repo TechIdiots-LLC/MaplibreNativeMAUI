@@ -14,35 +14,43 @@
         the collection and the map updates live. The status row shows the current VisibleRegion, updated
         on every camera-idle. Tapping a marker identifies it via a rendered-feature query.
     -->
-    <!-- Single continuous scroll: map at the top (bounded height set in
-         code-behind) with controls flowing directly beneath. Dragging the map
-         pans it; dragging the controls scrolls the page. -->
-    <ScrollView>
-        <VerticalStackLayout Spacing="0">
-            <maplibre:MapLibreMap x:Name="Map"
-                                  HeightRequest="400"
-                                  StyleUrl="{Binding StyleUrl}"
-                                  ItemsSource="{Binding Landmarks}"
-                                  MapReady="OnMapReady"
-                                  CameraIdle="OnCameraIdle"
-                                  MapClick="OnMapClick">
-                <maplibre:MapLibreMap.ItemTemplate>
-                    <DataTemplate x:DataType="local:LandmarkItem">
-                        <overlays:Pin Location="{Binding Location}"
-                                      Label="{Binding Name}"
-                                      TintColor="{Binding Color}" />
-                    </DataTemplate>
-                </maplibre:MapLibreMap.ItemTemplate>
-            </maplibre:MapLibreMap>
+    <!-- The map is pinned in row 0 and only the controls beneath it scroll. It used to
+         share one ScrollView with them, but the on-map controls are children of the map,
+         so scrolling the page carried them out of view - the terrain button first, being
+         the topmost. The map's height is still set in code-behind to a fraction of the
+         page so a strip of controls always shows below it, which is what keeps "drag the
+         map to pan" and "drag the controls to scroll" unambiguous. -->
+    <Grid RowDefinitions="Auto,*">
 
-            <HorizontalStackLayout Padding="8,4" Spacing="8">
-                <Button Text="Add pin" Command="{Binding AddMarkerCommand}" />
-                <Button Text="Remove last" Command="{Binding RemoveLastCommand}" />
-                <Button Text="Reset" Command="{Binding ResetCommand}" />
-            </HorizontalStackLayout>
+        <maplibre:MapLibreMap x:Name="Map"
+                              Grid.Row="0"
+                              HeightRequest="400"
+                              StyleUrl="{Binding StyleUrl}"
+                              ItemsSource="{Binding Landmarks}"
+                              MapReady="OnMapReady"
+                              CameraIdle="OnCameraIdle"
+                              MapClick="OnMapClick">
+            <maplibre:MapLibreMap.ItemTemplate>
+                <DataTemplate x:DataType="local:LandmarkItem">
+                    <overlays:Pin Location="{Binding Location}"
+                                  Label="{Binding Name}"
+                                  TintColor="{Binding Color}" />
+                </DataTemplate>
+            </maplibre:MapLibreMap.ItemTemplate>
+        </maplibre:MapLibreMap>
 
-            <Label Text="{Binding Status}" Padding="8,4" />
-            <Label Text="{Binding RegionText}" Padding="8,0,8,6" FontSize="12" TextColor="Gray" />
-        </VerticalStackLayout>
-    </ScrollView>
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Spacing="0">
+
+                <HorizontalStackLayout Padding="8,4" Spacing="8">
+                    <Button Text="Add pin" Command="{Binding AddMarkerCommand}" />
+                    <Button Text="Remove last" Command="{Binding RemoveLastCommand}" />
+                    <Button Text="Reset" Command="{Binding ResetCommand}" />
+                </HorizontalStackLayout>
+
+                <Label Text="{Binding Status}" Padding="8,4" />
+                <Label Text="{Binding RegionText}" Padding="8,0,8,6" FontSize="12" TextColor="Gray" />
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
 </ContentPage>
