@@ -5,6 +5,7 @@
 - _...Add new stuff here..._
 
 ### 🐞 Bug fixes
+- **Android: the 64-bit `libmln-cabi.so` was not 16 KB page aligned, so Google Play rejected apps that shipped it** — Android 15 allows devices with 16 KB memory pages, and Play now blocks uploads whose native libraries are linked for 4 KB ("Your app is not compatible with 16 KB memory page sizes"). The release CI builds with NDK r27, whose linker still defaults `max-page-size` to 4 KB; r28's picks 16 KB on its own, which is why a local build looked fine while every published `arm64-v8a` and `x86_64` `.so` — 4.5.0 included — carried `0x1000`-aligned `LOAD` segments. The Android link now passes `-Wl,-z,max-page-size=16384` on the two 64-bit ABIs whatever the NDK version, and both Android native workflows fail the build if the linked `.so` comes out below 16 KB. `armeabi-v7a` is untouched — the NDK applies the flag to 64-bit ABIs only, and 32-bit Android has no 16 KB devices. Windows and Apple need nothing: the Windows build emits a PE via MSVC, where `-Wl,-z` has no meaning and the loader wants 4 KB sections, and on Apple `mln-cabi` is a static archive with no LOAD segments of its own — the app's own arm64 link already aligns to 16 KB. Reported in [#32](https://github.com/TechIdiots-LLC/MaplibreNativeMAUI/issues/32).
 - _...Add new stuff here..._
 
 ## 4.5.0

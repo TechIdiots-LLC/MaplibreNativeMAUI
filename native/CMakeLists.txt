@@ -81,6 +81,11 @@ elseif(ANDROID)
         $<${_CABI_OPT}:-flto>
         $<${_CABI_OPT}:-Wl,--icf=all>
     )
+
+    # Google Play requires 16 KB page alignment on the 64-bit ABIs; NDK r27 links 4 KB.
+    if(ANDROID_ABI STREQUAL "arm64-v8a" OR ANDROID_ABI STREQUAL "x86_64")
+        target_link_options(mln-cabi PRIVATE -Wl,-z,max-page-size=16384)
+    endif()
 elseif(APPLE)
     target_sources(mln-cabi PRIVATE src/platform_frontend_apple.mm)
     set_source_files_properties(src/platform_frontend_apple.mm PROPERTIES
