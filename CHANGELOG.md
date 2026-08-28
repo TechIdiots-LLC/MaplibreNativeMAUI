@@ -5,6 +5,7 @@
 - _...Add new stuff here..._
 
 ### 🐞 Bug fixes
+- **Android 16 KB page alignment** — the 64-bit `libmln-cabi.so` was linked for 4 KB pages, which Google Play now rejects; fixed in 4.5.1 (see its entry below) and carried here. This branch keys the fix off ELF class rather than the arm64-v8a/x86_64 allowlist 4.5.1 shipped, because it builds a third ABI — `armeabi-v7a` — that the allowlist form skipped without a trace, and a 64-bit ABI added later would have been skipped the same way.
 - _...Add new stuff here..._
 
 ## 5.0.0-pre.1
@@ -29,6 +30,9 @@
 - **Terrain on Vulkan/Adreno** — further submodule bumps bring the Vulkan 3D-terrain fixes verified on an S23 Ultra: stencil-attachment crash, drape clip-mask cast, blank-terrain clip-z, drape colour/height alignment, vector fill/line drape, and a `VkPipelineCache` performance fix; plus terrain skirts, drape-target frustum culling, Vulkan terrain symbol/label fixes, and a max-pitch preference of 85 in the terrain samples.
 - **`MapLibreNative.Maui.Vulkan`: package shipped native binaries for Windows only** — the Vulkan bindings package packed just the Windows DLLs; unlike the base `MapLibreNative.Maui` package it did not pack the iOS XCFramework, the macCatalyst static library, or a `buildTransitive` targets file, so an iOS/macCatalyst app consuming it (transitively through the handlers) linked no native library. Brought to parity with the base package: the Vulkan package now packs the iOS XCFramework (device + simulator slices) and macCatalyst `.a`, and ships `buildTransitive/MapLibreNative.Maui.Vulkan.targets` to re-add the Apple `NativeReference`s for transitive consumers. The release pipeline now builds the Vulkan iOS XCFramework before packing.
 - **Nav control compass button now resets pitch as well as bearing** — the centre button of the navigation d-pad eased the camera to bearing 0 while passing the *current* pitch straight back in, so a tilted map stayed tilted no matter how many times it was clicked (the WinUI controller had a two-stage variant that needed a second click). All four platforms now ease to bearing 0 **and** pitch 0 in a single animation, via a new `ResetNorthPitch()`; WPF's public `ResetNorth()` keeps its bearing-only behaviour.
+## 4.5.1
+### 🐞 Bug fixes
+- **Android: the 64-bit `libmln-cabi.so` was not 16 KB page aligned, so Google Play rejected apps that shipped it** — Android 15 allows devices with 16 KB memory pages, and Play now blocks uploads whose native libraries are linked for 4 KB ("Your app is not compatible with 16 KB memory page sizes"). The release CI builds with NDK r27, whose linker still defaults `max-page-size` to 4 KB; r28's picks 16 KB on its own, which is why a local build looked fine while every published `arm64-v8a` and `x86_64` `.so` — 4.5.0 included — carried `0x1000`-aligned `LOAD` segments. The Android link now passes `-Wl,-z,max-page-size=16384` on the two 64-bit ABIs whatever the NDK version, and both Android native workflows fail the build if the linked `.so` comes out below 16 KB. `armeabi-v7a` is untouched — the NDK applies the flag to 64-bit ABIs only, and 32-bit Android has no 16 KB devices. Windows and Apple need nothing: the Windows build emits a PE via MSVC, where `-Wl,-z` has no meaning and the loader wants 4 KB sections, and on Apple `mln-cabi` is a static archive with no LOAD segments of its own — the app's own arm64 link already aligns to 16 KB. Reported in [#32](https://github.com/TechIdiots-LLC/MaplibreNativeMAUI/issues/32).
 
 ## 4.5.0
 ### ✨ Features and improvements

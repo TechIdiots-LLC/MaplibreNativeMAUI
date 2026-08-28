@@ -50,6 +50,30 @@ jobs:
         timeout-minutes: 60
         run: cmake --build build --target mln-cabi --parallel 4
 
+      # Google Play rejects 64-bit .so files whose LOAD segments align below 16 KB.
+      - name: Verify 16 KB page alignment
+        run: |
+          SO=$(find build -name libmln-cabi.so | head -1)
+          python3 - "$SO" <<'EOF'
+          import struct, sys
+          path = sys.argv[1]
+          with open(path, 'rb') as f:
+              head = f.read(64)
+              if head[4] != 2:
+                  print(path, 'is 32-bit; 16 KB pages are a 64-bit requirement')
+                  raise SystemExit(0)
+              phoff, = struct.unpack_from('<Q', head, 0x20)
+              phentsize, phnum = struct.unpack_from('<HH', head, 0x36)
+              f.seek(phoff)
+              ph = f.read(phentsize * phnum)
+          aligns = [struct.unpack_from('<Q', ph, i * phentsize + 0x30)[0]
+                    for i in range(phnum)
+                    if struct.unpack_from('<I', ph, i * phentsize)[0] == 1]
+          print(path, 'LOAD aligns:', [hex(a) for a in aligns])
+          if not aligns or min(aligns) < 16384:
+              sys.exit('::error::%s is not 16 KB page aligned' % path)
+          EOF
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
