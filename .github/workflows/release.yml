@@ -157,6 +157,21 @@ jobs:
             -p:Version=${{ needs.version-check.outputs.version }} \
             -o artifacts/
 
+      # nuget.org rejects any package over 250 MB with a bare 413, so the size
+      # is worth seeing in the log before the push step is reached.
+      - name: Report package sizes
+        shell: bash
+        run: |
+          LIMIT=$((250 * 1024 * 1024))
+          for pkg in artifacts/*.nupkg; do
+            SIZE=$(stat -c%s "$pkg" 2>/dev/null || stat -f%z "$pkg")
+            echo "$(basename "$pkg"): $((SIZE / 1048576)) MiB"
+            if [ "$SIZE" -gt "$LIMIT" ]; then
+              echo "::error::$(basename "$pkg") is over nuget.org's 250 MB limit and cannot be pushed"
+              exit 1
+            fi
+          done
+
       - name: Upload NuGet artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -333,10 +348,16 @@ jobs:
           retention-days: 7
 
   # ── Android + iOS + macCatalyst sample builds ───────────────────────────
+  # Deliberately does NOT depend on `pack`. The mobile sample needs the Android
+  # and Apple natives and nothing else, but the NuGet package that `pack`
+  # produces also carries the Windows DLLs -- so depending on it meant waiting
+  # on the Windows arm64 native build, ~22 minutes after the Apple natives were
+  # ready. MauiSample is built from source against the staged natives instead;
+  # `pack-wpf` still exercises the packed artifact for the Windows samples.
   samples-mobile:
     name: Build mobile + macCatalyst samples
     runs-on: macos-26
-    needs: [version-check, pack]
+    needs: [version-check, build-android, build-apple]
     if: needs.version-check.outputs.published == 'false'
 
     steps:
@@ -350,14 +371,61 @@ jobs:
             9.0.x
             10.0.x
 
-      - name: Download MAUI NuGet packages (for local feed)
+      - name: Select Xcode 26.5
+        run: sudo xcode-select -s /Applications/Xcode_26.5.app
+
+      - name: Download Android native artifacts
         uses: actions/download-artifact@v4
         with:
-          name: nuget-packages
-          path: local-feed
+          pattern: native-android-*
+          path: native-artifacts
 
-      - name: Add local NuGet feed
-        run: dotnet nuget add source $(pwd)/local-feed --name local-release
+      - name: Download Apple native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-ios*
+          path: native-artifacts
+
+      - name: Download macCatalyst native artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: native-maccatalyst
+          path: native-artifacts/native-maccatalyst
+
+      # Same layout `pack` stages, minus the Windows DLLs this job has no use
+      # for. The bindings project picks these up through _MlnNativeDir, whose
+      # default is this directory, so no property needs passing.
+      - name: Arrange native libs for bindings project
+        run: |
+          N=bindings/native
+          mkdir -p $N/android-arm64 $N/android-arm $N/android-x64
+          mkdir -p $N/ios-arm64 $N/iossimulator-arm64 $N/maccatalyst
+
+          find native-artifacts/native-android-arm64-v8a   -name "libmln-cabi.so" -exec cp {} $N/android-arm64/ \;
+          find native-artifacts/native-android-armeabi-v7a -name "libmln-cabi.so" -exec cp {} $N/android-arm/   \;
+          find native-artifacts/native-android-x86_64      -name "libmln-cabi.so" -exec cp {} $N/android-x64/   \;
+          find native-artifacts/native-ios-arm64           -name "libmln-cabi.a"  -exec cp {} $N/ios-arm64/     \;
+          find native-artifacts/native-iossimulator-arm64  -name "libmln-cabi.a"  -exec cp {} $N/iossimulator-arm64/ \;
+          find native-artifacts/native-maccatalyst         -name "libmln-cabi.a"  -exec cp {} $N/maccatalyst/   \;
+
+          echo "Native libs arranged:"
+          find $N -type f
+
+      - name: Create iOS XCFramework
+        run: |
+          N=bindings/native
+          mkdir -p $N/ios
+          XCFW_ARGS=""
+          [ -f $N/ios-arm64/libmln-cabi.a ]          && XCFW_ARGS="$XCFW_ARGS -library $N/ios-arm64/libmln-cabi.a"
+          [ -f $N/iossimulator-arm64/libmln-cabi.a ] && XCFW_ARGS="$XCFW_ARGS -library $N/iossimulator-arm64/libmln-cabi.a"
+          if [ -n "$XCFW_ARGS" ]; then
+            xcodebuild -create-xcframework \
+              $XCFW_ARGS \
+              -output $N/ios/libmln-cabi.xcframework
+            echo "XCFramework created at $N/ios/libmln-cabi.xcframework"
+          else
+            echo "No iOS libraries found; skipping XCFramework creation."
+          fi
 
       - name: Restore MAUI workloads
         run: dotnet workload restore sample/MauiSample.csproj
@@ -367,8 +435,7 @@ jobs:
           dotnet build sample/MauiSample.csproj \
             -f net9.0-android \
             -c Release \
-            -p:EnableWindowsTargeting=true \
-            -p:UseLocalPackages=true
+            -p:EnableWindowsTargeting=true
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
@@ -377,17 +444,13 @@ jobs:
           path: sample/bin/Release/net9.0-android/*Signed.apk
           retention-days: 7
 
-      - name: Select Xcode 26.5
-        run: sudo xcode-select -s /Applications/Xcode_26.5.app
-
       - name: Build MauiSample (iOS simulator)
         run: |
           dotnet build sample/MauiSample.csproj \
             -f net9.0-ios \
             -r iossimulator-arm64 \
             -c Release \
-            -p:EnableWindowsTargeting=true \
-            -p:UseLocalPackages=true
+            -p:EnableWindowsTargeting=true
 
       - name: Upload iOS simulator app
         uses: actions/upload-artifact@v4
@@ -402,8 +465,7 @@ jobs:
             -f net9.0-maccatalyst \
             -c Release \
             -p:EnableCodeSigning=false \
-            -p:EnableWindowsTargeting=true \
-            -p:UseLocalPackages=true
+            -p:EnableWindowsTargeting=true
 
       - name: Upload macCatalyst app
         uses: actions/upload-artifact@v4
@@ -483,6 +545,21 @@ jobs:
             -p:Version=${{ needs.version-check.outputs.version }} \
             -p:_MlnNativeDir=$(pwd)/bindings/native-vulkan/ \
             -o artifacts/
+
+      # nuget.org rejects any package over 250 MB with a bare 413, so the size
+      # is worth seeing in the log before the push step is reached.
+      - name: Report package sizes
+        shell: bash
+        run: |
+          LIMIT=$((250 * 1024 * 1024))
+          for pkg in artifacts/*.nupkg; do
+            SIZE=$(stat -c%s "$pkg" 2>/dev/null || stat -f%z "$pkg")
+            echo "$(basename "$pkg"): $((SIZE / 1048576)) MiB"
+            if [ "$SIZE" -gt "$LIMIT" ]; then
+              echo "::error::$(basename "$pkg") is over nuget.org's 250 MB limit and cannot be pushed"
+              exit 1
+            fi
+          done
 
       - name: Upload Vulkan NuGet artifact
         uses: actions/upload-artifact@v4
