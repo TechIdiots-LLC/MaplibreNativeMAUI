@@ -58,7 +58,7 @@ public:
     {}
 
     mln::gfx::Renderable& getDefaultRenderable() override { return *this; }
-    void setSize(mln::Size sz) { this->size = sz; }
+    void setSize(mln::Size sz) { setRenderableSize(sz); }
 
 protected:
     void activate()   override { wglMakeCurrent(_hDC, _hGLRC); }
@@ -71,7 +71,7 @@ protected:
     // thread between frames.
     void updateAssumedState() override {
         assumeFramebufferBinding(ImplicitFramebufferBinding);
-        assumeViewport(0, 0, size);
+        assumeViewport(0, 0, getSize());
     }
 
 private:

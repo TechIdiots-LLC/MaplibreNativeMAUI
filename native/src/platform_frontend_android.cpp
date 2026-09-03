@@ -88,8 +88,8 @@ public:
     // out of sync with what mbgl-core thinks the size is. The shared
     // `_context` is simply rebound to the new surface on the next activate().
     void setSize(mln::Size sz) {
-        if (sz.width == this->size.width && sz.height == this->size.height) return;
-        this->size = sz;
+        if (sz.width == getSize().width && sz.height == getSize().height) return;
+        setRenderableSize(sz);
         if (_window) {
             ANativeWindow_setBuffersGeometry(_window,
                 static_cast<int32_t>(sz.width), static_cast<int32_t>(sz.height), 0);
@@ -129,8 +129,8 @@ protected:
     // keeps the assumption honest.
     void updateAssumedState() override {
         assumeFramebufferBinding(ImplicitFramebufferBinding);
-        glViewport(0, 0, static_cast<GLsizei>(size.width), static_cast<GLsizei>(size.height));
-        assumeViewport(0, 0, size);
+        glViewport(0, 0, static_cast<GLsizei>(getSize().width), static_cast<GLsizei>(getSize().height));
+        assumeViewport(0, 0, getSize());
     }
 
 private:
@@ -265,9 +265,9 @@ public:
     mln::gfx::Renderable& getDefaultRenderable() override { return *this; }
 
     // Backend contract required by VulkanFrontendT<Backend>.
-    mln::Size getSize() const { return size; }
+    mln::Size getSize() const { return mln::gfx::Renderable::getSize(); }
     void setSize(mln::Size sz) {
-        size = sz;
+        setRenderableSize(sz);
         if (context) static_cast<mln::vulkan::Context&>(*context).requestSurfaceUpdate();
     }
     void* getNativeView() { return nullptr; }        // presents into the ANativeWindow directly

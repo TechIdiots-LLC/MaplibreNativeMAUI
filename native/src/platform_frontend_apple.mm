@@ -118,7 +118,7 @@ public:
 
     mln::gfx::Renderable& getDefaultRenderable() override { return *this; }
 
-    void setSize(mln::Size sz) { this->size = sz; }
+    void setSize(mln::Size sz) { setRenderableSize(sz); }
 
     void activate() override {}
     void deactivate() override {}
@@ -350,9 +350,9 @@ public:
     mln::gfx::Renderable& getDefaultRenderable() override { return *this; }
 
     // Backend contract required by VulkanFrontendT<Backend>.
-    mln::Size getSize() const { return size; }
+    mln::Size getSize() const { return mln::gfx::Renderable::getSize(); }
     void setSize(mln::Size sz) {
-        size = sz;
+        setRenderableSize(sz);
         ((CAMetalLayer*)_view.layer).drawableSize = CGSizeMake(sz.width, sz.height);
         if (context) static_cast<mln::vulkan::Context&>(*context).requestSurfaceUpdate();
     }
