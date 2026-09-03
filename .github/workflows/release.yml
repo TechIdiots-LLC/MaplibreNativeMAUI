@@ -157,6 +157,21 @@ jobs:
             -p:Version=${{ needs.version-check.outputs.version }} \
             -o artifacts/
 
+      # nuget.org rejects any package over 250 MB with a bare 413, so the size
+      # is worth seeing in the log before the push step is reached.
+      - name: Report package sizes
+        shell: bash
+        run: |
+          LIMIT=$((250 * 1024 * 1024))
+          for pkg in artifacts/*.nupkg; do
+            SIZE=$(stat -c%s "$pkg" 2>/dev/null || stat -f%z "$pkg")
+            echo "$(basename "$pkg"): $((SIZE / 1048576)) MiB"
+            if [ "$SIZE" -gt "$LIMIT" ]; then
+              echo "::error::$(basename "$pkg") is over nuget.org's 250 MB limit and cannot be pushed"
+              exit 1
+            fi
+          done
+
       - name: Upload NuGet artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -483,6 +498,21 @@ jobs:
             -p:Version=${{ needs.version-check.outputs.version }} \
             -p:_MlnNativeDir=$(pwd)/bindings/native-vulkan/ \
             -o artifacts/
+
+      # nuget.org rejects any package over 250 MB with a bare 413, so the size
+      # is worth seeing in the log before the push step is reached.
+      - name: Report package sizes
+        shell: bash
+        run: |
+          LIMIT=$((250 * 1024 * 1024))
+          for pkg in artifacts/*.nupkg; do
+            SIZE=$(stat -c%s "$pkg" 2>/dev/null || stat -f%z "$pkg")
+            echo "$(basename "$pkg"): $((SIZE / 1048576)) MiB"
+            if [ "$SIZE" -gt "$LIMIT" ]; then
+              echo "::error::$(basename "$pkg") is over nuget.org's 250 MB limit and cannot be pushed"
+              exit 1
+            fi
+          done
 
       - name: Upload Vulkan NuGet artifact
         uses: actions/upload-artifact@v4

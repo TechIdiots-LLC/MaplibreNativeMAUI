@@ -50,6 +50,19 @@ jobs:
         timeout-minutes: 60
         run: cmake --build build --target mln-cabi --parallel 4
 
+      - name: Strip debug symbols
+        run: |
+          # Release does not imply a stripped .so, and the symbol table is a
+          # large share of the shipped size; the packages are close to
+          # nuget.org's 250 MB ceiling. Runs before the alignment check so that
+          # check sees exactly what ships.
+          SO=$(find build -name libmln-cabi.so | head -1)
+          STRIP="$ANDROID_HOME/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+          BEFORE=$(stat -c%s "$SO")
+          "$STRIP" --strip-unneeded "$SO"
+          AFTER=$(stat -c%s "$SO")
+          echo "$SO: $((BEFORE / 1048576)) MiB -> $((AFTER / 1048576)) MiB"
+
       # Google Play rejects 64-bit .so files whose LOAD segments align below 16 KB.
       - name: Verify 16 KB page alignment
         run: |

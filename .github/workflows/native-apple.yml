@@ -145,6 +145,19 @@ jobs:
           mv "${CABI}.merged" "$CABI"
           echo "Merged object count: $(ar -t "$CABI" | wc -l)"
 
+      - name: Strip debug symbols
+        run: |
+          # The Xcode generator's Release configuration still compiles with -g,
+          # so the merged amalgam carries DWARF for every object in it. That is
+          # dead weight in a distributed archive, and the packages are close to
+          # nuget.org's 250 MB ceiling.
+          LIB=$(find build -name "libmln-cabi.a" | head -1)
+          BEFORE=$(stat -f%z "$LIB")
+          strip -S "$LIB"
+          ranlib "$LIB"
+          AFTER=$(stat -f%z "$LIB")
+          echo "$LIB: $((BEFORE / 1048576)) MiB -> $((AFTER / 1048576)) MiB"
+
       - name: Locate built library
         id: find-lib
         run: |
