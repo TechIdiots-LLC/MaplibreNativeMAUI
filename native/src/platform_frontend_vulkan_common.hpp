@@ -34,7 +34,7 @@ template <class Backend>
 class VulkanFrontendT final : public PlatformFrontend {
 public:
     template <class... BackendArgs>
-    VulkanFrontendT(float pixelRatio, mbgl_render_fn renderCb, void* renderUd, BackendArgs&&... args)
+    VulkanFrontendT(float pixelRatio, mln_render_fn renderCb, void* renderUd, BackendArgs&&... args)
         : _backend(std::forward<BackendArgs>(args)...)
         , _renderer(std::make_unique<mln::Renderer>(_backend, pixelRatio))
         , _renderCb(renderCb), _renderUd(renderUd)
@@ -86,7 +86,7 @@ public:
 private:
     Backend                                 _backend;
     std::unique_ptr<mln::Renderer>         _renderer;
-    mbgl_render_fn                          _renderCb;
+    mln_render_fn                          _renderCb;
     void*                                   _renderUd;
     std::shared_ptr<mln::UpdateParameters> _updateParams;
     std::mutex                              _mutex;

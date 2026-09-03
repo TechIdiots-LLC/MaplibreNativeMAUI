@@ -126,7 +126,7 @@ void WGLRenderableResource::bind() {
 }
 ```
 
-`WGLRenderableResource::bind()` is called at the start of every `mbgl_frontend_render` invocation. It unconditionally binds framebuffer **0** — the default framebuffer of the WGL context's surface (the hidden Win32 window). There is no path through which it binds a custom FBO created by `WGL_NV_DX_interop2`. So MapLibre's output always lands in FBO 0 of the hidden window; the D3D-backed interop FBOs were never written.
+`WGLRenderableResource::bind()` is called at the start of every `mln_frontend_render` invocation. It unconditionally binds framebuffer **0** — the default framebuffer of the WGL context's surface (the hidden Win32 window). There is no path through which it binds a custom FBO created by `WGL_NV_DX_interop2`. So MapLibre's output always lands in FBO 0 of the hidden window; the D3D-backed interop FBOs were never written.
 
 Fixing this would require patching `platform_frontend_windows.cpp` (e.g. storing the desired FBO and using it in `bind()`), which would require rebuilding the native `mln-cabi.dll`. As a simpler, dependency-free solution: **just read FBO 0**. Resize the hidden window to match the map control, render normally, then `glReadPixels` after each frame. The `glReadPixels` approach trades GPU→GPU zero-copy for a GPU→CPU transfer, but eliminates the `WGL_NV_DX_interop2` requirement, the D3D9/D3D11 device, and the Vortice NuGet dependencies entirely.
 
@@ -178,7 +178,7 @@ This is a feature, not a refactor, and is independent of the compositing work ab
 
 ### Follow-up: proper marker via SymbolLayer + sprite (not the legacy annotation API)
 
-`Pin` currently renders as a **circle marker**. MapLibre's legacy `mbgl` annotation API (`SymbolAnnotation` etc.) is *not* exposed through `mln-cabi` and is deprecated upstream anyway — so it is not the path. The correct native marker is a **SymbolLayer with a registered sprite image**, and the cabi already exposes the key primitive: [`mbgl_style_add_image`](https://github.com/TechIdiots-LLC/MaplibreNativeMAUI/blob/main/native/include/mln_cabi.h) → `MbglStyle.AddImage`. Upgrading `Pin` to a real icon + text-label marker requires:
+`Pin` currently renders as a **circle marker**. MapLibre's legacy `mbgl` annotation API (`SymbolAnnotation` etc.) is *not* exposed through `mln-cabi` and is deprecated upstream anyway — so it is not the path. The correct native marker is a **SymbolLayer with a registered sprite image**, and the cabi already exposes the key primitive: [`mln_style_add_image`](https://github.com/TechIdiots-LLC/MaplibreNativeMAUI/blob/main/native/include/mln_cabi.h) → `MlnStyle.AddImage`. Upgrading `Pin` to a real icon + text-label marker requires:
 
 1. ✅ ~~Implement `SymbolLayerProperties.ToDictionary()` (currently a stub that throws)~~ — **Done.** Full layout + paint property set (`icon-image/size/anchor/allow-overlap/offset/rotate`, `text-field/font/size/anchor/offset/halo-*/transform/max-width`, etc.) implemented with `ToDictionary()` and `FromJson()`.
 2. ✅ ~~Surface `AddImage` (sprite registration) through `IMapLibreMapController` / `MapLibreMap` on Android, iOS/mac and Windows~~ — **Done.** `AddSpriteImage(imageId, width, height, rgba, pixelRatio, sdf)` and `RemoveSpriteImage(imageId)` added to `IMapLibreMapController`, implemented in all three platform controllers, and exposed on `MapLibreMap`.

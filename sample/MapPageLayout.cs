@@ -3,9 +3,9 @@ using MapLibreNative.Maui.Handlers;
 namespace MauiSample;
 
 /// <summary>
-/// Shared helper for the sample's "single continuous scroll" map pages, where
-/// the map sits at the top of a ScrollView with the controls flowing directly
-/// beneath it (rather than in a separate fixed panel).
+/// Shared helper for the sample's map pages, where the map is pinned in the top row
+/// of a Grid and only the controls beneath it scroll. The map must not scroll: the
+/// on-map controls are its children, so a scrolling map carries them out of view.
 /// </summary>
 internal static class MapPageLayout
 {

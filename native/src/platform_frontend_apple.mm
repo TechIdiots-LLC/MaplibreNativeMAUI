@@ -5,7 +5,7 @@
  *                 by the Metal backend after it initialises the device.
  * gl_context:     unused (pass nullptr)
  *
- * After creating the frontend call mbgl_frontend_get_native_view() to retrieve
+ * After creating the frontend call mln_frontend_get_native_view() to retrieve
  * the MTKView* as a void*, then add it as a subview in the MAUI handler.
  *
  * Modelled closely on MLNMapViewMetalImpl / MLNMapViewMetalRenderableResource
@@ -120,11 +120,6 @@ public:
 
     void setSize(mln::Size sz) { this->size = sz; }
 
-    void updateAssumedState() override {
-        assumeFramebufferBinding(ImplicitFramebufferBinding);
-        assumeViewport(0, 0, getResource<MetalRenderableResource>().framebufferSize());
-    }
-
     void activate() override {}
     void deactivate() override {}
 
@@ -208,7 +203,7 @@ void MetalRenderableResource::swap() {
 class MetalFrontend final : public PlatformFrontend {
 public:
     MetalFrontend(mln::Size sz, float pixelRatio,
-                  mbgl_render_fn renderCb, void* renderUd)
+                  mln_render_fn renderCb, void* renderUd)
         : _backend(sz)
         , _renderer(std::make_unique<mln::Renderer>(_backend, pixelRatio))
         , _renderCb(renderCb), _renderUd(renderUd)
@@ -277,7 +272,7 @@ private:
 
     MetalBackend                            _backend;
     std::unique_ptr<mln::Renderer>         _renderer;
-    mbgl_render_fn                          _renderCb;
+    mln_render_fn                          _renderCb;
     void*                                   _renderUd;
     std::shared_ptr<mln::UpdateParameters> _updateParams;
     std::shared_ptr<mln::UpdateParameters> _pendingParams;
@@ -285,12 +280,12 @@ private:
     NullMapObserver                         _nullObserver;
 };
 
-// ── C++ factory (called by mbgl_cabi.cpp) ─────────────────────────────────────
+// ── C++ factory (called by mln_cabi.cpp) ─────────────────────────────────────
 
 PlatformFrontend* createPlatformFrontend(
     void* /*surface_handle*/, void* /*gl_context*/,
     mln::Size sz, float pixelRatio,
-    mbgl_render_fn renderCb, void* renderUd)
+    mln_render_fn renderCb, void* renderUd)
 {
     return new MetalFrontend(sz, pixelRatio, renderCb, renderUd);
 }
@@ -394,7 +389,7 @@ void AppleVulkanResource::createPlatformSurface() {
 PlatformFrontend* createPlatformFrontend(
     void* /*surface_handle*/, void* /*gl_context*/,
     mln::Size sz, float pixelRatio,
-    mbgl_render_fn renderCb, void* renderUd)
+    mln_render_fn renderCb, void* renderUd)
 {
     return new VulkanFrontendT<AppleVulkanBackend>(pixelRatio, renderCb, renderUd, sz);
 }

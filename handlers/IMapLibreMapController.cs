@@ -291,6 +291,12 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
     /// <param name="mode">0=Default 1=Distance</param>
     void SetTileLodMode(int mode);
 
+    /// <summary>
+    /// How much terrain tile/drape work a frame may do while terrain loads. Defaults to
+    /// <see cref="TerrainLoadMode.Quality"/>; no effect while terrain is off.
+    /// </summary>
+    TerrainLoadMode TerrainLoadMode { get; set; }
+
     // ── Tier 2 – camera / projection ─────────────────────────────────────────
     CameraResult CameraForLatLngs(
         IReadOnlyList<(double Lat, double Lon)> points,
@@ -304,7 +310,7 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
         IReadOnlyList<(double X, double Y)> pixels);
 
     // ── Debug overlays ────────────────────────────────────────────────────────
-    /// <summary>Get current debug overlay bitmask (see <c>MbglDebugOptions</c>).</summary>
+    /// <summary>Get current debug overlay bitmask (see <c>MlnDebugOptions</c>).</summary>
     int  GetDebugOptions();
     /// <summary>Set debug overlay bitmask. Use 0 to disable all overlays.</summary>
     void SetDebugOptions(int options);

@@ -5,27 +5,33 @@
              x:Class="MauiSample.TerrainPage"
              Title="3D Terrain">
 
-    <!-- Single-scroll layout: the map has a bounded height (set in code-behind)
-         with the controls flowing beneath it. -->
-    <ScrollView>
-        <VerticalStackLayout Spacing="0">
+    <!-- The map is pinned in row 0 and only the controls beneath it scroll. It used to
+         share one ScrollView with them, but the on-map controls are children of the map,
+         so scrolling the page carried them out of view - the terrain button first, being
+         the topmost. The map's height is still set in code-behind to a fraction of the
+         page so a strip of controls always shows below it, which is what keeps "drag the
+         map to pan" and "drag the controls to scroll" unambiguous. -->
+    <Grid RowDefinitions="Auto,*">
 
-            <maplibre:MapLibreMap
-                x:Name="Map"
-                HeightRequest="400"
-                ShowNavigationControls="True"
-                ShowTerrainControl="True"
-                TerrainControlSourceId="__terrain-dem"
-                NavigationControlPosition="TopRight"
-                TerrainControlPosition="TopRight"
-                AttributionControlPosition="BottomLeft" />
+        <maplibre:MapLibreMap
+            Grid.Row="0"
+            x:Name="Map"
+            HeightRequest="400"
+            ShowNavigationControls="True"
+            ShowTerrainControl="True"
+            TerrainControlSourceId="__terrain-dem"
+            NavigationControlPosition="TopRight"
+            TerrainControlPosition="TopRight"
+            AttributionControlPosition="BottomLeft" />
+
+        <ScrollView Grid.Row="1">
 
             <VerticalStackLayout Spacing="8" Padding="12">
 
                 <Label FontAttributes="Bold" FontSize="16" Text="3D Terrain Toggle" />
 
                 <Label TextColor="Gray" FontSize="12" Text=
-                    "The ⛰ button on the map (above the navigation control) is the built-in terrain control — it toggles terrain on the raster-dem source added below. Or use the button here. Navigate to the source's coverage (e.g. the Alps) and tilt with two fingers to see the relief." />
+                    "The terrain button on the map (above the navigation control) is the built-in terrain control — it toggles terrain on the raster-dem source added below. Or use the button here. Navigate to the source's coverage (e.g. the Alps) and tilt with two fingers to see the relief." />
 
                 <Label Text="Style:" FontAttributes="Bold" />
                 <Picker x:Name="StylePicker" SelectedIndexChanged="OnStyleChanged" />
@@ -36,6 +42,11 @@
                        Placeholder="…or paste a custom tilejson/tiles URL (overrides the picker)"
                        Keyboard="Url" />
 
+                <Label Text="Terrain load mode:" FontAttributes="Bold" />
+                <Label TextColor="Gray" FontSize="12" Text=
+                    "How much terrain tile/drape work each frame may do while terrain loads. Quality (the default) builds everything at once and can stall a frame on a big burst; Balanced and Performance spread the work out for smoother interaction on weaker GPUs, at the cost of visible fill-in." />
+                <Picker x:Name="LoadModePicker" SelectedIndexChanged="OnLoadModeChanged" />
+
                 <Button x:Name="ToggleButton"
                         Text="Enable 3D Terrain"
                         Clicked="OnToggleTerrain"
@@ -45,7 +56,7 @@
                 <Label x:Name="StatusLabel" FontSize="12" TextColor="Gray" Text="Terrain: off" />
 
             </VerticalStackLayout>
-        </VerticalStackLayout>
-    </ScrollView>
+        </ScrollView>
+    </Grid>
 
 </ContentPage>

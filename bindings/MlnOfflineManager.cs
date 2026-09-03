@@ -1,5 +1,5 @@
 /**
- * MbglOfflineManager.cs — Typed wrapper around mbgl_offline_manager_t:
+ * MlnOfflineManager.cs — Typed wrapper around mln_offline_manager_t:
  * offline region downloads and ambient-cache maintenance.
  *
  * Create it with the same cachePath / assetPath / apiKey as the map so the
@@ -23,7 +23,7 @@ namespace MapLibreNative.Maui;
 /// <param name="StyleUrl">Style downloaded for the region.</param>
 /// <param name="Bounds">[latSw, lonSw, latNe, lonNe] for tile-pyramid regions, else null.</param>
 /// <param name="Geometry">GeoJSON geometry for geometry regions, else null.</param>
-public sealed record MbglOfflineRegion(
+public sealed record MlnOfflineRegion(
     [property: JsonPropertyName("id")] long Id,
     [property: JsonPropertyName("type")] string Type,
     [property: JsonPropertyName("styleUrl")] string StyleUrl,
@@ -35,7 +35,7 @@ public sealed record MbglOfflineRegion(
     [property: JsonPropertyName("includeIdeographs")] bool IncludeIdeographs);
 
 /// <summary>Download status of an offline region.</summary>
-public sealed record MbglOfflineRegionStatus(
+public sealed record MlnOfflineRegionStatus(
     [property: JsonPropertyName("downloadState")] int DownloadState,
     [property: JsonPropertyName("completedResourceCount")] ulong CompletedResourceCount,
     [property: JsonPropertyName("completedResourceSize")] ulong CompletedResourceSize,
@@ -46,8 +46,8 @@ public sealed record MbglOfflineRegionStatus(
     [property: JsonPropertyName("requiredResourceCountIsPrecise")] bool RequiredResourceCountIsPrecise,
     [property: JsonPropertyName("complete")] bool Complete);
 
-/// <summary>Progress payload for <see cref="MbglOfflineManager.RegionProgress"/>.</summary>
-public readonly record struct MbglOfflineProgress(
+/// <summary>Progress payload for <see cref="MlnOfflineManager.RegionProgress"/>.</summary>
+public readonly record struct MlnOfflineProgress(
     long RegionId,
     bool Active,
     ulong CompletedResources,
@@ -57,19 +57,19 @@ public readonly record struct MbglOfflineProgress(
     bool RequiredIsPrecise,
     bool Complete);
 
-/// <summary>Error payload for <see cref="MbglOfflineManager.RegionError"/>.</summary>
+/// <summary>Error payload for <see cref="MlnOfflineManager.RegionError"/>.</summary>
 /// <param name="Reason">mbgl Response::Error::Reason value (2=NotFound 3=Server
 /// 4=Connection 5=RateLimit 6=Other), or 100 = Mapbox tile count limit exceeded.</param>
-public readonly record struct MbglOfflineError(long RegionId, int Reason, string Message);
+public readonly record struct MlnOfflineError(long RegionId, int Reason, string Message);
 
 /// <summary>
 /// Manages offline region downloads and the ambient cache. Wraps
-/// <c>mbgl_offline_manager_t</c>. Dispose when done; in-flight operations
+/// <c>mln_offline_manager_t</c>. Dispose when done; in-flight operations
 /// complete safely after disposal.
 /// </summary>
-public sealed class MbglOfflineManager : IDisposable
+public sealed class MlnOfflineManager : IDisposable
 {
-    /// <summary><see cref="MbglOfflineError.Reason"/> value meaning the Mapbox
+    /// <summary><see cref="MlnOfflineError.Reason"/> value meaning the Mapbox
     /// tile count limit was exceeded.</summary>
     public const int TileCountLimitReason = 100;
 
@@ -83,33 +83,33 @@ public sealed class MbglOfflineManager : IDisposable
     private readonly object _lock = new();
 
     /// <summary>Raised (on the database thread) when an observed region's download progresses.</summary>
-    public event Action<MbglOfflineProgress>? RegionProgress;
+    public event Action<MlnOfflineProgress>? RegionProgress;
     /// <summary>Raised (on the database thread) when an observed region hits a download error.
     /// Errors are usually recoverable — the downloader retries with backoff.</summary>
-    public event Action<MbglOfflineError>? RegionError;
+    public event Action<MlnOfflineError>? RegionError;
 
     /// <param name="cachePath">Path of the cache database — use the same value the map
-    /// was created with. Defaults to <see cref="MbglCache.DefaultPath"/>, which the map
+    /// was created with. Defaults to <see cref="MlnCache.DefaultPath"/>, which the map
     /// views also use by default, so the database is shared.</param>
     /// <param name="assetPath">Asset path matching the map's, or null.</param>
     /// <param name="apiKey">API key matching the map's, or null.</param>
     /// <param name="maxCacheSizeBytes">Maximum cache database size, or 0 for the default.</param>
-    public MbglOfflineManager(string? cachePath = null, string? assetPath = null,
+    public MlnOfflineManager(string? cachePath = null, string? assetPath = null,
                               string? apiKey = null, ulong maxCacheSizeBytes = 0)
     {
-        _handle = NativeMethods.OfflineManagerCreate(cachePath ?? MbglCache.DefaultPath,
+        _handle = NativeMethods.OfflineManagerCreate(cachePath ?? MlnCache.DefaultPath,
                                                      assetPath, apiKey, maxCacheSizeBytes);
         if (_handle == IntPtr.Zero)
             throw new InvalidOperationException(
-                "mbgl_offline_manager_create failed: " + NativeMethods.GetLastError());
+                "mln_offline_manager_create failed: " + NativeMethods.GetLastError());
     }
 
     // ── Regions ────────────────────────────────────────────────────────────────
 
     /// <summary>Lists all offline regions in the database.</summary>
-    public Task<MbglOfflineRegion[]> ListRegionsAsync()
+    public Task<MlnOfflineRegion[]> ListRegionsAsync()
     {
-        var tcs = new TaskCompletionSource<MbglOfflineRegion[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var tcs = new TaskCompletionSource<MlnOfflineRegion[]>(TaskCreationOptions.RunContinuationsAsynchronously);
         NativeMethods.OfflineRegionsFn cb = null!;
         cb = (status, error, json, _) =>
         {
@@ -126,12 +126,12 @@ public sealed class MbglOfflineManager : IDisposable
     /// The region starts inactive — call <see cref="SetDownloadState"/> to begin
     /// downloading, optionally after <see cref="ObserveRegion"/>.
     /// </summary>
-    public Task<MbglOfflineRegion> CreateRegionAsync(string styleUrl,
+    public Task<MlnOfflineRegion> CreateRegionAsync(string styleUrl,
         double latSw, double lonSw, double latNe, double lonNe,
         double minZoom, double maxZoom,
         float pixelRatio = 1f, bool includeIdeographs = true, byte[]? metadata = null)
     {
-        var tcs = new TaskCompletionSource<MbglOfflineRegion>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var tcs = new TaskCompletionSource<MlnOfflineRegion>(TaskCreationOptions.RunContinuationsAsynchronously);
         NativeMethods.OfflineRegionsFn cb = null!;
         cb = (status, error, json, _) =>
         {
@@ -147,11 +147,11 @@ public sealed class MbglOfflineManager : IDisposable
 
     /// <summary>Creates an offline region covering a GeoJSON geometry
     /// (a Geometry, Feature, or single-feature FeatureCollection).</summary>
-    public Task<MbglOfflineRegion> CreateRegionAsync(string styleUrl, string geometryGeoJson,
+    public Task<MlnOfflineRegion> CreateRegionAsync(string styleUrl, string geometryGeoJson,
         double minZoom, double maxZoom,
         float pixelRatio = 1f, bool includeIdeographs = true, byte[]? metadata = null)
     {
-        var tcs = new TaskCompletionSource<MbglOfflineRegion>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var tcs = new TaskCompletionSource<MlnOfflineRegion>(TaskCreationOptions.RunContinuationsAsynchronously);
         NativeMethods.OfflineRegionsFn cb = null!;
         cb = (status, error, json, _) =>
         {
@@ -186,11 +186,11 @@ public sealed class MbglOfflineManager : IDisposable
     {
         NativeMethods.OfflineProgressFn progress =
             (id, state, res, bytes, tiles, required, precise, complete, _) =>
-                RegionProgress?.Invoke(new MbglOfflineProgress(
+                RegionProgress?.Invoke(new MlnOfflineProgress(
                     id, state != 0, res, bytes, tiles, required, precise != 0, complete != 0));
         NativeMethods.OfflineRegionErrorFn error =
             (id, reason, message, _) =>
-                RegionError?.Invoke(new MbglOfflineError(id, reason, message ?? string.Empty));
+                RegionError?.Invoke(new MlnOfflineError(id, reason, message ?? string.Empty));
 
         lock (_lock) _observers[regionId] = (progress, error);
         ThrowOnError(NativeMethods.OfflineSetRegionObserver(_handle, regionId, progress, error, IntPtr.Zero));
@@ -206,24 +206,24 @@ public sealed class MbglOfflineManager : IDisposable
     /// <summary>
     /// Queries the current download status of a region.
     /// Note: if a required resource permanently 404s (e.g. a glyph range the
-    /// server doesn't have), <see cref="MbglOfflineRegionStatus.Complete"/> from
+    /// server doesn't have), <see cref="MlnOfflineRegionStatus.Complete"/> from
     /// this query can stay false even though the download has finished — the
     /// <see cref="RegionProgress"/> observer's <c>Complete</c> flag is the
     /// authoritative completion signal.
     /// </summary>
-    public Task<MbglOfflineRegionStatus> GetRegionStatusAsync(long regionId)
+    public Task<MlnOfflineRegionStatus> GetRegionStatusAsync(long regionId)
     {
-        var tcs = new TaskCompletionSource<MbglOfflineRegionStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var tcs = new TaskCompletionSource<MlnOfflineRegionStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
         NativeMethods.OfflineStatusFn cb = null!;
         cb = (status, error, json, _) =>
         {
             Release(cb);
-            if (status != MbglStatus.Ok || json is null)
+            if (status != MlnStatus.Ok || json is null)
             {
                 tcs.TrySetException(new InvalidOperationException(error ?? "offline status query failed"));
                 return;
             }
-            try { tcs.TrySetResult(JsonSerializer.Deserialize<MbglOfflineRegionStatus>(json)!); }
+            try { tcs.TrySetResult(JsonSerializer.Deserialize<MlnOfflineRegionStatus>(json)!); }
             catch (Exception ex) { tcs.TrySetException(ex); }
         };
         Retain(cb);
@@ -254,9 +254,9 @@ public sealed class MbglOfflineManager : IDisposable
 
     /// <summary>Merges regions from a secondary cache database file into this one
     /// (side-loading). The side database may be upgraded in place.</summary>
-    public Task<MbglOfflineRegion[]> MergeDatabaseAsync(string sideDbPath)
+    public Task<MlnOfflineRegion[]> MergeDatabaseAsync(string sideDbPath)
     {
-        var tcs = new TaskCompletionSource<MbglOfflineRegion[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var tcs = new TaskCompletionSource<MlnOfflineRegion[]>(TaskCreationOptions.RunContinuationsAsynchronously);
         NativeMethods.OfflineRegionsFn cb = null!;
         cb = (status, error, json, _) =>
         {
@@ -300,14 +300,14 @@ public sealed class MbglOfflineManager : IDisposable
 
     // ── Plumbing ───────────────────────────────────────────────────────────────
 
-    private Task DoneCall(Func<NativeMethods.OfflineDoneFn, MbglStatus> invoke)
+    private Task DoneCall(Func<NativeMethods.OfflineDoneFn, MlnStatus> invoke)
     {
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         NativeMethods.OfflineDoneFn cb = null!;
         cb = (status, error, _) =>
         {
             Release(cb);
-            if (status == MbglStatus.Ok) tcs.TrySetResult();
+            if (status == MlnStatus.Ok) tcs.TrySetResult();
             else tcs.TrySetException(new InvalidOperationException(error ?? "offline operation failed"));
         };
         Retain(cb);
@@ -315,29 +315,29 @@ public sealed class MbglOfflineManager : IDisposable
         return tcs.Task;
     }
 
-    private static void CompleteRegions(TaskCompletionSource<MbglOfflineRegion[]> tcs,
-        MbglStatus status, string? error, string? json)
+    private static void CompleteRegions(TaskCompletionSource<MlnOfflineRegion[]> tcs,
+        MlnStatus status, string? error, string? json)
     {
-        if (status != MbglStatus.Ok || json is null)
+        if (status != MlnStatus.Ok || json is null)
         {
             tcs.TrySetException(new InvalidOperationException(error ?? "offline region query failed"));
             return;
         }
-        try { tcs.TrySetResult(JsonSerializer.Deserialize<MbglOfflineRegion[]>(json) ?? []); }
+        try { tcs.TrySetResult(JsonSerializer.Deserialize<MlnOfflineRegion[]>(json) ?? []); }
         catch (Exception ex) { tcs.TrySetException(ex); }
     }
 
-    private static void CompleteSingleRegion(TaskCompletionSource<MbglOfflineRegion> tcs,
-        MbglStatus status, string? error, string? json)
+    private static void CompleteSingleRegion(TaskCompletionSource<MlnOfflineRegion> tcs,
+        MlnStatus status, string? error, string? json)
     {
-        if (status != MbglStatus.Ok || json is null)
+        if (status != MlnStatus.Ok || json is null)
         {
             tcs.TrySetException(new InvalidOperationException(error ?? "offline region create failed"));
             return;
         }
         try
         {
-            var regions = JsonSerializer.Deserialize<MbglOfflineRegion[]>(json);
+            var regions = JsonSerializer.Deserialize<MlnOfflineRegion[]>(json);
             if (regions is { Length: > 0 }) tcs.TrySetResult(regions[0]);
             else tcs.TrySetException(new InvalidOperationException("offline region create returned no region"));
         }
@@ -350,16 +350,16 @@ public sealed class MbglOfflineManager : IDisposable
 
     /// <summary>If the native call was rejected (callback will never fire),
     /// un-roots the callback and throws.</summary>
-    private void Check(MbglStatus status, object callback)
+    private void Check(MlnStatus status, object callback)
     {
-        if (status == MbglStatus.Ok) return;
+        if (status == MlnStatus.Ok) return;
         Release(callback);
         ThrowOnError(status);
     }
 
-    private static void ThrowOnError(MbglStatus status)
+    private static void ThrowOnError(MlnStatus status)
     {
-        if (status != MbglStatus.Ok)
+        if (status != MlnStatus.Ok)
             throw new InvalidOperationException(
                 $"offline operation failed ({status}): {NativeMethods.GetLastError()}");
     }

@@ -1,3 +1,5 @@
+using MapLibreNative.Maui;
+
 namespace MauiSample;
 
 /// <summary>
@@ -34,7 +36,8 @@ public partial class TerrainPage : ContentPage
         string[]? TileUrlTemplates = null,
         string? Encoding           = null,
         string? Attribution        = null,
-        int TileSize               = 256,
+        // The style spec's default; a TileJSON that declares its own tileSize overrides it.
+        int TileSize               = 512,
         int MaxZoom                = 15);
 
     // Preset raster-dem (terrain) sources. The custom-URL entry overrides these,
@@ -47,7 +50,8 @@ public partial class TerrainPage : ContentPage
             TileJsonUrl:      null,
             TileUrlTemplates: ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],
             Encoding:         "terrarium",
-            Attribution:      "<a href=\"https://registry.opendata.aws/terrain-tiles/\">Open Data</a>"),
+            Attribution:      "<a href=\"https://registry.opendata.aws/terrain-tiles/\">Open Data</a>",
+            TileSize:         256),
     };
 
     // Whether the picked DEM source has been added to the currently loaded style.
@@ -63,10 +67,13 @@ public partial class TerrainPage : ContentPage
         TerrainPicker.SelectedIndex = 0;
         TerrainPicker.SelectedIndexChanged += OnTerrainSourceChanged;
 
+        LoadModePicker.ItemsSource = Enum.GetNames<TerrainLoadMode>().ToList();
+        LoadModePicker.SelectedIndex = (int)Map.TerrainLoadMode;
+
         Map.StyleLoaded += (_, _) =>
         {
             // A reloaded style drops runtime sources/layers, so re-add the DEM + hillshade
-            // that the on-map ⛰ terrain control toggles.
+            // that the on-map terrain control toggles.
             _demAdded = false;
             EnsureDemAndHillshade();
             UpdateStatus();
@@ -113,7 +120,7 @@ public partial class TerrainPage : ContentPage
             Map.StyleUrl = url;
     }
 
-    // The button below is the programmatic equivalent of the on-map ⛰ terrain control:
+    // The button below is the programmatic equivalent of the on-map terrain control:
     // both toggle terrain on the same pre-added raster-dem source (hillshade stays on).
     private void OnToggleTerrain(object? sender, EventArgs e)
     {
@@ -125,6 +132,14 @@ public partial class TerrainPage : ContentPage
         }
         Map.ToggleTerrain(TerrainSourceId, Exaggeration);
         UpdateStatus();
+    }
+
+    // The load-mode budget only binds while terrain is building, so switching it mid-flight
+    // shows up on the next burst of tiles rather than immediately.
+    private void OnLoadModeChanged(object? sender, EventArgs e)
+    {
+        if (LoadModePicker.SelectedIndex < 0) return;
+        Map.TerrainLoadMode = (TerrainLoadMode)LoadModePicker.SelectedIndex;
     }
 
     private void UpdateStatus()

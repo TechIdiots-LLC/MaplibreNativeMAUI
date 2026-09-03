@@ -18,7 +18,7 @@ MapLibre Native (C++)
 mln-cabi  (C++ native library — flat C ABI)
        │  P/Invoke
        ▼
-MapLibreNative.Maui  (C# typed wrappers: MbglMap, MbglStyle, MbglFrontend …)
+MapLibreNative.Maui  (C# typed wrappers: MlnMap, MlnStyle, MlnFrontend …)
        │
        ├───────────────────────────────┬───────────────────────────────┐
        ▼                               ▼                               ▼
@@ -412,7 +412,7 @@ controller.DumpDebugLogs();
 ### Persistent cache
 
 Every map surface uses a persistent tile/resource cache database by default
-(`MbglCache.DefaultPath` — `{LocalApplicationData}/MapLibreNative.Maui/{processName}/cache.db`),
+(`MlnCache.DefaultPath` — `{LocalApplicationData}/MapLibreNative.Maui/{processName}/cache.db`),
 so tiles survive app restarts.
 
 ### Offline mode
@@ -424,20 +424,20 @@ resumes queued requests.
 ```csharp
 using MapLibreNative.Maui;
 
-MbglNetwork.Online = false;  // force offline — serve from cache only
-MbglNetwork.Online = true;   // resume network access
+MlnNetwork.Online = false;  // force offline — serve from cache only
+MlnNetwork.Online = true;   // resume network access
 ```
 
 ### Offline regions
 
-`MbglOfflineManager` downloads complete regions (style + tiles + glyphs) for
+`MlnOfflineManager` downloads complete regions (style + tiles + glyphs) for
 offline use. It shares the map's cache database by default, so downloaded
 regions are rendered by the map automatically:
 
 ```csharp
 using MapLibreNative.Maui;
 
-using var offline = new MbglOfflineManager();   // uses MbglCache.DefaultPath
+using var offline = new MlnOfflineManager();   // uses MlnCache.DefaultPath
 
 // Progress/error events arrive on MapLibre's database thread — marshal to
 // your UI thread before touching UI. The observer's Complete flag is the
@@ -532,7 +532,7 @@ int current = controller.GetDebugOptions();
 controller.SetDebugOptions(0);
 ```
 
-The `MbglDebugOptions` enum in `MapLibreNative.Maui` names the individual bits (`TileBorders`, `ParseStatus`, `Timestamps`, `Collision`, `Overdraw`, `StencilClip`, `DepthBuffer`).
+The `MlnDebugOptions` enum in `MapLibreNative.Maui` names the individual bits (`TileBorders`, `ParseStatus`, `Timestamps`, `Collision`, `Overdraw`, `StencilClip`, `DepthBuffer`).
 
 ---
 

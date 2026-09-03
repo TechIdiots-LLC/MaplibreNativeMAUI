@@ -193,6 +193,24 @@ public partial class MlnMapImage : Grid
         get => (MapControlCorner)GetValue(TerrainControlPositionProperty);
         set => SetValue(TerrainControlPositionProperty, value);
     }
+    /// <summary>
+    /// Caps how much terrain tile/drape work each frame may do while terrain loads.
+    /// Lower budgets trade load sharpness for smoother interaction on weaker GPUs;
+    /// the setting does nothing while terrain is off.
+    /// </summary>
+    public TerrainLoadMode TerrainLoadMode
+    {
+        get => (TerrainLoadMode)GetValue(TerrainLoadModeProperty);
+        set => SetValue(TerrainLoadModeProperty, value);
+    }
+    public static readonly DependencyProperty TerrainLoadModeProperty =
+        DependencyProperty.Register(nameof(TerrainLoadMode), typeof(TerrainLoadMode), typeof(MlnMapImage),
+            new PropertyMetadata(MapLibreNative.Maui.TerrainLoadMode.Quality, (d, e) =>
+            {
+                if (d is MlnMapImage m && m._map != null)
+                    m._map.TerrainLoadMode = (TerrainLoadMode)e.NewValue;
+            }));
+
     public static readonly DependencyProperty TerrainControlPositionProperty =
         DependencyProperty.Register(nameof(TerrainControlPosition), typeof(MapControlCorner), typeof(MlnMapImage),
             new PropertyMetadata(MapControlCorner.TopRight, OnControlPositionChanged));
@@ -286,16 +304,16 @@ public partial class MlnMapImage : Grid
     private readonly Image _image = new() { Stretch = Stretch.Fill };
     private WriteableBitmap? _bitmap;
     private HiddenWglContext? _interop;
-    private MbglRunLoop? _runLoop;
-    private MbglFrontend? _frontend;
-    private MbglMap? _map;
-    private MbglStyle? _style;
+    private MlnRunLoop? _runLoop;
+    private MlnFrontend? _frontend;
+    private MlnMap? _map;
+    private MlnStyle? _style;
     private DispatcherTimer? _renderTimer;
 
     private bool _initialized, _renderNeedsUpdate = true, _styleReady;
     // Vulkan builds render off-screen (headless) and read pixels back through the
     // frontend; OpenGL builds render into a WGL FBO and read back via glReadPixels.
-    private static readonly bool _vulkan = MbglFrontend.RenderBackend == MbglRenderBackend.Vulkan;
+    private static readonly bool _vulkan = MlnFrontend.RenderBackend == MlnRenderBackend.Vulkan;
     private float _dpi = 1f;
     private int _physW = 1, _physH = 1;
 
@@ -329,7 +347,7 @@ public partial class MlnMapImage : Grid
 
         Loaded += (_, _) => TryInitialize();
         Unloaded += (_, _) => Teardown();
-        SizeChanged += (_, _) => UpdateSize();
+        SizeChanged += (_, _) => { UpdateSize(); UpdateAttributionMaxWidth(); };
     }
 
     private double GetDpiScale()
@@ -358,19 +376,20 @@ public partial class MlnMapImage : Grid
         // sizes) — the surface dimensions above stay in real physical pixels.
         float pixelRatio = _dpi * (float)UiScale;
 
-        _runLoop = new MbglRunLoop();
+        _runLoop = new MlnRunLoop();
         // Vulkan renders headless (no surface handle); OpenGL needs the WGL HDC + context.
         // pixelRatio (= _dpi * UiScale) scales style-unit sizes; the surface dims above stay physical.
         _frontend = _vulkan
-            ? new MbglFrontend(IntPtr.Zero, IntPtr.Zero, _physW, _physH, pixelRatio,
+            ? new MlnFrontend(IntPtr.Zero, IntPtr.Zero, _physW, _physH, pixelRatio,
                 () => _renderNeedsUpdate = true)
-            : new MbglFrontend(_interop!.Hdc, _interop.GlContext, _physW, _physH, pixelRatio,
+            : new MlnFrontend(_interop!.Hdc, _interop.GlContext, _physW, _physH, pixelRatio,
                 () => _renderNeedsUpdate = true);
         // Persistent tile/resource cache (mbgl's default is :memory:), shared
-        // with MbglOfflineManager via MbglCache.DefaultPath.
-        _map = new MbglMap(_frontend, _runLoop, cachePath: MbglCache.DefaultPath,
+        // with MlnOfflineManager via MlnCache.DefaultPath.
+        _map = new MlnMap(_frontend, _runLoop, cachePath: MlnCache.DefaultPath,
                            pixelRatio: pixelRatio, observer: OnMapObserverEvent);
         _map.SetSize(_physW, _physH);
+        _map.TerrainLoadMode = TerrainLoadMode;   // the DP may have been set before the map existed
 
         var url = StyleUrl;
         if (!string.IsNullOrEmpty(url))
@@ -582,7 +601,7 @@ public partial class MlnMapImage : Grid
     public void AddGeoJsonSource(string sourceId, string geojson)
     {
         if (_style == null) return;
-        MbglSource src = _style.HasSource(sourceId) ? _style.GetSource(sourceId)! : _style.AddGeoJsonSource(sourceId);
+        MlnSource src = _style.HasSource(sourceId) ? _style.GetSource(sourceId)! : _style.AddGeoJsonSource(sourceId);
         src.SetGeoJson(geojson);
         _renderNeedsUpdate = true;
     }
@@ -597,7 +616,7 @@ public partial class MlnMapImage : Grid
     public void AddGeoJsonSource(string sourceId, string geojson, string? optionsJson)
     {
         if (_style == null) return;
-        MbglSource src = _style.HasSource(sourceId)
+        MlnSource src = _style.HasSource(sourceId)
             ? _style.GetSource(sourceId)!
             : _style.AddGeoJsonSourceOptions(sourceId, optionsJson);
         src.SetGeoJson(geojson);
@@ -896,7 +915,7 @@ public partial class MlnMapImage : Grid
         "circle-sort-key",
     };
 
-    private static void ApplyLayerProperties(MbglLayer layer, IDictionary<string, object?> props)
+    private static void ApplyLayerProperties(MlnLayer layer, IDictionary<string, object?> props)
     {
         var ic = System.Globalization.CultureInfo.InvariantCulture;
         foreach (var (name, val) in props)
@@ -1273,7 +1292,7 @@ public partial class MlnMapImage : Grid
     // ── Location indicator ("blue dot") ────────────────────────────────────────
 
     private const string LocIndLayerId = "mln_image_location";
-    private MbglLayer? _locIndLayer;
+    private MlnLayer? _locIndLayer;
     private record struct LocIndParams(double Lat, double Lon, float Bearing, float AccuracyM);
     private LocIndParams? _pendingLocInd;
 
@@ -1539,7 +1558,7 @@ public partial class MlnMapImage : Grid
     }
 
     private StackPanel? _terrainPanel;
-    private TextBlock? _terrainIcon;
+    private System.Windows.Shapes.Path? _terrainIcon;
     private Border? _terrainBtn;
 
     private void BuildTerrainOverlay()
@@ -1549,15 +1568,23 @@ public partial class MlnMapImage : Grid
             Width = NavPanelW,
             Visibility = ShowTerrainControl ? Visibility.Visible : Visibility.Collapsed,
         };
-        _terrainIcon = new TextBlock
+        _terrainIcon = new System.Windows.Shapes.Path
         {
-            Text = "⛰",
-            FontSize = 15,
-            Foreground = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
+            Data = TerrainIconGeometry,
+            Fill = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
+        };
+        // The geometry is padded inside its 22x22 box, so it is drawn at its own
+        // coordinates (Path defaults to Stretch.None) in a box of exactly that size
+        // rather than stretched to its own bounds, which would enlarge and offset it.
+        var iconBox = new Canvas
+        {
+            Width = TerrainIcon.Size,
+            Height = TerrainIcon.Size,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        _terrainBtn = MakeSoloButton(_terrainIcon, ToggleTerrainControl);
+        iconBox.Children.Add(_terrainIcon);
+        _terrainBtn = MakeSoloButton(iconBox, ToggleTerrainControl);
         _terrainPanel.Children.Add(_terrainBtn);
         Children.Add(_terrainPanel);
         RefreshTerrainButton();
@@ -1575,13 +1602,40 @@ public partial class MlnMapImage : Grid
     {
         if (_terrainIcon == null || _terrainBtn == null) return;
         bool on = IsTerrainEnabled;
-        _terrainIcon.Foreground = new SolidColorBrush(on ? Color.FromRgb(0x00, 0x70, 0xC5) : Color.FromRgb(0x55, 0x55, 0x55));
+        _terrainIcon.Fill = new SolidColorBrush(on ? Color.FromRgb(0x00, 0x70, 0xC5) : Color.FromRgb(0x55, 0x55, 0x55));
         _terrainBtn.Background = on ? new SolidColorBrush(Color.FromRgb(0xE3, 0xF2, 0xFF)) : Brushes.White;
         _terrainBtn.ToolTip = on ? "Disable 3D terrain" : "Enable 3D terrain";
     }
 
+    /// <summary>
+    /// maplibre-gl-js's terrain icon (see <see cref="TerrainIcon"/>) as a filled
+    /// geometry: two closed polygons in a 22x22 box. Frozen and shared - the button
+    /// only ever swaps the brush.
+    /// </summary>
+    private static readonly System.Windows.Media.Geometry TerrainIconGeometry = BuildTerrainIconGeometry();
+
+    private static System.Windows.Media.Geometry BuildTerrainIconGeometry()
+    {
+        var group = new GeometryGroup();
+        group.Children.Add(ClosedPolygon(TerrainIcon.Mountain));
+        group.Children.Add(ClosedPolygon(TerrainIcon.Base));
+        group.Freeze();
+        return group;
+
+        static PathGeometry ClosedPolygon((double X, double Y)[] pts)
+        {
+            var line = new PolyLineSegment();
+            for (int i = 1; i < pts.Length; i++) line.Points.Add(new Point(pts[i].X, pts[i].Y));
+            var figure = new PathFigure { StartPoint = new Point(pts[0].X, pts[0].Y), IsClosed = true, IsFilled = true };
+            figure.Segments.Add(line);
+            var geometry = new PathGeometry();
+            geometry.Figures.Add(figure);
+            return geometry;
+        }
+    }
+
     // A standalone rounded icon button (all four corners), for single-button panels.
-    private static Border MakeSoloButton(TextBlock icon, Action onClick)
+    private static Border MakeSoloButton(UIElement icon, Action onClick)
     {
         var b = new Border
         {
@@ -1623,6 +1677,18 @@ public partial class MlnMapImage : Grid
     private string? _appliedAttribution; // content currently shown — banner re-expands only when this changes
     private DispatcherTimer? _attrCollapseTimer;
 
+    /// <summary>
+    /// Wraps the attribution banner at the control's width rather than a fixed cap, leaving
+    /// room for its 10px margin on each side plus the border and padding.
+    /// </summary>
+    private void UpdateAttributionMaxWidth()
+    {
+        if (_attrTextBlock == null) return;
+        const double sideMargins = 10 + 10;   // Margin.Left + breathing room on the right
+        const double chrome      = 2 + 12;    // BorderThickness*2 + Padding.Left+Right
+        _attrTextBlock.MaxWidth = Math.Max(120, ActualWidth - sideMargins - chrome);
+    }
+
     private void BuildAttributionOverlay()
     {
         _attrTextBlock = new TextBlock
@@ -1631,7 +1697,8 @@ public partial class MlnMapImage : Grid
             FontSize = 10,
             Foreground = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
             TextWrapping = TextWrapping.Wrap,
-            MaxWidth = 320,
+            // MaxWidth comes from the control's own width (UpdateAttributionMaxWidth):
+            // a fixed cap wrapped the banner early on any map wider than it.
         };
         _attrBorder = new Border
         {
@@ -1658,7 +1725,7 @@ public partial class MlnMapImage : Grid
     private void RefreshAttribution()
     {
         if (_style == null || _attrTextBlock == null || _attrBorder == null) return;
-        var parts = MbglStyle.EnsureMapLibreAttribution(_style.GetSourceAttributions());
+        var parts = MlnStyle.EnsureMapLibreAttribution(_style.GetSourceAttributions());
         var sb = new System.Text.StringBuilder();
         foreach (var part in parts)
         {

@@ -102,7 +102,8 @@ public partial class MainWindow : Window
         string[]? TileUrlTemplates = null,
         string? Encoding           = null,
         string? Attribution        = null,
-        int TileSize               = 256,
+        // The style spec's default; a TileJSON that declares its own tileSize overrides it.
+        int TileSize               = 512,
         int MaxZoom                = 15);
 
     private static readonly Dictionary<string, TerrainSource> TerrainSources = new()
@@ -113,7 +114,8 @@ public partial class MainWindow : Window
             TileJsonUrl:      null,
             TileUrlTemplates: ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],
             Encoding:         "terrarium",
-            Attribution:      "<a href=\"https://registry.opendata.aws/terrain-tiles/\">Open Data</a>"),
+            Attribution:      "<a href=\"https://registry.opendata.aws/terrain-tiles/\">Open Data</a>",
+            TileSize:         256),
     };
 
     // Internal source ID the toggle adds the picked raster-dem under.
@@ -175,7 +177,7 @@ public partial class MainWindow : Window
         }
 
         // A reloaded style drops runtime sources/layers, so re-add the DEM + hillshade
-        // that the on-map ⛰ terrain control (ShowTerrainControl) toggles.
+        // that the on-map terrain control (ShowTerrainControl) toggles.
         _terrainDemAdded = false;
         EnsureTerrainDemAndHillshade();
 
@@ -369,7 +371,7 @@ public partial class MainWindow : Window
     private bool _terrainDemAdded;
 
     // Adds the picked raster-dem source (+ a hillshade layer so the relief is visible)
-    // to the current style if not already there. Both the on-map ⛰ terrain control
+    // to the current style if not already there. Both the on-map terrain control
     // (ShowTerrainControl) and the toolbar button below toggle terrain on this source.
     private void EnsureTerrainDemAndHillshade()
     {
@@ -399,7 +401,7 @@ public partial class MainWindow : Window
         EnsureTerrainDemAndHillshade();
     }
 
-    // The toolbar button is the programmatic equivalent of the on-map ⛰ terrain control:
+    // The toolbar button is the programmatic equivalent of the on-map terrain control:
     // both toggle terrain on the same pre-added raster-dem source (hillshade stays on).
     private void BtnToggleTerrain_Click(object sender, RoutedEventArgs e)
     {
@@ -648,7 +650,7 @@ public partial class MainWindow : Window
         try { File.Delete(cachePath); } catch { /* fresh DB preferred, stale is fine */ }
         try
         {
-            using var mgr = new MapLibreNative.Maui.MbglOfflineManager(cachePath);
+            using var mgr = new MapLibreNative.Maui.MlnOfflineManager(cachePath);
 
             int progressEvents = 0;
             // The observer's Complete flag is the authoritative completion signal —

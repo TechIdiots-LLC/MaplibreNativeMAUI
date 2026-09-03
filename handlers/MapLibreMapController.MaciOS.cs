@@ -71,10 +71,10 @@ public class MapLibreMapController : IMapLibreMapController
     private readonly string? _styleString;
     private readonly float   _pixelRatio;
 
-    private MbglRunLoop?  _runLoop;
-    private MbglFrontend? _frontend;
-    private MbglMap?      _map;
-    private MbglStyle?    _style;
+    private MlnRunLoop?  _runLoop;
+    private MlnFrontend? _frontend;
+    private MlnMap?      _map;
+    private MlnStyle?    _style;
     private bool          _styleReady;
     private UITextView    _attrView    = null!;  // expanded full text
     private UIButton      _attrButton  = null!;  // collapsed ⓘ button
@@ -128,7 +128,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     // Location indicator puck (portable style layer, shared with Windows impl)
     private const string LocIndLayerId = "__mln_location_indicator";
-    private MbglLayer? _locIndLayer;
+    private MlnLayer? _locIndLayer;
     private readonly record struct LocIndParams(double Lat, double Lon, float Bearing, float AccuracyM);
     private LocIndParams? _pendingLocInd;
 
@@ -202,7 +202,8 @@ public class MapLibreMapController : IMapLibreMapController
     {
         _terrainPanel = MakeOverlayPanel();
 
-        _terrainButton = MakeOverlayButton("⛰");   // ⛰
+        _terrainButton = MakeOverlayButton(string.Empty);
+        _terrainButton.SetImage(TerrainIconImage, UIControlState.Normal);
         _terrainButton.TouchUpInside += (_, _) => ToggleTerrainControl();
 
         _terrainPanel.AddArrangedSubview(_terrainButton);
@@ -224,9 +225,10 @@ public class MapLibreMapController : IMapLibreMapController
     {
         if (_terrainButton == null) return;
         bool on = IsTerrainEnabled;
-        _terrainButton.SetTitleColor(on
+        // The icon is a template image, so the state shows through the tint.
+        _terrainButton.TintColor = on
             ? UIColor.FromRGBA((byte)0x00, (byte)0x70, (byte)0xC5, (byte)255)
-            : UIColor.FromRGBA((byte)40, (byte)40, (byte)40, (byte)230), UIControlState.Normal);
+            : UIColor.FromRGBA((byte)40, (byte)40, (byte)40, (byte)230);
         if (_terrainPanel != null)
             _terrainPanel.BackgroundColor = on
                 ? UIColor.FromRGBA((byte)0xE0, (byte)0xF3, (byte)0xFF, (byte)255)
@@ -343,6 +345,37 @@ public class MapLibreMapController : IMapLibreMapController
         return panel;
     }
 
+    /// <summary>
+    /// maplibre-gl-js's terrain icon (see <see cref="TerrainIcon"/>) rendered once as a
+    /// template image, so the button shows its on/off state purely through its tint.
+    /// gl-js draws its 22px icon in a 29px button; that ratio is kept at our button size.
+    /// </summary>
+    private static readonly UIImage TerrainIconImage =
+        RenderTerrainIcon(OverlayBtn * TerrainIcon.Size / 29.0);
+
+    private static UIImage RenderTerrainIcon(double size)
+    {
+        double scale = size / TerrainIcon.Size;
+        var renderer = new UIGraphicsImageRenderer(new CGSize(size, size));
+        var image = renderer.CreateImage(_ =>
+        {
+            var path = new UIBezierPath();
+            AddClosedPolygon(path, TerrainIcon.Mountain, scale);
+            AddClosedPolygon(path, TerrainIcon.Base, scale);
+            UIColor.Black.SetFill();
+            path.Fill();
+        });
+        return image.ImageWithRenderingMode(UIImageRenderingMode.AlwaysTemplate);
+
+        static void AddClosedPolygon(UIBezierPath path, (double X, double Y)[] pts, double scale)
+        {
+            path.MoveTo(new CGPoint(pts[0].X * scale, pts[0].Y * scale));
+            for (int i = 1; i < pts.Length; i++)
+                path.AddLineTo(new CGPoint(pts[i].X * scale, pts[i].Y * scale));
+            path.ClosePath();
+        }
+    }
+
     private static UIButton MakeOverlayButton(string title)
     {
         var b = new UIButton(UIButtonType.System);
@@ -426,9 +459,9 @@ public class MapLibreMapController : IMapLibreMapController
     {
         if (_frontend != null || w < 1 || h < 1) return;
 
-        _runLoop  = new MbglRunLoop();
+        _runLoop  = new MlnRunLoop();
         // surface_handle unused on Apple (Metal backend creates its own MTKView).
-        _frontend = new MbglFrontend(
+        _frontend = new MlnFrontend(
             IntPtr.Zero,
             IntPtr.Zero,
             w, h, _pixelRatio, OnRender);
@@ -449,12 +482,13 @@ public class MapLibreMapController : IMapLibreMapController
         View.BringSubviewToFront(_gpsPanel);
 
         // Persistent tile/resource cache (mbgl's default is :memory:), shared
-        // with MbglOfflineManager via MbglCache.DefaultPath.
-        _map = new MbglMap(_frontend, _runLoop,
-                           cachePath: MbglCache.DefaultPath,
+        // with MlnOfflineManager via MlnCache.DefaultPath.
+        _map = new MlnMap(_frontend, _runLoop,
+                           cachePath: MlnCache.DefaultPath,
                            pixelRatio: _pixelRatio,
                            observer: OnMapObserverEvent);
         _map.SetSize(w, h);
+        _map.TerrainLoadMode = _terrainLoadMode;   // may have been set before the map existed
 
         if (!string.IsNullOrEmpty(_styleString))
         {
@@ -857,7 +891,7 @@ public class MapLibreMapController : IMapLibreMapController
         var parts = new System.Collections.Generic.List<string>(_style.GetSourceAttributions());
         if (!string.IsNullOrWhiteSpace(_customAttribution))
             parts.Add(_customAttribution!);
-        var attributions = MbglStyle.EnsureMapLibreAttribution(parts);
+        var attributions = MlnStyle.EnsureMapLibreAttribution(parts);
 
         if (attributions.Count == 0 || !_showAttrControl)
         {
@@ -1208,7 +1242,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     // -- Helpers ---------------------------------------------------------------
 
-    private static void ApplyLayerMeta(MbglLayer layer, string? sourceLayer,
+    private static void ApplyLayerMeta(MlnLayer layer, string? sourceLayer,
         float minZoom, float maxZoom)
     {
         if (sourceLayer != null) layer.SetSourceLayer(sourceLayer);
@@ -1216,7 +1250,7 @@ public class MapLibreMapController : IMapLibreMapController
         if (maxZoom > 0) layer.SetMaxZoom(maxZoom);
     }
 
-    private void ApplyProperties(MbglLayer layer, IDictionary<string, object?> props)
+    private void ApplyProperties(MlnLayer layer, IDictionary<string, object?> props)
     {
         foreach (var (k, v) in props)
         {
@@ -1334,7 +1368,7 @@ public class MapLibreMapController : IMapLibreMapController
     public void AddSourceJson(string sourceId, string sourceJson)
         => _style?.AddSourceJson(sourceId, sourceJson);
 
-    public MbglLayer? AddLayerJson(string layerJson, string? beforeLayerId = null)
+    public MlnLayer? AddLayerJson(string layerJson, string? beforeLayerId = null)
         => _style?.AddLayerJson(layerJson, beforeLayerId);
 
     // -- Tier 1 – gesture / interactive movement ───────────────────────────────
@@ -1359,6 +1393,22 @@ public class MapLibreMapController : IMapLibreMapController
     public void SetTileLodPitchThreshold(double thresholdRadians) => _map?.SetTileLodPitchThreshold(thresholdRadians);
     public void SetTileLodZoomShift(double shift) => _map?.SetTileLodZoomShift(shift);
     public void SetTileLodMode(int mode) => _map?.SetTileLodMode(mode);
+
+    // Cached so a value set before the map exists (a bindable property applied at
+    // construction) is not lost; re-applied from the map-ready path.
+    private TerrainLoadMode _terrainLoadMode = TerrainLoadMode.Quality;
+
+    public TerrainLoadMode TerrainLoadMode
+    {
+        get => _map?.TerrainLoadMode ?? _terrainLoadMode;
+        set
+        {
+            _terrainLoadMode = value;
+            if (_map != null) _map.TerrainLoadMode = value;
+        }
+    }
+
+    public void SetTerrainLoadMode(TerrainLoadMode mode) => TerrainLoadMode = mode;
 
     // -- Tier 2 – camera / batch projection ───────────────────────────────────
     public CameraResult CameraForLatLngs(
@@ -1411,8 +1461,8 @@ public class MapLibreMapController : IMapLibreMapController
         _map?.Dispose();      _map      = null;
         // Drain pending libuv tasks scheduled by Map destruction.
         for (int i = 0; i < 8 && _runLoop != null; i++) _runLoop.RunOnce();
-        // mbgl_map_create transfers ownership of the frontend pointer to the
-        // native CabiMap; mbgl_map_destroy already destroyed it. Do not call
+        // mln_map_create transfers ownership of the frontend pointer to the
+        // native CabiMap; mln_map_destroy already destroyed it. Do not call
         // Dispose() on _frontend — it is a no-op after TransferOwnership() but
         // we null it here explicitly to avoid confusion.
         _frontend = null;

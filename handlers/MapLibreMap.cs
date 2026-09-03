@@ -57,6 +57,12 @@ public partial class MapLibreMap : StackLayout
     /// <summary>Vertical exaggeration the terrain control applies when enabling terrain. Default <c>1.0</c>.</summary>
     public static readonly BindableProperty TerrainControlExaggerationProperty =
         BindableProperty.Create(nameof(TerrainControlExaggeration), typeof(float), typeof(MapLibreMap), defaultValue: 1.0f);
+    /// <summary>
+    /// How much terrain tile/drape work each frame may do while terrain loads.
+    /// Default <see cref="MapLibreNative.Maui.TerrainLoadMode.Quality"/> (no budget).
+    /// </summary>
+    public static readonly BindableProperty TerrainLoadModeProperty =
+        BindableProperty.Create(nameof(TerrainLoadMode), typeof(TerrainLoadMode), typeof(MapLibreMap), defaultValue: TerrainLoadMode.Quality);
     /// <summary>Corner the terrain control is anchored to. Default <see cref="MapControlCorner.TopRight"/>.</summary>
     public static readonly BindableProperty TerrainControlPositionProperty =
         BindableProperty.Create(nameof(TerrainControlPosition), typeof(MapControlCorner), typeof(MapLibreMap), defaultValue: MapControlCorner.TopRight);
@@ -325,6 +331,17 @@ public partial class MapLibreMap : StackLayout
     {
         get => (MapControlCorner)GetValue(TerrainControlPositionProperty);
         set => SetValue(TerrainControlPositionProperty, value);
+    }
+
+    /// <summary>
+    /// Caps how much terrain tile/drape work each frame may do while terrain loads.
+    /// Lower budgets trade load sharpness for smoother interaction on weaker GPUs;
+    /// the setting does nothing while terrain is off.
+    /// </summary>
+    public TerrainLoadMode TerrainLoadMode
+    {
+        get => (TerrainLoadMode)GetValue(TerrainLoadModeProperty);
+        set => SetValue(TerrainLoadModeProperty, value);
     }
 
     public string? CustomAttribution

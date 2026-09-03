@@ -9,12 +9,13 @@ using Location = Microsoft.Maui.Devices.Sensors.Location;
 using WUX = Microsoft.UI.Xaml;
 using WUXC = Microsoft.UI.Xaml.Controls;
 using WUXM = Microsoft.UI.Xaml.Media;
+using WUXS = Microsoft.UI.Xaml.Shapes;
 
 namespace MapLibreNative.Maui.Handlers;
 
 /// <summary>
 /// Windows-specific IMapLibreMapController implementation backed by the C ABI
-/// mln-cabi.dll via MbglMap / MbglFrontend / MbglRunLoop P/Invoke bindings.
+/// mln-cabi.dll via MlnMap / MlnFrontend / MlnRunLoop P/Invoke bindings.
 /// </summary>
 public class MapLibreMapController : IMapLibreMapController
 {
@@ -48,8 +49,8 @@ public class MapLibreMapController : IMapLibreMapController
     // signature; the in-tree view derives its own surface and DPI, so neither is stored.
     private string? _styleString;
 
-    private MbglMap?      _map;
-    private MbglStyle?    _style;
+    private MlnMap?      _map;
+    private MlnStyle?    _style;
 
     // ── On-map control state ──────────────────────────────────────────────────
     private bool   _showNavControls = true;
@@ -95,7 +96,7 @@ public class MapLibreMapController : IMapLibreMapController
     private WUXC.TextBlock?  _gpsBottomIcon;
     private WUXC.StackPanel? _terrainPanel;
     private WUXC.Border?     _terrainBtn;
-    private WUXC.TextBlock?  _terrainIcon;
+    private WUXS.Path?      _terrainIcon;
     private WUXC.Border?     _attrBorder;
     private WUXC.TextBlock?  _attrTextBlock;
 
@@ -161,6 +162,7 @@ public class MapLibreMapController : IMapLibreMapController
         {
             if (_mapView == null) return;
             _map = _mapView.Map;
+            if (_map != null) _map.TerrainLoadMode = _terrainLoadMode;  // set before the map existed
             // Rebuild after a tab switch: restore the camera saved at teardown
             // before the app's MapReady handlers run (so they can still override).
             if (_savedCamera is { } cam)
@@ -217,8 +219,7 @@ public class MapLibreMapController : IMapLibreMapController
             Width = 30,
             Visibility = _showTerrainControl ? WUX.Visibility.Visible : WUX.Visibility.Collapsed,
         };
-        _terrainBtn = MakeTerrainButton("⛰", ToggleTerrainControl);
-        _terrainIcon = (WUXC.TextBlock)_terrainBtn.Child;
+        (_terrainBtn, _terrainIcon) = MakeTerrainButton(ToggleTerrainControl);
         _terrainPanel.Children.Add(_terrainBtn);
         View.Children.Add(_terrainPanel);
 
@@ -261,7 +262,8 @@ public class MapLibreMapController : IMapLibreMapController
             FontSize = 11,
             Foreground = new WUXM.SolidColorBrush(Windows.UI.Color.FromArgb(255, 85, 85, 85)),
             TextWrapping = WUX.TextWrapping.Wrap,
-            MaxWidth = 320,
+            // MaxWidth is set from the map's own width (see UpdateAttributionMaxWidth):
+            // a fixed cap wrapped the banner early on any map wider than it.
         };
         _attrBorder = new WUXC.Border
         {
@@ -286,8 +288,25 @@ public class MapLibreMapController : IMapLibreMapController
         _attrBorder.DoubleTapped += (_, e) => e.Handled = true;
         View.Children.Add(_attrBorder);
 
+        View.SizeChanged += (_, _) => UpdateAttributionMaxWidth();
+        UpdateAttributionMaxWidth();
+
         RefreshGpsControl();
         RefreshTerrainControl();
+    }
+
+    /// <summary>
+    /// Wraps the attribution banner at the map's width rather than a fixed cap, leaving room
+    /// for its 10px margin on each side plus the border and padding. Without this the banner
+    /// wrapped at a constant width and looked cramped on any map wider than it.
+    /// </summary>
+    private void UpdateAttributionMaxWidth()
+    {
+        if (_attrTextBlock == null) return;
+        const double sideMargins = 10 + 10;   // Margin.Left + breathing room on the right
+        const double chrome      = 2 + 12;    // BorderThickness*2 + Padding.Left+Right
+        double available = View.ActualWidth - sideMargins - chrome;
+        _attrTextBlock.MaxWidth = Math.Max(120, available);
     }
 
     private static WUXC.Border MakeGpsButton(string glyph, Action onClick, bool top)
@@ -316,8 +335,30 @@ public class MapLibreMapController : IMapLibreMapController
         return b;
     }
 
-    private static WUXC.Border MakeTerrainButton(string glyph, Action onClick)
+    /// <summary>
+    /// The terrain button: maplibre-gl-js's terrain icon (see <see cref="TerrainIcon"/>)
+    /// filled with a brush the caller swaps to show the on/off state. Returns the button
+    /// and the shape, since the shape is what gets recoloured.
+    /// </summary>
+    private static (WUXC.Border Button, WUXS.Path Icon) MakeTerrainButton(Action onClick)
     {
+        var icon = new WUXS.Path
+        {
+            Data = BuildTerrainIconGeometry(),
+            Fill = new WUXM.SolidColorBrush(Rgb(0x55, 0x55, 0x55)),
+        };
+        // The geometry is padded inside its 22x22 box, so draw it at its own coordinates
+        // (Path defaults to Stretch.None) in a box of exactly that size; stretching it to
+        // its own bounds instead would enlarge the icon and push it off-centre.
+        var iconBox = new WUXC.Canvas
+        {
+            Width = TerrainIcon.Size,
+            Height = TerrainIcon.Size,
+            HorizontalAlignment = WUX.HorizontalAlignment.Center,
+            VerticalAlignment = WUX.VerticalAlignment.Center,
+        };
+        iconBox.Children.Add(icon);
+
         var b = new WUXC.Border
         {
             Height = 30,
@@ -325,18 +366,36 @@ public class MapLibreMapController : IMapLibreMapController
             BorderBrush = new WUXM.SolidColorBrush(Windows.UI.Color.FromArgb(255, 218, 218, 218)),
             BorderThickness = new WUX.Thickness(1),
             CornerRadius = new WUX.CornerRadius(4),
-            Child = new WUXC.TextBlock
-            {
-                Text = glyph,
-                FontSize = 18,
-                FontWeight = Microsoft.UI.Text.FontWeights.Bold,
-                HorizontalAlignment = WUX.HorizontalAlignment.Center,
-                VerticalAlignment = WUX.VerticalAlignment.Center,
-            },
+            Child = iconBox,
         };
         b.Tapped       += (_, e) => { onClick(); e.Handled = true; };
         b.DoubleTapped += (_, e) => { onClick(); e.Handled = true; };
-        return b;
+        return (b, icon);
+    }
+
+    private static WUXM.Geometry BuildTerrainIconGeometry()
+    {
+        var group = new WUXM.GeometryGroup();
+        group.Children.Add(ClosedPolygon(TerrainIcon.Mountain));
+        group.Children.Add(ClosedPolygon(TerrainIcon.Base));
+        return group;
+
+        static WUXM.PathGeometry ClosedPolygon((double X, double Y)[] pts)
+        {
+            var line = new WUXM.PolyLineSegment();
+            for (int i = 1; i < pts.Length; i++)
+                line.Points.Add(new Windows.Foundation.Point(pts[i].X, pts[i].Y));
+            var figure = new WUXM.PathFigure
+            {
+                StartPoint = new Windows.Foundation.Point(pts[0].X, pts[0].Y),
+                IsClosed = true,
+                IsFilled = true,
+            };
+            figure.Segments.Add(line);
+            var geometry = new WUXM.PathGeometry();
+            geometry.Figures.Add(figure);
+            return geometry;
+        }
     }
 
     private static WUXC.Border MakeDivider()
@@ -491,7 +550,7 @@ public class MapLibreMapController : IMapLibreMapController
     {
         if (_terrainIcon == null || _terrainBtn == null) return;
         bool on = IsTerrainEnabled;
-        _terrainIcon.Foreground = new WUXM.SolidColorBrush(on ? Rgb(0x00, 0x70, 0xC5) : Rgb(0x55, 0x55, 0x55));
+        _terrainIcon.Fill = new WUXM.SolidColorBrush(on ? Rgb(0x00, 0x70, 0xC5) : Rgb(0x55, 0x55, 0x55));
         _terrainBtn.Background  = new WUXM.SolidColorBrush(on ? Rgb(0xE0, 0xF3, 0xFF) : Rgb(255, 255, 255));
         WUXC.ToolTipService.SetToolTip(_terrainBtn, on ? "Disable 3D terrain" : "Enable 3D terrain");
     }
@@ -790,14 +849,14 @@ public class MapLibreMapController : IMapLibreMapController
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static void ApplyLayerMeta(MbglLayer layer, string? sourceLayer, float minZoom, float maxZoom)
+    private static void ApplyLayerMeta(MlnLayer layer, string? sourceLayer, float minZoom, float maxZoom)
     {
         if (sourceLayer != null) layer.SetSourceLayer(sourceLayer);
         if (minZoom > 0) layer.SetMinZoom(minZoom);
         if (maxZoom > 0) layer.SetMaxZoom(maxZoom);
     }
 
-    private static void ApplyProperties(MbglLayer layer, IDictionary<string, object?> props)
+    private static void ApplyProperties(MlnLayer layer, IDictionary<string, object?> props)
     {
         foreach (var (k, v) in props)
         {
@@ -1027,7 +1086,7 @@ public class MapLibreMapController : IMapLibreMapController
         var parts = new System.Collections.Generic.List<string>(_style.GetSourceAttributions());
         if (!string.IsNullOrWhiteSpace(_customAttribution))
             parts.Add(_customAttribution!);
-        var attributions = MbglStyle.EnsureMapLibreAttribution(parts);
+        var attributions = MlnStyle.EnsureMapLibreAttribution(parts);
         // Strip HTML tags to plain text (attribution strings from OSM are like
         // "© <a href='...'>OpenStreetMap</a> contributors" — we strip the links for now).
         var sb = new System.Text.StringBuilder();
@@ -1281,7 +1340,7 @@ public class MapLibreMapController : IMapLibreMapController
     public void AddSourceJson(string sourceId, string sourceJson)
         => _style?.AddSourceJson(sourceId, sourceJson);
 
-    public MbglLayer? AddLayerJson(string layerJson, string? beforeLayerId = null)
+    public MlnLayer? AddLayerJson(string layerJson, string? beforeLayerId = null)
         => _style?.AddLayerJson(layerJson, beforeLayerId);
 
 
@@ -1306,6 +1365,22 @@ public class MapLibreMapController : IMapLibreMapController
     public void SetTileLodPitchThreshold(double thresholdRadians) => _map?.SetTileLodPitchThreshold(thresholdRadians);
     public void SetTileLodZoomShift(double shift) => _map?.SetTileLodZoomShift(shift);
     public void SetTileLodMode(int mode) => _map?.SetTileLodMode(mode);
+
+    // Cached so a value set before the map exists (a bindable property applied at
+    // construction) is not lost; re-applied from the map-ready path.
+    private TerrainLoadMode _terrainLoadMode = TerrainLoadMode.Quality;
+
+    public TerrainLoadMode TerrainLoadMode
+    {
+        get => _map?.TerrainLoadMode ?? _terrainLoadMode;
+        set
+        {
+            _terrainLoadMode = value;
+            if (_map != null) _map.TerrainLoadMode = value;
+        }
+    }
+
+    public void SetTerrainLoadMode(TerrainLoadMode mode) => TerrainLoadMode = mode;
 
     // ── Tier 2 – camera / batch projection ───────────────────────────────────
     public CameraResult CameraForLatLngs(
@@ -1349,8 +1424,8 @@ public class MapLibreMapController : IMapLibreMapController
     public bool FollowLocation { get; set; } = true;
     public bool ShowBearing    { get; set; } = true;
 
-    private const string LocIndLayerId = "mbgl_maui_location";
-    private MbglLayer?   _locIndLayer;
+    private const string LocIndLayerId = "mln_maui_location";
+    private MlnLayer?   _locIndLayer;
     private record struct LocIndParams(double Lat, double Lon, float Bearing, float AccuracyM);
     private LocIndParams? _pendingLocInd;
 

@@ -20,11 +20,11 @@ endif()
 # ── Shared (Windows/Android/Linux/macOS) or Static (iOS/tvOS/macCatalyst) ────
 # Pass -DMBGL_STATIC=ON explicitly to force a static build (required for
 # macCatalyst where the lib is statically linked via __Internal P/Invoke).
-option(MBGL_STATIC "Build mln-cabi as a static library" OFF)
+option(MLN_STATIC "Build mln-cabi as a static library" OFF)
 # Apple platforms (iOS, macCatalyst, macOS, tvOS) always use a static lib so that
 # the MAUI app can link it via P/Invoke. Static libs don't run the linker at
 # build time, which avoids cross-DSO typeinfo visibility issues with mbgl-core.
-if(MBGL_STATIC OR APPLE)
+if(MLN_STATIC OR APPLE)
     add_library(mln-cabi STATIC)
 else()
     add_library(mln-cabi SHARED)
@@ -48,7 +48,7 @@ target_sources(mln-cabi PRIVATE
     # mln::HTTPFileSource, because nothing else does in a standalone NDK build,
     # and elsewhere it registers a FileSourceType::Network factory at runtime.
     # That registration only happens once the host installs a provider, so a
-    # build that never calls mbgl_set_http_provider is unaffected.
+    # build that never calls mln_set_http_provider is unaffected.
     src/http_provider.cpp
 )
 

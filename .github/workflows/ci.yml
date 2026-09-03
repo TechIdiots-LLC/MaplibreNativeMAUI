@@ -148,7 +148,7 @@ jobs:
           dotnet pack bindings/MapLibreNative.Maui.csproj \
             -c Release \
             -p:Version=${{ env.CI_VER }} \
-            -p:_MbglNativeDir=$(pwd)/bindings/native/ \
+            -p:_MlnNativeDir=$(pwd)/bindings/native/ \
             -o artifacts/
 
       - name: Pack MapLibreNative.Maui.Handlers

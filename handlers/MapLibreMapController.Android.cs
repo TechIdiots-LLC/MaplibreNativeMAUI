@@ -80,7 +80,7 @@ public class MapLibreMapController : IMapLibreMapController
         var cts = new CancellationTokenSource();
         s_pendingRequests[requestId] = cts;
 
-        // Fire-and-forget; errors are delivered via mbgl_http_respond.
+        // Fire-and-forget; errors are delivered via mln_http_respond.
         _ = FetchAsync(requestId, url, etag, modified, rangeStart, rangeEnd, cts.Token);
     }
 
@@ -118,7 +118,7 @@ public class MapLibreMapController : IMapLibreMapController
             catch (Exception ex)
             {
                 s_pendingRequests.TryRemove(requestId, out _);
-                RespondError(requestId, NativeMethods.MbglHttpError.Connection, ex.Message);
+                RespondError(requestId, NativeMethods.MlnHttpError.Connection, ex.Message);
                 return;
             }
 
@@ -141,26 +141,26 @@ public class MapLibreMapController : IMapLibreMapController
 
             if (status == 404)
             {
-                RespondError(requestId, NativeMethods.MbglHttpError.NotFound, "HTTP 404");
+                RespondError(requestId, NativeMethods.MlnHttpError.NotFound, "HTTP 404");
                 return;
             }
 
             if (status == 429)
             {
-                RespondError(requestId, NativeMethods.MbglHttpError.RateLimit, "HTTP 429");
+                RespondError(requestId, NativeMethods.MlnHttpError.RateLimit, "HTTP 429");
                 return;
             }
 
             if (status >= 500 && status < 600)
             {
-                RespondError(requestId, NativeMethods.MbglHttpError.Server, $"HTTP {status}");
+                RespondError(requestId, NativeMethods.MlnHttpError.Server, $"HTTP {status}");
                 return;
             }
 
             // 200 OK and 206 Partial Content are both treated as success.
             if (status != 200 && status != 206)
             {
-                RespondError(requestId, NativeMethods.MbglHttpError.Other, $"HTTP {status}");
+                RespondError(requestId, NativeMethods.MlnHttpError.Other, $"HTTP {status}");
                 return;
             }
 
@@ -182,7 +182,7 @@ public class MapLibreMapController : IMapLibreMapController
         catch (Exception ex)
         {
             s_pendingRequests.TryRemove(requestId, out _);
-            RespondError(requestId, NativeMethods.MbglHttpError.Connection, ex.Message);
+            RespondError(requestId, NativeMethods.MlnHttpError.Connection, ex.Message);
         }
     }
 
@@ -211,7 +211,7 @@ public class MapLibreMapController : IMapLibreMapController
             {
                 NativeMethods.HttpRespond(
                     requestId,
-                    NativeMethods.MbglHttpError.None,
+                    NativeMethods.MlnHttpError.None,
                     IntPtr.Zero,
                     200,
                     (nint)bodyPtr,
@@ -236,7 +236,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     private static void RespondNotModified(ulong requestId)
     {
-        NativeMethods.HttpRespond(requestId, NativeMethods.MbglHttpError.None,
+        NativeMethods.HttpRespond(requestId, NativeMethods.MlnHttpError.None,
             IntPtr.Zero, 304, IntPtr.Zero, 0,
             IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero,
             0, 1, 0);
@@ -244,13 +244,13 @@ public class MapLibreMapController : IMapLibreMapController
 
     private static void RespondNoContent(ulong requestId)
     {
-        NativeMethods.HttpRespond(requestId, NativeMethods.MbglHttpError.None,
+        NativeMethods.HttpRespond(requestId, NativeMethods.MlnHttpError.None,
             IntPtr.Zero, 204, IntPtr.Zero, 0,
             IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero,
             1, 0, 0);
     }
 
-    private static void RespondError(ulong requestId, NativeMethods.MbglHttpError error, string message)
+    private static void RespondError(ulong requestId, NativeMethods.MlnHttpError error, string message)
     {
         var msgBytes = ToNullTerminatedUtf8(message);
         unsafe
@@ -290,10 +290,10 @@ public class MapLibreMapController : IMapLibreMapController
     private readonly float   _pixelRatio;
 
     private IntPtr        _nativeWindow = IntPtr.Zero;
-    private MbglRunLoop?  _runLoop;
-    private MbglFrontend? _frontend;
-    private MbglMap?      _map;
-    private MbglStyle?    _style;
+    private MlnRunLoop?  _runLoop;
+    private MlnFrontend? _frontend;
+    private MlnMap?      _map;
+    private MlnStyle?    _style;
     private bool          _styleReady;
 
     // Render-loop state. mbgl's frontend.update() calls the render callback
@@ -331,7 +331,8 @@ public class MapLibreMapController : IMapLibreMapController
     private LinearLayout _navPanel        = null!;  // d-pad / zoom-in / zoom-out
     private LinearLayout _gpsPanel        = null!;  // tracking / bearing mode
     private LinearLayout _terrainPanel    = null!;  // 3D-terrain toggle button
-    private TextView     _terrainIcon     = null!;
+    private ImageView    _terrainIcon     = null!;
+    private Android.Graphics.Drawables.ShapeDrawable? _terrainIconDrawable;
     private Android.Views.View _navNorthTick = null!;  // rotates with map bearing
     private TextView     _gpsTrackingIcon = null!;  // reflects tracking mode
     private TextView     _gpsBearingIcon  = null!;
@@ -363,7 +364,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     // Location indicator puck (portable style layer, shared with Windows impl)
     private const string LocIndLayerId = "__mln_location_indicator";
-    private MbglLayer? _locIndLayer;
+    private MlnLayer? _locIndLayer;
     private readonly record struct LocIndParams(double Lat, double Lon, float Bearing, float AccuracyM);
     private LocIndParams? _pendingLocInd;
 
@@ -650,7 +651,7 @@ public class MapLibreMapController : IMapLibreMapController
         _terrainPanel.SetBackgroundColor(Android.Graphics.Color.Argb(230, 255, 255, 255));
         _terrainPanel.Clickable = true;
 
-        _terrainIcon = MakeOverlayButton(ctx, "⛰", btn); // ⛰
+        (_terrainIcon, _terrainIconDrawable) = MakeTerrainIcon(ctx, btn);
         _terrainIcon.Click += (_, _) => ToggleTerrainControl();
         _terrainPanel.AddView(_terrainIcon);
 
@@ -671,14 +672,55 @@ public class MapLibreMapController : IMapLibreMapController
     /// <summary>Colours the terrain button to reflect whether terrain is currently enabled.</summary>
     private void RefreshTerrainIcon()
     {
-        if (_terrainIcon == null) return;
+        if (_terrainIcon == null || _terrainIconDrawable == null) return;
         bool on = IsTerrainEnabled;
-        _terrainIcon.SetTextColor(on
+        _terrainIconDrawable.Paint!.Color = on
             ? Android.Graphics.Color.Argb(255, 0x00, 0x70, 0xC5)
-            : Android.Graphics.Color.Argb(230, 40, 40, 40));
+            : Android.Graphics.Color.Argb(230, 40, 40, 40);
+        _terrainIcon.Invalidate();
         _terrainPanel?.SetBackgroundColor(on
             ? Android.Graphics.Color.Argb(255, 0xE0, 0xF3, 0xFF)
             : Android.Graphics.Color.Argb(230, 255, 255, 255));
+    }
+
+    /// <summary>
+    /// The terrain button's icon: maplibre-gl-js's terrain shape (see <see cref="TerrainIcon"/>)
+    /// as a <see cref="Android.Graphics.Drawables.Shapes.PathShape"/>, which scales the 22x22
+    /// geometry to whatever bounds the view is given. The drawable comes back with it because
+    /// the on/off recolour goes through its paint.
+    /// </summary>
+    private static (ImageView View, Android.Graphics.Drawables.ShapeDrawable Drawable)
+        MakeTerrainIcon(global::Android.Content.Context ctx, int sizePx)
+    {
+        var path = new Android.Graphics.Path();
+        AddClosedPolygon(path, TerrainIcon.Mountain);
+        AddClosedPolygon(path, TerrainIcon.Base);
+
+        var drawable = new Android.Graphics.Drawables.ShapeDrawable(
+            new Android.Graphics.Drawables.Shapes.PathShape(
+                path, (float)TerrainIcon.Size, (float)TerrainIcon.Size));
+        drawable.Paint!.Color = Android.Graphics.Color.Argb(230, 40, 40, 40);
+
+        // gl-js draws its 22px icon in a 29px button; keep that ratio at our button size.
+        int icon = (int)Math.Round(sizePx * TerrainIcon.Size / 29.0);
+        int pad  = Math.Max(0, (sizePx - icon) / 2);
+
+        var view = new ImageView(ctx)
+        {
+            LayoutParameters = new LinearLayout.LayoutParams(sizePx, sizePx),
+            Clickable = true,
+        };
+        view.SetImageDrawable(drawable);
+        view.SetScaleType(ImageView.ScaleType.FitCenter);
+        view.SetPadding(pad, pad, pad, pad);
+        return (view, drawable);
+
+        static void AddClosedPolygon(Android.Graphics.Path p, (double X, double Y)[] pts)
+        {
+            p.MoveTo((float)pts[0].X, (float)pts[0].Y);
+            for (int i = 1; i < pts.Length; i++) p.LineTo((float)pts[i].X, (float)pts[i].Y);
+            p.Close();
+        }
     }
 
     private static TextView MakeOverlayButton(global::Android.Content.Context ctx, string text, int sizePx)
@@ -797,16 +839,17 @@ public class MapLibreMapController : IMapLibreMapController
 
     private void InitMaplibre(int w, int h)
     {
-        _runLoop  = new MbglRunLoop();
-        _frontend = new MbglFrontend(_nativeWindow, IntPtr.Zero, w, h, _pixelRatio,
+        _runLoop  = new MlnRunLoop();
+        _frontend = new MlnFrontend(_nativeWindow, IntPtr.Zero, w, h, _pixelRatio,
             () => _renderNeedsUpdate = true);
         // Persistent tile/resource cache (mbgl's default is :memory:), shared
-        // with MbglOfflineManager via MbglCache.DefaultPath.
-        _map      = new MbglMap(_frontend, _runLoop,
-                                cachePath: MbglCache.DefaultPath,
+        // with MlnOfflineManager via MlnCache.DefaultPath.
+        _map      = new MlnMap(_frontend, _runLoop,
+                                cachePath: MlnCache.DefaultPath,
                                 pixelRatio: _pixelRatio,
                                 observer: OnMapObserverEvent);
         _map.SetSize(w, h);
+        _map.TerrainLoadMode = _terrainLoadMode;   // may have been set before the map existed
 
         if (!string.IsNullOrEmpty(_styleString))
         {
@@ -1234,7 +1277,7 @@ public class MapLibreMapController : IMapLibreMapController
         var parts = new System.Collections.Generic.List<string>(_style.GetSourceAttributions());
         if (!string.IsNullOrWhiteSpace(_customAttribution))
             parts.Add(_customAttribution!);
-        var attributions = MbglStyle.EnsureMapLibreAttribution(parts);
+        var attributions = MlnStyle.EnsureMapLibreAttribution(parts);
 
         if (attributions.Count == 0 || !_showAttrControl)
         {
@@ -1577,7 +1620,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     // -- Helpers ---------------------------------------------------------------
 
-    private static void ApplyLayerMeta(MbglLayer layer, string? sourceLayer,
+    private static void ApplyLayerMeta(MlnLayer layer, string? sourceLayer,
         float minZoom, float maxZoom)
     {
         if (sourceLayer != null) layer.SetSourceLayer(sourceLayer);
@@ -1585,7 +1628,7 @@ public class MapLibreMapController : IMapLibreMapController
         if (maxZoom > 0) layer.SetMaxZoom(maxZoom);
     }
 
-    private void ApplyProperties(MbglLayer layer, IDictionary<string, object?> props)
+    private void ApplyProperties(MlnLayer layer, IDictionary<string, object?> props)
     {
         foreach (var (k, v) in props)
         {
@@ -1703,6 +1746,22 @@ public class MapLibreMapController : IMapLibreMapController
     public void SetTileLodPitchThreshold(double thresholdRadians) => _map?.SetTileLodPitchThreshold(thresholdRadians);
     public void SetTileLodZoomShift(double shift) => _map?.SetTileLodZoomShift(shift);
     public void SetTileLodMode(int mode) => _map?.SetTileLodMode(mode);
+
+    // Cached so a value set before the map exists (a bindable property applied at
+    // construction) is not lost; re-applied from the map-ready path.
+    private TerrainLoadMode _terrainLoadMode = TerrainLoadMode.Quality;
+
+    public TerrainLoadMode TerrainLoadMode
+    {
+        get => _map?.TerrainLoadMode ?? _terrainLoadMode;
+        set
+        {
+            _terrainLoadMode = value;
+            if (_map != null) _map.TerrainLoadMode = value;
+        }
+    }
+
+    public void SetTerrainLoadMode(TerrainLoadMode mode) => TerrainLoadMode = mode;
 
     // -- Tier 2 – camera / batch projection ───────────────────────────────────
     public CameraResult CameraForLatLngs(
@@ -2024,8 +2083,8 @@ public class MapLibreMapController : IMapLibreMapController
         _map?.Dispose();      _map      = null;
         // Drain pending libuv tasks scheduled by Map destruction.
         for (int i = 0; i < 8 && _runLoop != null; i++) _runLoop.RunOnce();
-        // mbgl_map_create transfers ownership of the frontend pointer to the
-        // native CabiMap; mbgl_map_destroy already destroyed it. Do not call
+        // mln_map_create transfers ownership of the frontend pointer to the
+        // native CabiMap; mln_map_destroy already destroyed it. Do not call
         // Dispose() on _frontend — it is a no-op after TransferOwnership() but
         // we null it here explicitly to avoid confusion.
         _frontend = null;

@@ -6,7 +6,7 @@
  *   Expects the caller (C# MaplibreMapHost) to:
  *     1. Create a Win32 child HWND with CS_OWNDC | CS_DBLCLKS
  *     2. Create a WGL context on that DC
- *     3. Pass the HDC and HGLRC as void* to mbgl_frontend_create_gl()
+ *     3. Pass the HDC and HGLRC as void* to mln_frontend_create_gl()
  *   The render_callback is invoked after each frame so the caller can
  *   call SwapBuffers on its own DC.
  *
@@ -88,7 +88,7 @@ void WGLRenderableResource::bind() {
 class WGLFrontend : public PlatformFrontend {
 public:
     WGLFrontend(HDC hDC, HGLRC hGLRC, mln::Size sz, float pixelRatio,
-                mbgl_render_fn renderCb, void* renderUd)
+                mln_render_fn renderCb, void* renderUd)
         : _backend(hDC, hGLRC, sz)
         , _renderer(std::make_unique<mln::Renderer>(_backend, pixelRatio))
         , _renderCb(renderCb), _renderUd(renderUd)
@@ -146,7 +146,7 @@ public:
 private:
     WGLBackend                                _backend;
     std::unique_ptr<mln::Renderer>           _renderer;
-    mbgl_render_fn                            _renderCb;
+    mln_render_fn                            _renderCb;
     void*                                     _renderUd;
     std::shared_ptr<mln::UpdateParameters>   _updateParams;
     std::mutex                                _mutex;
@@ -157,7 +157,7 @@ private:
 PlatformFrontend* createPlatformFrontend(
     void* surface_handle, void* gl_context,
     mln::Size sz, float pixelRatio,
-    mbgl_render_fn renderCb, void* renderUd)
+    mln_render_fn renderCb, void* renderUd)
 {
     return new WGLFrontend(
         reinterpret_cast<HDC>(surface_handle),
@@ -197,11 +197,11 @@ static void VkDiag(const char* msg) {
 
 /* Offscreen Vulkan frontend. There is no HWND / window surface: the map renders
  * into a headless color texture and the managed layer pulls the pixels back via
- * mbgl_frontend_read_pixels() and blits them into the WriteableBitmap. Same
+ * mln_frontend_read_pixels() and blits them into the WriteableBitmap. Same
  * airspace-free, in-tree model as the WGL path (which reads back GL-side). */
 class VulkanOffscreenFrontend : public PlatformFrontend {
 public:
-    VulkanOffscreenFrontend(mln::Size sz, float pixelRatio, mbgl_render_fn cb, void* ud)
+    VulkanOffscreenFrontend(mln::Size sz, float pixelRatio, mln_render_fn cb, void* ud)
         : _size(sz)
         , _backend(sz, mln::gfx::Renderable::SwapBehaviour::NoFlush, mln::gfx::ContextMode::Unique)
         , _renderer(std::make_unique<mln::Renderer>(_backend, pixelRatio))
@@ -281,7 +281,7 @@ private:
     mln::vulkan::HeadlessBackend            _backend;
     std::unique_ptr<mln::Renderer>          _renderer;
     std::vector<uint8_t>                     _lastImage;   // most recent frame, RGBA
-    mbgl_render_fn                           _renderCb;
+    mln_render_fn                           _renderCb;
     void*                                    _renderUd;
     std::shared_ptr<mln::UpdateParameters>  _updateParams;
     std::mutex                               _mutex;
@@ -291,7 +291,7 @@ private:
 PlatformFrontend* createPlatformFrontend(
     void* /*surface_handle*/, void* /*gl_context*/,
     mln::Size sz, float pixelRatio,
-    mbgl_render_fn renderCb, void* renderUd)
+    mln_render_fn renderCb, void* renderUd)
 {
     VkDiag("create: begin");
     auto* fe = new VulkanOffscreenFrontend(sz, pixelRatio, renderCb, renderUd);

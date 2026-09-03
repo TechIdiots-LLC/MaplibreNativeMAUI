@@ -49,5 +49,6 @@ public partial class MapLibreMapBuilder : IMapLibreMapOptionsSink
     public void SetAttributionControlPosition(MapControlCorner corner) { }
     public void SetShowTerrainControl(bool show, string sourceId, float exaggeration) { }
     public void SetTerrainControlPosition(MapControlCorner corner)     { }
+    public void SetTerrainLoadMode(TerrainLoadMode mode)               { }
 }
 #endif

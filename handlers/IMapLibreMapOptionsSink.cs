@@ -75,5 +75,10 @@ public interface IMapLibreMapOptionsSink
     /// <summary>Set the corner the terrain control is anchored to.</summary>
     void SetTerrainControlPosition(MapControlCorner corner);
 
+    /// <summary>
+    /// Cap how much terrain tile/drape work each frame may do while terrain loads.
+    /// </summary>
+    void SetTerrainLoadMode(TerrainLoadMode mode);
+
     //void SetLocationEngineProperties(LocationEngineRequest? locationEngineRequest);
 }

@@ -1,5 +1,5 @@
 /**
- * MbglNetwork.cs — Process-global network state for MapLibre resource loading.
+ * MlnNetwork.cs — Process-global network state for MapLibre resource loading.
  */
 namespace MapLibreNative.Maui;
 
@@ -8,7 +8,7 @@ namespace MapLibreNative.Maui;
 /// requests are suspended and only cached / offline resources are served;
 /// switching back online resumes queued requests.
 /// </summary>
-public static class MbglNetwork
+public static class MlnNetwork
 {
     /// <summary>Gets or sets whether MapLibre may access the network.</summary>
     public static bool Online

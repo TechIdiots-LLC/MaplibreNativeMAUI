@@ -44,10 +44,10 @@ public sealed class MapImageView : IDisposable
     public float UiScale { get; set; } = 1f;
 
     /// <summary>The underlying map, once created (on panel load). Drive camera/sources/layers through this.</summary>
-    public MbglMap? Map => _map;
+    public MlnMap? Map => _map;
 
     /// <summary>The current style, once loaded.</summary>
-    public MbglStyle? Style => _style;
+    public MlnStyle? Style => _style;
 
     public event EventHandler? MapReady;
     public event EventHandler? StyleLoaded;
@@ -77,11 +77,11 @@ public sealed class MapImageView : IDisposable
     // This is what crashed the app when navigating back to a map tab — MAUI builds the new map
     // (and its RunLoop) before the previous handler/map is torn down, so two RunLoops briefly
     // co-existed on the UI thread. Sharing one avoids that entirely.
-    [ThreadStatic] private static MbglRunLoop? _sharedRunLoop;
-    private MbglRunLoop?   _runLoop;
-    private MbglFrontend?  _frontend;
-    private MbglMap?       _map;
-    private MbglStyle?     _style;
+    [ThreadStatic] private static MlnRunLoop? _sharedRunLoop;
+    private MlnRunLoop?   _runLoop;
+    private MlnFrontend?  _frontend;
+    private MlnMap?       _map;
+    private MlnStyle?     _style;
 
     private int   _width = 1, _height = 1;
     private float _dpi = 1f;
@@ -89,7 +89,7 @@ public sealed class MapImageView : IDisposable
 
     // Vulkan builds render offscreen (headless) and read pixels back through the
     // frontend; OpenGL builds render into a WGL FBO and read back via glReadPixels.
-    private static readonly bool _vulkan = MbglFrontend.RenderBackend == MbglRenderBackend.Vulkan;
+    private static readonly bool _vulkan = MlnFrontend.RenderBackend == MlnRenderBackend.Vulkan;
     private bool _started;
     private Windows.Foundation.Point _lastPos;
 
@@ -153,18 +153,18 @@ public sealed class MapImageView : IDisposable
         // sizes) — the surface dimensions above stay in real physical pixels.
         float pixelRatio = _dpi * UiScale;
 
-        _runLoop  = _sharedRunLoop ??= new MbglRunLoop();
+        _runLoop  = _sharedRunLoop ??= new MlnRunLoop();
         // Vulkan renders headless (no surface handle); OpenGL needs the WGL HDC + context.
         // pixelRatio (= _dpi * UiScale) scales style-unit sizes; the surface dims above stay physical.
         _frontend = _vulkan
-            ? new MbglFrontend(IntPtr.Zero, IntPtr.Zero, _width, _height, pixelRatio,
+            ? new MlnFrontend(IntPtr.Zero, IntPtr.Zero, _width, _height, pixelRatio,
                 () => _renderNeedsUpdate = true)
-            : new MbglFrontend(_interop!.Hdc, _interop.GlContext, _width, _height, pixelRatio,
+            : new MlnFrontend(_interop!.Hdc, _interop.GlContext, _width, _height, pixelRatio,
                 () => _renderNeedsUpdate = true);
         // Persistent tile/resource cache (mbgl's default is :memory:). Shares
-        // MbglCache.DefaultPath with MbglOfflineManager so offline regions
+        // MlnCache.DefaultPath with MlnOfflineManager so offline regions
         // downloaded by the manager are served to the map.
-        _map = new MbglMap(_frontend, _runLoop, cachePath: MbglCache.DefaultPath,
+        _map = new MlnMap(_frontend, _runLoop, cachePath: MlnCache.DefaultPath,
                            pixelRatio: pixelRatio, observer: OnMapObserverEvent);
         _map.SetSize(_width, _height);
 
