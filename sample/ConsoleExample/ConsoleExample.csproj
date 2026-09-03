@@ -13,8 +13,13 @@
     <UseWPF>true</UseWPF>
   </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="MapLibreNative.Maui" Version="*" />
+  <ItemGroup Condition="'$(UseLocalPackages)' != 'true'">
+    <!-- MlnRunLoop / MlnFrontend / MlnMap + the native DLL -->
+    <ProjectReference Include="..\..\bindings\MapLibreNative.Maui.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseLocalPackages)' == 'true'">
+    <PackageReference Include="MapLibreNative.Maui" Version="*-*" />
   </ItemGroup>
 
 </Project>
