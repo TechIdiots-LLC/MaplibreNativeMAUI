@@ -179,6 +179,116 @@ jobs:
           path: artifacts/*.nupkg
           retention-days: 7
 
+  # ── Mobile-only NuGet feed (unblocks the mobile samples early) ────────────
+  # `pack` cannot start until build-windows does, and its arm64 leg is a ~35 min
+  # outlier -- so samples-mobile sat idle for ~22 minutes after the Apple natives
+  # were ready, waiting on Windows DLLs it never opens. This packs the same two
+  # projects from the Android and Apple natives alone, purely to feed that job.
+  #
+  # It has to be a *package* rather than a ProjectReference build: the
+  # NativeReference items that put libmln-cabi on the link line for iOS and
+  # macCatalyst live in buildTransitive/MapLibreNative.Maui.targets, which only
+  # applies to package consumers. Building the sample from source fails at link
+  # with undefined _mln_* symbols.
+  #
+  # The artifact name deliberately does NOT match `nuget-packages*`: the release
+  # job downloads that pattern with merge-multiple and pushes the result to
+  # nuget.org, so a matching name would overwrite the real package with this
+  # Windows-less one.
+  pack-mobile:
+    name: Pack NuGet (mobile feed)
+    runs-on: macos-latest
+    needs: [version-check, build-android, build-apple]
+    if: needs.version-check.outputs.published == 'false'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 8 and 9 SDKs
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      - name: Download Android native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-android-*
+          path: native-artifacts
+
+      - name: Download Apple native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-ios*
+          path: native-artifacts
+
+      - name: Download macCatalyst native artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: native-maccatalyst
+          path: native-artifacts/native-maccatalyst
+
+      - name: Arrange native libs for bindings project
+        run: |
+          N=bindings/native
+          mkdir -p $N/android-arm64 $N/android-arm $N/android-x64
+          mkdir -p $N/ios-arm64 $N/iossimulator-arm64 $N/maccatalyst
+
+          find native-artifacts/native-android-arm64-v8a   -name "libmln-cabi.so" -exec cp {} $N/android-arm64/ \;
+          find native-artifacts/native-android-armeabi-v7a -name "libmln-cabi.so" -exec cp {} $N/android-arm/   \;
+          find native-artifacts/native-android-x86_64      -name "libmln-cabi.so" -exec cp {} $N/android-x64/   \;
+          find native-artifacts/native-ios-arm64           -name "libmln-cabi.a"  -exec cp {} $N/ios-arm64/     \;
+          find native-artifacts/native-iossimulator-arm64  -name "libmln-cabi.a"  -exec cp {} $N/iossimulator-arm64/ \;
+          find native-artifacts/native-maccatalyst         -name "libmln-cabi.a"  -exec cp {} $N/maccatalyst/   \;
+
+          echo "Native libs arranged:"
+          find $N -type f
+
+      - name: Create iOS XCFramework
+        run: |
+          N=bindings/native
+          mkdir -p $N/ios
+          XCFW_ARGS=""
+          [ -f $N/ios-arm64/libmln-cabi.a ]          && XCFW_ARGS="$XCFW_ARGS -library $N/ios-arm64/libmln-cabi.a"
+          [ -f $N/iossimulator-arm64/libmln-cabi.a ] && XCFW_ARGS="$XCFW_ARGS -library $N/iossimulator-arm64/libmln-cabi.a"
+          if [ -n "$XCFW_ARGS" ]; then
+            xcodebuild -create-xcframework \
+              $XCFW_ARGS \
+              -output $N/ios/libmln-cabi.xcframework
+            echo "XCFramework created at $N/ios/libmln-cabi.xcframework"
+          else
+            echo "No iOS libraries found; skipping XCFramework creation."
+          fi
+
+      - name: Restore workloads
+        run: dotnet workload restore maplibre-maui.sln
+
+      # Same version as the real packages, so the samples' Version="*-*"
+      # reference resolves against this feed exactly as it would against `pack`.
+      - name: Pack MapLibreNative.Maui
+        run: |
+          dotnet pack bindings/MapLibreNative.Maui.csproj \
+            -c Release \
+            -p:Version=${{ needs.version-check.outputs.version }} \
+            -p:_MlnNativeDir=$(pwd)/bindings/native/ \
+            -o artifacts/
+
+      - name: Pack MapLibreNative.Maui.Handlers
+        run: |
+          dotnet pack handlers/MapLibreNative.Maui.Handlers.csproj \
+            -c Release \
+            -p:Version=${{ needs.version-check.outputs.version }} \
+            -o artifacts/
+
+      - name: Upload mobile feed
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-local-feed
+          path: artifacts/*.nupkg
+          retention-days: 7
+
   # ── WPF NuGet packaging (Windows runner — WPF SDK requires Windows) ───────
   pack-wpf:
     name: Pack WPF NuGet + Windows samples
@@ -348,16 +458,15 @@ jobs:
           retention-days: 7
 
   # ── Android + iOS + macCatalyst sample builds ───────────────────────────
-  # Deliberately does NOT depend on `pack`. The mobile sample needs the Android
-  # and Apple natives and nothing else, but the NuGet package that `pack`
-  # produces also carries the Windows DLLs -- so depending on it meant waiting
-  # on the Windows arm64 native build, ~22 minutes after the Apple natives were
-  # ready. MauiSample is built from source against the staged natives instead;
-  # `pack-wpf` still exercises the packed artifact for the Windows samples.
+  # Feeds off `pack-mobile`, not `pack`, so it is not gated on the Windows
+  # natives it has no use for. It still consumes a real package -- it has to,
+  # since the NativeReference items that link libmln-cabi into an iOS or
+  # macCatalyst app live in buildTransitive/MapLibreNative.Maui.targets and
+  # reach the app only through package consumption, never a ProjectReference.
   samples-mobile:
     name: Build mobile + macCatalyst samples
     runs-on: macos-26
-    needs: [version-check, build-android, build-apple]
+    needs: [version-check, pack-mobile]
     if: needs.version-check.outputs.published == 'false'
 
     steps:
@@ -371,61 +480,14 @@ jobs:
             9.0.x
             10.0.x
 
-      - name: Select Xcode 26.5
-        run: sudo xcode-select -s /Applications/Xcode_26.5.app
-
-      - name: Download Android native artifacts
+      - name: Download MAUI NuGet packages (for local feed)
         uses: actions/download-artifact@v4
         with:
-          pattern: native-android-*
-          path: native-artifacts
+          name: mobile-local-feed
+          path: local-feed
 
-      - name: Download Apple native artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: native-ios*
-          path: native-artifacts
-
-      - name: Download macCatalyst native artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: native-maccatalyst
-          path: native-artifacts/native-maccatalyst
-
-      # Same layout `pack` stages, minus the Windows DLLs this job has no use
-      # for. The bindings project picks these up through _MlnNativeDir, whose
-      # default is this directory, so no property needs passing.
-      - name: Arrange native libs for bindings project
-        run: |
-          N=bindings/native
-          mkdir -p $N/android-arm64 $N/android-arm $N/android-x64
-          mkdir -p $N/ios-arm64 $N/iossimulator-arm64 $N/maccatalyst
-
-          find native-artifacts/native-android-arm64-v8a   -name "libmln-cabi.so" -exec cp {} $N/android-arm64/ \;
-          find native-artifacts/native-android-armeabi-v7a -name "libmln-cabi.so" -exec cp {} $N/android-arm/   \;
-          find native-artifacts/native-android-x86_64      -name "libmln-cabi.so" -exec cp {} $N/android-x64/   \;
-          find native-artifacts/native-ios-arm64           -name "libmln-cabi.a"  -exec cp {} $N/ios-arm64/     \;
-          find native-artifacts/native-iossimulator-arm64  -name "libmln-cabi.a"  -exec cp {} $N/iossimulator-arm64/ \;
-          find native-artifacts/native-maccatalyst         -name "libmln-cabi.a"  -exec cp {} $N/maccatalyst/   \;
-
-          echo "Native libs arranged:"
-          find $N -type f
-
-      - name: Create iOS XCFramework
-        run: |
-          N=bindings/native
-          mkdir -p $N/ios
-          XCFW_ARGS=""
-          [ -f $N/ios-arm64/libmln-cabi.a ]          && XCFW_ARGS="$XCFW_ARGS -library $N/ios-arm64/libmln-cabi.a"
-          [ -f $N/iossimulator-arm64/libmln-cabi.a ] && XCFW_ARGS="$XCFW_ARGS -library $N/iossimulator-arm64/libmln-cabi.a"
-          if [ -n "$XCFW_ARGS" ]; then
-            xcodebuild -create-xcframework \
-              $XCFW_ARGS \
-              -output $N/ios/libmln-cabi.xcframework
-            echo "XCFramework created at $N/ios/libmln-cabi.xcframework"
-          else
-            echo "No iOS libraries found; skipping XCFramework creation."
-          fi
+      - name: Add local NuGet feed
+        run: dotnet nuget add source $(pwd)/local-feed --name local-release
 
       - name: Restore MAUI workloads
         run: dotnet workload restore sample/MauiSample.csproj
@@ -435,7 +497,8 @@ jobs:
           dotnet build sample/MauiSample.csproj \
             -f net9.0-android \
             -c Release \
-            -p:EnableWindowsTargeting=true
+            -p:EnableWindowsTargeting=true \
+            -p:UseLocalPackages=true
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
@@ -444,13 +507,17 @@ jobs:
           path: sample/bin/Release/net9.0-android/*Signed.apk
           retention-days: 7
 
+      - name: Select Xcode 26.5
+        run: sudo xcode-select -s /Applications/Xcode_26.5.app
+
       - name: Build MauiSample (iOS simulator)
         run: |
           dotnet build sample/MauiSample.csproj \
             -f net9.0-ios \
             -r iossimulator-arm64 \
             -c Release \
-            -p:EnableWindowsTargeting=true
+            -p:EnableWindowsTargeting=true \
+            -p:UseLocalPackages=true
 
       - name: Upload iOS simulator app
         uses: actions/upload-artifact@v4
@@ -465,7 +532,8 @@ jobs:
             -f net9.0-maccatalyst \
             -c Release \
             -p:EnableCodeSigning=false \
-            -p:EnableWindowsTargeting=true
+            -p:EnableWindowsTargeting=true \
+            -p:UseLocalPackages=true
 
       - name: Upload macCatalyst app
         uses: actions/upload-artifact@v4
