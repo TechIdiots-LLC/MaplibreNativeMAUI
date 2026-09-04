@@ -5,6 +5,7 @@
 - _...Add new stuff here..._
 
 ### 🐞 Bug fixes
+- **Android: the terrain button was blank** — the icon geometry was right and the colours were right; it was simply never drawn. `ShapeDrawable` reports an intrinsic size of 0 unless told otherwise, and `ImageView.onDraw` returns early when its drawable measures 0 in either direction, so the button came up empty on every Android build since the icon landed. The drawable is now given intrinsic dimensions. Only Android was affected: WPF and WinUI draw the same geometry through a `Path`, iOS through a `UIBezierPath`, and the GPS control's ring escapes it by being a View background, which is always handed the view's own bounds rather than asked for its intrinsic size.
 - _...Add new stuff here..._
 
 ## 5.0.0-pre.2

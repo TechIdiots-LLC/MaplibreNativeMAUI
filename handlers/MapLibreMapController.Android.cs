@@ -705,6 +705,14 @@ public class MapLibreMapController : IMapLibreMapController
         int icon = (int)Math.Round(sizePx * TerrainIcon.Size / 29.0);
         int pad  = Math.Max(0, (sizePx - icon) / 2);
 
+        // ShapeDrawable reports an intrinsic size of 0 unless told otherwise, and
+        // ImageView.onDraw returns early when the drawable measures 0 in either
+        // direction -- so without this the button renders empty. It does not affect a
+        // ShapeDrawable used as a View background, which is why the GPS control's ring
+        // needs no equivalent: a background is always handed the view's own bounds.
+        drawable.SetIntrinsicWidth(icon);
+        drawable.SetIntrinsicHeight(icon);
+
         var view = new ImageView(ctx)
         {
             LayoutParameters = new LinearLayout.LayoutParams(sizePx, sizePx),
