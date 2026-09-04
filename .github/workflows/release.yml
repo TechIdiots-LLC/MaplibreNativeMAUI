@@ -41,9 +41,13 @@ jobs:
       - name: Read VERSION and check GitHub releases
         id: check
         run: |
-          # A push to main is always the stable line: the input only exists on a
-          # manual dispatch, and is empty otherwise.
-          LINE="${{ inputs.line || 'stable' }}"
+          # A push to main is always the stable line; the choice only exists on a
+          # manual dispatch. Guarded on the event rather than written as
+          # `inputs.line || 'stable'`, because the inputs context does not exist for
+          # a push and referencing it there fails the whole workflow at validation --
+          # a run with no jobs at all, which reads as a broken file rather than a
+          # broken expression.
+          LINE="${{ github.event_name == 'workflow_dispatch' && inputs.line || 'stable' }}"
 
           if [ "$LINE" = "experimental" ]; then
             if [ ! -f VERSION.experimental ]; then
@@ -815,10 +819,11 @@ jobs:
           bodyFile:     release-notes.md
           artifacts:    "artifacts/*.nupkg,artifacts/*.zip,artifacts/*.apk"
           draft:        false
-          prerelease:   ${{ needs.version-check.outputs.experimental == 'true' }}
           allowUpdates: true
-          # A version carrying a suffix (5.0.0-pre.2) is a prerelease; without this the
-          # release is published as the latest stable one and has to be corrected by hand.
+          # A version carrying a suffix is a prerelease; without this the release is
+          # published as the latest stable one and has to be corrected by hand. This
+          # covers the experimental line too, since 5.0.0-experimental.N carries a
+          # suffix like any other prerelease -- so it needs no separate condition.
           prerelease:   ${{ contains(needs.version-check.outputs.version, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
