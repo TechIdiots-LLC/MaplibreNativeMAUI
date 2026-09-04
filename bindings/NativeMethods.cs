@@ -798,7 +798,7 @@ public static partial class NativeMethods
     /// map is created. No effect on Android, where the provider sits beneath
     /// OnlineFileSource and necessarily sees all traffic.
     /// </summary>
-    [DllImport(Lib, EntryPoint = "mbgl_http_provider_claim_prefix",
+    [DllImport(Lib, EntryPoint = "mln_http_provider_claim_prefix",
                CharSet = CharSet.Ansi)]
     public static extern void HttpProviderClaimPrefix(
         [MarshalAs(UnmanagedType.LPUTF8Str)] string urlPrefix);
@@ -807,7 +807,7 @@ public static partial class NativeMethods
     /// Drop every claimed prefix, returning the provider to handling all
     /// requests.
     /// </summary>
-    [DllImport(Lib, EntryPoint = "mbgl_http_provider_clear_claims")]
+    [DllImport(Lib, EntryPoint = "mln_http_provider_clear_claims")]
     public static extern void HttpProviderClearClaims();
 
     // ── Offline regions + ambient cache ───────────────────────────────────────

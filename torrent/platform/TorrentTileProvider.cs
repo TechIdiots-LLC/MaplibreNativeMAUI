@@ -410,7 +410,7 @@ public static class TorrentTileProvider
             {
                 RespondError(
                     requestId,
-                    NativeMethods.MbglHttpError.Other,
+                    NativeMethods.MlnHttpError.Other,
                     error.Message);
             }
             finally
@@ -504,12 +504,12 @@ public static class TorrentTileProvider
 
         if (!response.IsSuccessStatusCode)
         {
-            NativeMethods.MbglHttpError error = (int)response.StatusCode switch
+            NativeMethods.MlnHttpError error = (int)response.StatusCode switch
             {
-                404 => NativeMethods.MbglHttpError.NotFound,
-                429 => NativeMethods.MbglHttpError.RateLimit,
-                >= 500 => NativeMethods.MbglHttpError.Server,
-                _ => NativeMethods.MbglHttpError.Other,
+                404 => NativeMethods.MlnHttpError.NotFound,
+                429 => NativeMethods.MlnHttpError.RateLimit,
+                >= 500 => NativeMethods.MlnHttpError.Server,
+                _ => NativeMethods.MlnHttpError.Other,
             };
             RespondError(requestId, error, $"HTTP {(int)response.StatusCode}");
             return;
@@ -546,7 +546,7 @@ public static class TorrentTileProvider
             {
                 NativeMethods.HttpRespond(
                     requestId,
-                    NativeMethods.MbglHttpError.None,
+                    NativeMethods.MlnHttpError.None,
                     IntPtr.Zero,
                     200,
                     (nint)bodyPtr,
@@ -573,12 +573,12 @@ public static class TorrentTileProvider
         if (sparse)
         {
             RespondError(
-                requestId, NativeMethods.MbglHttpError.NotFound, "no tile here");
+                requestId, NativeMethods.MlnHttpError.NotFound, "no tile here");
             return;
         }
 
         NativeMethods.HttpRespond(
-            requestId, NativeMethods.MbglHttpError.None,
+            requestId, NativeMethods.MlnHttpError.None,
             IntPtr.Zero, 204, IntPtr.Zero, 0,
             IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero,
             1, 0, 0);
@@ -589,7 +589,7 @@ public static class TorrentTileProvider
 
     private static void RespondError(
         ulong requestId,
-        NativeMethods.MbglHttpError error,
+        NativeMethods.MlnHttpError error,
         string message)
     {
         byte[]? messageBytes = ToNullTerminatedUtf8(message);
