@@ -2,6 +2,9 @@
 
 ## master
 ### ✨ Features and improvements
+- **New package: `MapLibreNative.Maui.Torrent`, a tile source that reads PMTiles archives out of a BitTorrent swarm** — a device showing a map becomes a peer for it rather than only a consumer of somebody's tile server. It claims the URL prefixes it can serve through the host HTTP provider, so it intercepts just those archives while every other request keeps maplibre's own network stack, with its retry, rate-limit handling and queueing intact. The archive's identity — infohash, magnet, size, web seeds and BEP 46 mutable key — is read from the `torrent` block a pmtiles-swarm TileJSON carries, so a server offering one needs no separate configuration and a client that does not understand it fetches tiles over HTTP as before. That block is also what makes one URL work for both kinds of client.
+  Most of it is pure logic and testable without a device, a map or a native library: the PMTiles reader, the mapping of byte ranges onto swarm pieces, URL and TileJSON handling. Those parts build for a plain `net9.0`/`net10.0` target and are covered by 1510 tests, which now run in CI. The platform targets add the glue that registers with the native provider and are the only ones needing the bindings. `MonoTorrent` is the swarm client.
+  Nothing changes for a map that does not use it: the source has to be registered by the host, and no sample does yet.
 - _...Add new stuff here..._
 
 ### 🐞 Bug fixes

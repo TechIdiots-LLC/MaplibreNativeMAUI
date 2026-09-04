@@ -2,17 +2,6 @@ name: Build and Release
 
 on:
   workflow_dispatch:
-    inputs:
-      line:
-        description: >-
-          Which package line to publish. "experimental" builds the
-          MapLibreNative.Maui.Experimental family from VERSION.experimental;
-          run it from the experimental branch, not main.
-        type: choice
-        default: stable
-        options:
-          - stable
-          - experimental
   push:
     branches: [main]
 
@@ -33,7 +22,6 @@ jobs:
     outputs:
       version:      ${{ steps.check.outputs.version }}
       published:    ${{ steps.check.outputs.published }}
-      experimental: ${{ steps.check.outputs.experimental }}
 
     steps:
       - uses: actions/checkout@v4
@@ -41,29 +29,8 @@ jobs:
       - name: Read VERSION and check GitHub releases
         id: check
         run: |
-          # A push to main is always the stable line; the choice only exists on a
-          # manual dispatch. Guarded on the event rather than written as
-          # `inputs.line || 'stable'`, because the inputs context does not exist for
-          # a push and referencing it there fails the whole workflow at validation --
-          # a run with no jobs at all, which reads as a broken file rather than a
-          # broken expression.
-          LINE="${{ github.event_name == 'workflow_dispatch' && inputs.line || 'stable' }}"
-
-          if [ "$LINE" = "experimental" ]; then
-            if [ ! -f VERSION.experimental ]; then
-              echo "::error::No VERSION.experimental here. The experimental line" \
-                   "is released from the experimental branch, not from $GITHUB_REF_NAME."
-              exit 1
-            fi
-            VERSION=$(cat VERSION.experimental | tr -d '[:space:]')
-            echo "experimental=true" >> "$GITHUB_OUTPUT"
-          else
-            VERSION=$(cat VERSION | tr -d '[:space:]')
-            echo "experimental=false" >> "$GITHUB_OUTPUT"
-          fi
-
+          VERSION=$(cat VERSION | tr -d '[:space:]')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Line: $LINE"
           echo "Version: $VERSION"
 
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
@@ -180,7 +147,6 @@ jobs:
           dotnet pack bindings/MapLibreNative.Maui.csproj \
             -c Release \
             -p:Version=${{ needs.version-check.outputs.version }} \
-            -p:Experimental=${{ needs.version-check.outputs.experimental }} \
             -p:_MlnNativeDir=$(pwd)/bindings/native/ \
             -o artifacts/
 
@@ -189,19 +155,13 @@ jobs:
           dotnet pack handlers/MapLibreNative.Maui.Handlers.csproj \
             -c Release \
             -p:Version=${{ needs.version-check.outputs.version }} \
-            -p:Experimental=${{ needs.version-check.outputs.experimental }} \
             -o artifacts/
 
-      # Only on the experimental line: the torrent tile source depends on the
-      # host HTTP provider and the URL-claiming ABI, neither of which the stable
-      # native carries.
       - name: Pack MapLibreNative.Maui.Torrent
-        if: needs.version-check.outputs.experimental == 'true'
         run: |
           dotnet pack torrent/MapLibreNative.Maui.Torrent.csproj \
             -c Release \
             -p:Version=${{ needs.version-check.outputs.version }} \
-            -p:Experimental=true \
             -o artifacts/
 
       # nuget.org rejects any package over 250 MB with a bare 413, so the size
@@ -384,31 +344,25 @@ jobs:
           dotnet pack wpf/MapLibreNative.Maui.WPF.csproj \
             -c Release \
             -p:Version=${{ needs.version-check.outputs.version }} \
-            -p:Experimental=${{ needs.version-check.outputs.experimental }} \
             -o artifacts/
 
       - name: Download MAUI NuGet packages (for local feed)
-        if: needs.version-check.outputs.experimental != 'true'
         uses: actions/download-artifact@v4
         with:
           name: nuget-packages
           path: local-feed
 
       - name: Copy WPF NuGet to local feed
-        if: needs.version-check.outputs.experimental != 'true'
         shell: bash
         run: cp artifacts/*.nupkg local-feed/
 
       - name: Add local NuGet feed
-        if: needs.version-check.outputs.experimental != 'true'
         run: dotnet nuget add source "${{ github.workspace }}\local-feed" --name local-release
 
       - name: Restore MAUI workloads
-        if: needs.version-check.outputs.experimental != 'true'
         run: dotnet workload restore sample/MauiSample.csproj
 
       - name: Publish ConsoleExample (win-x64)
-        if: needs.version-check.outputs.experimental != 'true'
         shell: bash
         run: |
           dotnet publish sample/ConsoleExample/ConsoleExample.csproj \
@@ -418,7 +372,6 @@ jobs:
             -o publish/ConsoleExample-win-x64
 
       - name: Publish ConsoleExample (win-arm64)
-        if: needs.version-check.outputs.experimental != 'true'
         shell: bash
         run: |
           dotnet publish sample/ConsoleExample/ConsoleExample.csproj \
@@ -428,7 +381,6 @@ jobs:
             -o publish/ConsoleExample-win-arm64
 
       - name: Publish WpfExample (win-x64)
-        if: needs.version-check.outputs.experimental != 'true'
         shell: bash
         run: |
           dotnet publish sample/WpfExample/WpfExample.csproj \
@@ -438,7 +390,6 @@ jobs:
             -o publish/WpfExample-win-x64
 
       - name: Publish WpfExample (win-arm64)
-        if: needs.version-check.outputs.experimental != 'true'
         shell: bash
         run: |
           dotnet publish sample/WpfExample/WpfExample.csproj \
@@ -448,7 +399,6 @@ jobs:
             -o publish/WpfExample-win-arm64
 
       - name: Publish MauiSample (win-x64)
-        if: needs.version-check.outputs.experimental != 'true'
         shell: bash
         run: |
           dotnet publish sample/MauiSample.csproj \
@@ -464,7 +414,6 @@ jobs:
       # the renderers (MapImageView, MlnMapImage, ConsoleExample) detect the "vulkan"
       # backend and use the offscreen read-back path.
       - name: Create Vulkan sample variants (win-x64)
-        if: needs.version-check.outputs.experimental != 'true'
         shell: bash
         run: |
           DLL=$(find vulkan-native -name mln-cabi.dll | head -1)
@@ -478,7 +427,6 @@ jobs:
           done
 
       - name: Publish MauiSample (win-arm64)
-        if: needs.version-check.outputs.experimental != 'true'
         shell: bash
         run: |
           dotnet publish sample/MauiSample.csproj \
@@ -490,7 +438,6 @@ jobs:
             -o publish/MauiSample-win-arm64
 
       - name: Zip sample outputs
-        if: needs.version-check.outputs.experimental != 'true'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path samples -Force | Out-Null
@@ -511,7 +458,6 @@ jobs:
           retention-days: 7
 
       - name: Upload Windows samples
-        if: needs.version-check.outputs.experimental != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: windows-samples
@@ -525,17 +471,11 @@ jobs:
   # macCatalyst app live in buildTransitive/MapLibreNative.Maui.targets and
   # reach the app only through package consumption, never a ProjectReference.
   #
-  # Stable line only. The samples reference the packages by their stable IDs and
-  # restore them from a local feed, which under the renamed experimental line
-  # holds nothing they ask for. Publishing experimental sample apps means giving
-  # those csproj files a conditional reference first.
   samples-mobile:
     name: Build mobile + macCatalyst samples
     runs-on: macos-26
     needs: [version-check, pack-mobile]
-    if: >-
-      needs.version-check.outputs.published == 'false' &&
-      needs.version-check.outputs.experimental != 'true'
+    if: needs.version-check.outputs.published == 'false'
 
     steps:
       - uses: actions/checkout@v4
@@ -679,7 +619,6 @@ jobs:
           dotnet pack bindings/MapLibreNative.Maui.Vulkan.csproj \
             -c Release \
             -p:Version=${{ needs.version-check.outputs.version }} \
-            -p:Experimental=${{ needs.version-check.outputs.experimental }} \
             -p:_MlnNativeDir=$(pwd)/bindings/native-vulkan/ \
             -o artifacts/
 
@@ -710,9 +649,9 @@ jobs:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
     needs: [version-check, pack, pack-wpf, pack-vulkan, samples-mobile]
-    # samples-mobile is skipped on the experimental line, and a skipped dependency
-    # would otherwise take this job with it. !cancelled() lets a skip through
-    # while still refusing to publish when a job it needs actually failed.
+    # A skipped dependency would otherwise take this job with it. !cancelled()
+    # lets a skip through while still refusing to publish when a job it needs
+    # actually failed.
     if: >-
       !cancelled() &&
       needs.version-check.outputs.published == 'false' &&
@@ -740,28 +679,24 @@ jobs:
           path: artifacts/
 
       - name: Download Windows sample zips
-        if: needs.version-check.outputs.experimental != 'true'
         uses: actions/download-artifact@v4
         with:
           name: windows-samples
           path: artifacts/
 
       - name: Download mobile samples (Android APK)
-        if: needs.version-check.outputs.experimental != 'true'
         uses: actions/download-artifact@v4
         with:
           name: mobile-samples
           path: artifacts/
 
       - name: Download iOS simulator app
-        if: needs.version-check.outputs.experimental != 'true'
         uses: actions/download-artifact@v4
         with:
           name: sample-ios-simulator
           path: artifacts/ios-simulator/
 
       - name: Download macCatalyst app
-        if: needs.version-check.outputs.experimental != 'true'
         uses: actions/download-artifact@v4
         with:
           name: sample-maccatalyst
@@ -786,44 +721,20 @@ jobs:
             echo "Release v${VERSION}." > release-notes.md
           fi
 
-          if [ "${{ needs.version-check.outputs.experimental }}" = "true" ]; then
-            # Said before the notes, because what these packages are is the first
-            # thing somebody arriving at the release needs to know.
-            cat > header.md <<'EOF'
-          > **Experimental line.** These are the `MapLibreNative.Maui.Experimental.*`
-          > packages, built against a fork of maplibre-native (`terrain-3d-color-relief`)
-          > for 3D terrain, and shipping the torrent tile source. They are a preview of
-          > the next major version; the stable `MapLibreNative.Maui` 4.x line continues
-          > separately and still receives minor and patch releases.
-          >
-          > The assemblies keep their usual names, so swapping the package reference is
-          > the whole migration — and for the same reason the two lines cannot be
-          > installed side by side.
-          >
-          > No sample apps are attached to experimental releases.
-
-          EOF
-            cat header.md release-notes.md > notes.tmp && mv notes.tmp release-notes.md
-          fi
-
           cat release-notes.md
 
       - name: Publish GitHub Release
         uses: ncipollo/release-action@v1
         with:
-          # The experimental version string carries its own prerelease segment
-          # (5.0.0-experimental.N), so the tag cannot collide with a stable v4.x
-          # and no separate tag prefix is needed.
           tag:          v${{ needs.version-check.outputs.version }}
-          name:         ${{ needs.version-check.outputs.experimental == 'true' && 'Experimental ' || '' }}v${{ needs.version-check.outputs.version }}
+          name:         v${{ needs.version-check.outputs.version }}
           bodyFile:     release-notes.md
           artifacts:    "artifacts/*.nupkg,artifacts/*.zip,artifacts/*.apk"
           draft:        false
           allowUpdates: true
-          # A version carrying a suffix is a prerelease; without this the release is
-          # published as the latest stable one and has to be corrected by hand. This
-          # covers the experimental line too, since 5.0.0-experimental.N carries a
-          # suffix like any other prerelease -- so it needs no separate condition.
+          # A version carrying a suffix (5.0.0-pre.4) is a prerelease; without this
+          # the release is published as the latest stable one and has to be
+          # corrected by hand.
           prerelease:   ${{ contains(needs.version-check.outputs.version, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
