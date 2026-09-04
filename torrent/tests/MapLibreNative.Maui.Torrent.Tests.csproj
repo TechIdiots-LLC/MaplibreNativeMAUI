@@ -1,0 +1,41 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      Targets the plain framework only. The library's pure half — archive
+      parsing, piece mapping — is where the bugs that matter live, and it needs
+      neither a device nor the native bindings to exercise.
+    -->
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>MapLibreNative.Maui.Torrent.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <!-- Lets the swarm test skip itself rather than fail when no torrent is configured. -->
+    <PackageReference Include="Xunit.SkippableFact" Version="1.4.13" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MapLibreNative.Maui.Torrent.csproj" />
+  </ItemGroup>
+
+  <!--
+    Tile ids produced by the reference JavaScript implementation. Checking
+    against another implementation catches a subtly wrong Hilbert curve, which
+    a self-consistent test never would — it would agree with itself and read
+    every archive incorrectly.
+  -->
+  <ItemGroup>
+    <None Include="hilbert-reference.csv" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="*.pmtiles" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="tilejson-*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

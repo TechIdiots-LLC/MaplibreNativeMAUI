@@ -2,6 +2,9 @@
 
 ## master
 ### ✨ Features and improvements
+- **New package: `MapLibreNative.Maui.Torrent`, a tile source that reads PMTiles archives out of a BitTorrent swarm** — a device showing a map becomes a peer for it rather than only a consumer of somebody's tile server. It claims the URL prefixes it can serve through the host HTTP provider, so it intercepts just those archives while every other request keeps maplibre's own network stack, with its retry, rate-limit handling and queueing intact. The archive's identity — infohash, magnet, size, web seeds and BEP 46 mutable key — is read from the `torrent` block a pmtiles-swarm TileJSON carries, so a server offering one needs no separate configuration and a client that does not understand it fetches tiles over HTTP as before. That block is also what makes one URL work for both kinds of client.
+  Most of it is pure logic and testable without a device, a map or a native library: the PMTiles reader, the mapping of byte ranges onto swarm pieces, URL and TileJSON handling. Those parts build for a plain `net9.0`/`net10.0` target and are covered by 1510 tests, which now run in CI. The platform targets add the glue that registers with the native provider and are the only ones needing the bindings. `MonoTorrent` is the swarm client.
+  Nothing changes for a map that does not use it: the source has to be registered by the host, and no sample does yet.
 - _...Add new stuff here..._
 
 ### 🐞 Bug fixes
@@ -54,6 +57,33 @@
 ## 4.5.1
 ### 🐞 Bug fixes
 - **Android: the 64-bit `libmln-cabi.so` was not 16 KB page aligned, so Google Play rejected apps that shipped it** — Android 15 allows devices with 16 KB memory pages, and Play now blocks uploads whose native libraries are linked for 4 KB ("Your app is not compatible with 16 KB memory page sizes"). The release CI builds with NDK r27, whose linker still defaults `max-page-size` to 4 KB; r28's picks 16 KB on its own, which is why a local build looked fine while every published `arm64-v8a` and `x86_64` `.so` — 4.5.0 included — carried `0x1000`-aligned `LOAD` segments. The Android link now passes `-Wl,-z,max-page-size=16384` on the two 64-bit ABIs whatever the NDK version, and both Android native workflows fail the build if the linked `.so` comes out below 16 KB. `armeabi-v7a` is untouched — the NDK applies the flag to 64-bit ABIs only, and 32-bit Android has no 16 KB devices. Windows and Apple need nothing: the Windows build emits a PE via MSVC, where `-Wl,-z` has no meaning and the loader wants 4 KB sections, and on Apple `mln-cabi` is a static archive with no LOAD segments of its own — the app's own arm64 link already aligns to 16 KB. Reported in [#32](https://github.com/TechIdiots-LLC/MaplibreNativeMAUI/issues/32).
+
+## 5.0.0-experimental.1
+
+First release of the **experimental line**: the `MapLibreNative.Maui.Experimental.*`
+packages, a preview of the next major version. The stable `MapLibreNative.Maui` 4.x
+line is unaffected and continues to receive minor and patch releases.
+
+### What is in it
+
+- **3D terrain**, and the fork it needs. `dependencies/maplibre-native` points at
+  `WifiDB/maplibre-native` (`terrain-3d-color-relief`) rather than upstream, so these
+  natives are not the ones the stable line ships even at a matching version. That is
+  the reason for the separate package identity rather than a prerelease of 4.x: a fork
+  build under the stable ID is too easy to install by accident.
+- **Torrent tile source** (`MapLibreNative.Maui.Experimental.Torrent`), serving PMTiles
+  map tiles out of a BitTorrent swarm, over the host HTTP provider and URL-claiming ABI.
+  It has no stable-line counterpart, because the stable native carries neither.
+- Everything already on the 4.5.0 line.
+
+### Using it
+
+The assemblies keep their usual names, so swapping the package reference is the whole
+migration and `using MapLibreNative.Maui;` still compiles. For the same reason the two
+lines cannot be installed side by side: both carry an assembly called
+`MapLibreNative.Maui`. They are alternatives, not additions.
+
+Sample apps are not attached to experimental releases.
 
 ## 4.5.0
 ### ✨ Features and improvements

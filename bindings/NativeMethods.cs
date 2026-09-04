@@ -700,8 +700,16 @@ public static partial class NativeMethods
 
     [DllImport(Lib, EntryPoint = "mln_android_release_window")]
     public static extern void AndroidReleaseWindow(IntPtr window);
+#endif
 
-    // ── Android HTTP provider ──────────────────────────────────────────────────
+    // ── Host HTTP provider (all platforms) ────────────────────────
+    //
+    // The native side serves this on every platform. On Android the provider
+    // sits *beneath* OnlineFileSource, so it sees all traffic and prefix
+    // claims do nothing; everywhere else it replaces OnlineFileSource, which
+    // is why claiming matters there — an unclaimed provider owns the whole
+    // network stack, retry and backoff included.
+
 
     /// <summary>
     /// Callback signature for the HTTP provider.  Called by the native layer
@@ -774,7 +782,33 @@ public static partial class NativeMethods
     /// <summary>Cancel a pending HTTP request.</summary>
     [DllImport(Lib, EntryPoint = "mln_http_cancel")]
     public static extern void HttpCancel(ulong requestId);
-#endif
+
+    /// <summary>
+    /// Claim a URL prefix, so only matching requests reach the provider.
+    ///
+    /// Without any claim the provider receives everything, which means the host
+    /// owns the whole network stack — including retry and backoff, since mbgl's
+    /// OnlineFileSource is then out of the picture. Claiming instead lets a host
+    /// serve a handful of URLs from somewhere unusual (an archive held in a
+    /// BitTorrent swarm, say) while every other request keeps maplibre's own
+    /// network stack, with its retry, rate-limit handling and queueing intact.
+    ///
+    /// Matching is a plain prefix comparison, deliberately: it runs for every
+    /// resource the map requests, so it must stay cheap. Call before the first
+    /// map is created. No effect on Android, where the provider sits beneath
+    /// OnlineFileSource and necessarily sees all traffic.
+    /// </summary>
+    [DllImport(Lib, EntryPoint = "mln_http_provider_claim_prefix",
+               CharSet = CharSet.Ansi)]
+    public static extern void HttpProviderClaimPrefix(
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string urlPrefix);
+
+    /// <summary>
+    /// Drop every claimed prefix, returning the provider to handling all
+    /// requests.
+    /// </summary>
+    [DllImport(Lib, EntryPoint = "mln_http_provider_clear_claims")]
+    public static extern void HttpProviderClearClaims();
 
     // ── Offline regions + ambient cache ───────────────────────────────────────
     // All offline callbacks are invoked on MapLibre's internal database thread.

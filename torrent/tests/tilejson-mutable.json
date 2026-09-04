@@ -1,0 +1,48 @@
+{
+  "tilejson": "3.0.0",
+  "scheme": "xyz",
+  "tiles": [
+    "https://maps.example.org/archives/913d671f3a28c5b8d605e28cf6bf01e293d36e86/{z}/{x}/{y}.pbf"
+  ],
+  "name": "Planet",
+  "minzoom": 0,
+  "maxzoom": 14,
+  "bounds": [
+    -180,
+    -85.05,
+    180,
+    85.05
+  ],
+  "center": [
+    0,
+    0,
+    2
+  ],
+  "version": "1.0.0+913d671f3a28",
+  "torrent": {
+    "infohash": "913d671f3a28c5b8d605e28cf6bf01e293d36e86",
+    "magnet": "magnet:?xt=urn:btih:913d671f3a28c5b8d605e28cf6bf01e293d36e86&dn=planet.pmtiles",
+    "torrent": "https://maps.example.org/archives/913d671f3a28c5b8d605e28cf6bf01e293d36e86/archive.torrent",
+    "name": "planet.pmtiles",
+    "size": 77242531840,
+    "webseeds": [
+      "https://cdn.example.org/planet.pmtiles"
+    ],
+    "mutable": {
+      "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "salt": "planet",
+      "seq": 7
+    }
+  },
+  "description": "The whole world",
+  "attribution": "© OSM",
+  "vector_layers": [
+    {
+      "id": "water"
+    },
+    {
+      "id": "roads"
+    }
+  ],
+  "format": "pbf"
+}

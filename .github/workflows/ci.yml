@@ -64,6 +64,34 @@ jobs:
     needs: version
     uses: ./.github/workflows/native-apple-vulkan.yml
 
+  # ── Torrent library tests ─────────────────────────────────────────────────
+  # The swarm tile source is pure logic on its plain target framework -- archive
+  # parsing, piece mapping, URL and TileJSON handling -- so its tests need no
+  # device, no map and no native library, and run in seconds on a plain runner.
+  # They are the only automated check this branch's feature has, so nothing that
+  # cheap should be left to run by hand.
+  #
+  # Builds the net10.0 target rather than the solution: the platform targets pull
+  # in the bindings and the MAUI workloads, none of which these tests touch.
+  torrent-tests:
+    name: Torrent library tests
+    runs-on: ubuntu-latest
+    needs: version
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Test
+        run: |
+          dotnet test torrent/tests/MapLibreNative.Maui.Torrent.Tests.csproj \
+            -c Release \
+            --logger "console;verbosity=normal"
+
   # ── NuGet pack (verify packability, no publish) ───────────────────────────
   pack:
     name: Pack NuGet
