@@ -43,16 +43,6 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Patch darwin.cmake for macCatalyst
-        if: ${{ matrix.artifact == 'native-maccatalyst' }}
-        run: |
-          # ios.cmake (only included when CMAKE_SYSTEM_NAME=iOS) links
-          # mbgl-vendor-filesystem to mbgl-core, which provides the include
-          # path for <ghc/filesystem.hpp> used by action_journal_impl.cpp.
-          # Darwin builds omit ios.cmake, so add the link manually.
-          echo 'target_link_libraries(mbgl-core PRIVATE mbgl-vendor-filesystem)' \
-            >> dependencies/maplibre-native/platform/darwin/darwin.cmake
-
       - name: Configure CMake
         if: ${{ matrix.artifact != 'native-maccatalyst' }}
         run: |

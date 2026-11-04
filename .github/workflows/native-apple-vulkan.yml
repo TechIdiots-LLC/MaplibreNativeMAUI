@@ -56,12 +56,6 @@ jobs:
           vulkan-components: Vulkan-Headers, Vulkan-Loader
           vulkan-use-cache: true
 
-      - name: Patch darwin.cmake for macCatalyst
-        if: ${{ matrix.artifact == 'native-mln-maccatalyst-vulkan' }}
-        run: |
-          echo 'target_link_libraries(mbgl-core PRIVATE mbgl-vendor-filesystem)' \
-            >> dependencies/maplibre-native/platform/darwin/darwin.cmake
-
       - name: Configure CMake
         if: ${{ matrix.artifact != 'native-mln-maccatalyst-vulkan' }}
         run: |
