@@ -656,6 +656,28 @@ MLN_CABI_API mln_status_t   mln_map_set_center_clamped_to_ground(mln_map_t* map,
 /** Returns 1 when the centre is clamped to the ground, 0 otherwise or for a null handle. */
 MLN_CABI_API int             mln_map_get_center_clamped_to_ground(mln_map_t* map) MLN_CABI_NOEXCEPT;
 
+/**
+ * The centre's altitude in metres above sea level (exaggeration applied, as the terrain is
+ * drawn). 0 unless gestures, the clamp or the calls below raised it. A centre and zoom describe
+ * the same view only at the same centre altitude: save this with a camera and restore it with
+ * mln_map_set_center_altitude_keeping_view before putting the saved centre and zoom back.
+ * Returns 0 for a null handle.
+ */
+MLN_CABI_API double          mln_map_get_center_altitude(mln_map_t* map) MLN_CABI_NOEXCEPT;
+/**
+ * Move the centre along the line of sight to altitude_m without moving the camera: the
+ * centre and zoom change, nothing on screen does. 0 puts the centre back at sea level.
+ * Returns 1 when it moved; 0, changing nothing, when it was already there, when the pitch is
+ * so steep (over ~84 degrees) that the line of sight nearly grazes that plane, or when the zoom
+ * limits or bounds would cut the move short, or for a null handle.
+ */
+MLN_CABI_API int             mln_map_set_center_altitude_keeping_view(mln_map_t* map, double altitude_m) MLN_CABI_NOEXCEPT;
+/**
+ * Move the centre onto the terrain under it without moving the camera — what the start of a
+ * gesture does (see mln_map_set_gesture_in_progress). Inert while terrain is off.
+ */
+MLN_CABI_API mln_status_t   mln_map_anchor_center_on_terrain(mln_map_t* map) MLN_CABI_NOEXCEPT;
+
 /* ── Offline regions + ambient cache ─────────────────────────────────────────
  *
  * Wraps mln::DatabaseFileSource. The manager shares the map's cache database

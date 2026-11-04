@@ -397,6 +397,29 @@ public sealed class MlnMap : IDisposable
         set => NativeMethods.MapSetCenterClampedToGround(Handle, value ? 1 : 0);
     }
 
+    /// <summary>
+    /// The centre's altitude in metres above sea level. 0 unless a gesture, the clamp or
+    /// <see cref="SetCenterAltitudeKeepingView"/> raised it. A centre and zoom describe the same
+    /// view only at the same centre altitude, so save this with a camera.
+    /// </summary>
+    public double CenterAltitude => NativeMethods.MapGetCenterAltitude(Handle);
+
+    /// <summary>
+    /// Moves the centre along the line of sight to <paramref name="altitudeMeters"/> without
+    /// moving the camera; 0 puts it back at sea level. Returns <c>false</c>, changing nothing,
+    /// when it is already there, at a near-grazing pitch, or where the zoom limits or bounds
+    /// would cut the move short.
+    /// </summary>
+    public bool SetCenterAltitudeKeepingView(double altitudeMeters)
+        => NativeMethods.MapSetCenterAltitudeKeepingView(Handle, altitudeMeters) != 0;
+
+    /// <summary>
+    /// Moves the centre onto the terrain under it without moving the camera, as the start of a
+    /// gesture does. Inert while terrain is off.
+    /// </summary>
+    public void AnchorCenterOnTerrain()
+        => NativeMethods.MapAnchorCenterOnTerrain(Handle);
+
     // ── Tier 2 – camera for point set ────────────────────────────────────────
     public unsafe CameraResult CameraForLatLngs(
         IReadOnlyList<(double Lat, double Lon)> points,

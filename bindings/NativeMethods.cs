@@ -605,6 +605,15 @@ public static partial class NativeMethods
     [LibraryImport(Lib, EntryPoint = "mln_map_get_center_clamped_to_ground")]
     public static partial int MapGetCenterClampedToGround(IntPtr map);
 
+    [LibraryImport(Lib, EntryPoint = "mln_map_get_center_altitude")]
+    public static partial double MapGetCenterAltitude(IntPtr map);
+
+    [LibraryImport(Lib, EntryPoint = "mln_map_set_center_altitude_keeping_view")]
+    public static partial int MapSetCenterAltitudeKeepingView(IntPtr map, double altitudeMeters);
+
+    [LibraryImport(Lib, EntryPoint = "mln_map_anchor_center_on_terrain")]
+    public static partial MlnStatus MapAnchorCenterOnTerrain(IntPtr map);
+
     // ── Map – camera for point set (Tier 2) ───────────────────────────────────
     [LibraryImport(Lib, EntryPoint = "mln_map_camera_for_latlngs")]
     public static unsafe partial MlnStatus MapCameraForLatLngs(IntPtr map,

@@ -1581,6 +1581,28 @@ int mln_map_get_center_clamped_to_ground(mln_map_t* map) noexcept {
     } catch (const std::exception&) { return 0; }
 }
 
+double mln_map_get_center_altitude(mln_map_t* map) noexcept {
+    if (!map) return 0.0;
+    try {
+        return map_ptr(map)->map->getCameraOptions().centerAltitude.value_or(0.0);
+    } catch (const std::exception&) { return 0.0; }
+}
+
+int mln_map_set_center_altitude_keeping_view(mln_map_t* map, double altitude_m) noexcept {
+    if (!map) return 0;
+    try {
+        return map_ptr(map)->map->setCenterAltitudeKeepingView(altitude_m) ? 1 : 0;
+    } catch (const std::exception&) { return 0; }
+}
+
+mln_status_t mln_map_anchor_center_on_terrain(mln_map_t* map) noexcept {
+    if (!map) return set_error(MLN_INVALID_ARG, "mln_map_anchor_center_on_terrain: null handle");
+    try {
+        map_ptr(map)->map->anchorCenterOnTerrain();
+        return MLN_OK;
+    } catch (const std::exception& e) { return set_native_error(e); }
+}
+
 /* ─── Gesture helpers ───────────────────────────────────────────────────────── */
 
 mln_status_t mln_map_set_gesture_in_progress(mln_map_t* map, int in_progress) noexcept {
