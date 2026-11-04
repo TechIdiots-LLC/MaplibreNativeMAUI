@@ -1530,6 +1530,7 @@ public class MapLibreMapController : IMapLibreMapController
     private UIPinchGestureRecognizer?    _pinchRecognizer;
     private UIRotationGestureRecognizer? _rotateRecognizer;
     private UIPanGestureRecognizer?      _tiltRecognizer;
+    private UITapGestureRecognizer?      _twoFingerTapRecognizer;
 
     private int _activeGestures;      // recognizers between Began and their end
     private int _twoFingerGestures;   // of those, pinch/rotate/tilt — they own the camera
@@ -1576,10 +1577,18 @@ public class MapLibreMapController : IMapLibreMapController
             return Math.Abs(v.Y) > Math.Abs(v.X) && Math.Abs(a.Y - b.Y) < Math.Abs(a.X - b.X);
         };
 
+        // Two-finger tap zooms out, as MLNMapView's does — once none of the two-finger
+        // gestures turned out to be what the fingers were doing.
+        _twoFingerTapRecognizer = new UITapGestureRecognizer(OnTwoFingerTapGesture) { NumberOfTouchesRequired = 2 };
+        _twoFingerTapRecognizer.RequireGestureRecognizerToFail(_pinchRecognizer);
+        _twoFingerTapRecognizer.RequireGestureRecognizerToFail(_rotateRecognizer);
+        _twoFingerTapRecognizer.RequireGestureRecognizerToFail(_tiltRecognizer);
+
         foreach (var r in continuous) surface.AddGestureRecognizer(r);
         surface.AddGestureRecognizer(doubleTap);
         surface.AddGestureRecognizer(tap);
         surface.AddGestureRecognizer(longPress);
+        surface.AddGestureRecognizer(_twoFingerTapRecognizer);
         ApplyGestureFlags();
     }
 
@@ -1589,6 +1598,7 @@ public class MapLibreMapController : IMapLibreMapController
         if (_pinchRecognizer  != null) _pinchRecognizer.Enabled  = _zoomGesturesEnabled;
         if (_rotateRecognizer != null) _rotateRecognizer.Enabled = _rotateGesturesEnabled;
         if (_tiltRecognizer   != null) _tiltRecognizer.Enabled   = _tiltGesturesEnabled;
+        if (_twoFingerTapRecognizer != null) _twoFingerTapRecognizer.Enabled = _zoomGesturesEnabled;
     }
 
     private void BeginGesture(bool twoFinger)
@@ -1714,6 +1724,17 @@ public class MapLibreMapController : IMapLibreMapController
         if (_map == null || tap.State != UIGestureRecognizerState.Ended || !_zoomGesturesEnabled) return;
         var (x, y) = Px(tap.LocationInView(tap.View));
         _map.OnDoubleTap(x, y);
+    }
+
+    private void OnTwoFingerTapGesture(UITapGestureRecognizer tap)
+    {
+        if (_map == null || tap.State != UIGestureRecognizerState.Ended || !_zoomGesturesEnabled) return;
+        _map.CancelTransitions();
+        // To the next whole zoom level out, about the fingers, over MLNMapView's 0.3 s.
+        // scaleBy clamps to the minimum zoom, so there is no need to check it first.
+        double zoom = _map.Zoom;
+        var (x, y) = Px(tap.LocationInView(tap.View));
+        _map.ScaleBy(Math.Pow(2, Math.Round(zoom) - 1.0 - zoom), x, y, durationMs: 300);
     }
 
     private void OnLongPressGesture(UILongPressGestureRecognizer press)
