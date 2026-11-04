@@ -627,6 +627,23 @@ MLN_CABI_API mln_status_t   mln_map_set_terrain_load_mode(mln_map_t* map,
 /** Returns the current mode, or MLN_TERRAIN_LOAD_QUALITY for a null handle. */
 MLN_CABI_API mln_terrain_load_mode_t mln_map_get_terrain_load_mode(mln_map_t* map) MLN_CABI_NOEXCEPT;
 
+/**
+ * The vertical skirts extruded from every terrain tile edge. They hide the hairline gaps
+ * between neighbouring tiles at different zoom levels, but show as vertical artifacts where
+ * the map is drawn over a transparent background. Values match mln::TerrainSkirtLength and
+ * maplibre-gl-js's MapOptions.terrainSkirtLength. Changing it rebuilds the terrain mesh.
+ */
+typedef enum mln_terrain_skirt_length_t {
+    MLN_TERRAIN_SKIRT_AUTO = 0, /**< Skirt each edge by ~1/5 of the tile's width. Default. */
+    MLN_TERRAIN_SKIRT_NONE = 1, /**< No skirts: no artifacts over a transparent background,
+                                  *   at the cost of visible stitches between zoom levels. */
+} mln_terrain_skirt_length_t;
+
+MLN_CABI_API mln_status_t   mln_map_set_terrain_skirt_length(mln_map_t* map,
+                                                               mln_terrain_skirt_length_t length) MLN_CABI_NOEXCEPT;
+/** Returns the current setting, or MLN_TERRAIN_SKIRT_AUTO for a null handle. */
+MLN_CABI_API mln_terrain_skirt_length_t mln_map_get_terrain_skirt_length(mln_map_t* map) MLN_CABI_NOEXCEPT;
+
 /* ── Offline regions + ambient cache ─────────────────────────────────────────
  *
  * Wraps mln::DatabaseFileSource. The manager shares the map's cache database

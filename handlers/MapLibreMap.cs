@@ -63,6 +63,12 @@ public partial class MapLibreMap : StackLayout
     /// </summary>
     public static readonly BindableProperty TerrainLoadModeProperty =
         BindableProperty.Create(nameof(TerrainLoadMode), typeof(TerrainLoadMode), typeof(MapLibreMap), defaultValue: TerrainLoadMode.Quality);
+    /// <summary>
+    /// Whether terrain tiles carry vertical skirts along their edges.
+    /// Default <see cref="MapLibreNative.Maui.TerrainSkirtLength.Auto"/>.
+    /// </summary>
+    public static readonly BindableProperty TerrainSkirtLengthProperty =
+        BindableProperty.Create(nameof(TerrainSkirtLength), typeof(TerrainSkirtLength), typeof(MapLibreMap), defaultValue: TerrainSkirtLength.Auto);
     /// <summary>Corner the terrain control is anchored to. Default <see cref="MapControlCorner.TopRight"/>.</summary>
     public static readonly BindableProperty TerrainControlPositionProperty =
         BindableProperty.Create(nameof(TerrainControlPosition), typeof(MapControlCorner), typeof(MapLibreMap), defaultValue: MapControlCorner.TopRight);
@@ -342,6 +348,18 @@ public partial class MapLibreMap : StackLayout
     {
         get => (TerrainLoadMode)GetValue(TerrainLoadModeProperty);
         set => SetValue(TerrainLoadModeProperty, value);
+    }
+
+    /// <summary>
+    /// Whether terrain tiles carry vertical skirts along their edges. The skirts hide the
+    /// hairline gaps between tiles at different zoom levels, but show as vertical artifacts
+    /// over a transparent background — use <see cref="MapLibreNative.Maui.TerrainSkirtLength.None"/>
+    /// there. Changing it rebuilds the terrain mesh; it does nothing while terrain is off.
+    /// </summary>
+    public TerrainSkirtLength TerrainSkirtLength
+    {
+        get => (TerrainSkirtLength)GetValue(TerrainSkirtLengthProperty);
+        set => SetValue(TerrainSkirtLengthProperty, value);
     }
 
     public string? CustomAttribution

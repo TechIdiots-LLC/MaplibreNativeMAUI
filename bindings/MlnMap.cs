@@ -374,6 +374,17 @@ public sealed class MlnMap : IDisposable
         set => NativeMethods.MapSetTerrainLoadMode(Handle, (int)value);
     }
 
+    /// <summary>
+    /// Whether terrain tiles carry vertical skirts along their edges. Defaults to
+    /// <see cref="TerrainSkirtLength.Auto"/>; <see cref="TerrainSkirtLength.None"/> suits a map
+    /// drawn over a transparent background. No effect while terrain is off.
+    /// </summary>
+    public TerrainSkirtLength TerrainSkirtLength
+    {
+        get => (TerrainSkirtLength)NativeMethods.MapGetTerrainSkirtLength(Handle);
+        set => NativeMethods.MapSetTerrainSkirtLength(Handle, (int)value);
+    }
+
     // ── Tier 2 – camera for point set ────────────────────────────────────────
     public unsafe CameraResult CameraForLatLngs(
         IReadOnlyList<(double Lat, double Lon)> points,

@@ -210,6 +210,24 @@ public partial class MlnMapImage : Grid
                 if (d is MlnMapImage m && m._map != null)
                     m._map.TerrainLoadMode = (TerrainLoadMode)e.NewValue;
             }));
+    /// <summary>
+    /// Whether terrain tiles carry vertical skirts along their edges. The skirts hide the
+    /// hairline gaps between tiles at different zoom levels, but show as vertical artifacts
+    /// over a transparent background — use <see cref="MapLibreNative.Maui.TerrainSkirtLength.None"/>
+    /// there. Changing it rebuilds the terrain mesh; it does nothing while terrain is off.
+    /// </summary>
+    public TerrainSkirtLength TerrainSkirtLength
+    {
+        get => (TerrainSkirtLength)GetValue(TerrainSkirtLengthProperty);
+        set => SetValue(TerrainSkirtLengthProperty, value);
+    }
+    public static readonly DependencyProperty TerrainSkirtLengthProperty =
+        DependencyProperty.Register(nameof(TerrainSkirtLength), typeof(TerrainSkirtLength), typeof(MlnMapImage),
+            new PropertyMetadata(MapLibreNative.Maui.TerrainSkirtLength.Auto, (d, e) =>
+            {
+                if (d is MlnMapImage m && m._map != null)
+                    m._map.TerrainSkirtLength = (TerrainSkirtLength)e.NewValue;
+            }));
 
     public static readonly DependencyProperty TerrainControlPositionProperty =
         DependencyProperty.Register(nameof(TerrainControlPosition), typeof(MapControlCorner), typeof(MlnMapImage),
@@ -390,6 +408,7 @@ public partial class MlnMapImage : Grid
                            pixelRatio: pixelRatio, observer: OnMapObserverEvent);
         _map.SetSize(_physW, _physH);
         _map.TerrainLoadMode = TerrainLoadMode;   // the DP may have been set before the map existed
+        _map.TerrainSkirtLength = TerrainSkirtLength;
 
         var url = StyleUrl;
         if (!string.IsNullOrEmpty(url))

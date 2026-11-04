@@ -591,6 +591,13 @@ public static partial class NativeMethods
     [LibraryImport(Lib, EntryPoint = "mln_map_get_terrain_load_mode")]
     public static partial int MapGetTerrainLoadMode(IntPtr map);
 
+    // ── Map – 3D terrain tile skirts ────────────────────────────────────
+    [LibraryImport(Lib, EntryPoint = "mln_map_set_terrain_skirt_length")]
+    public static partial MlnStatus MapSetTerrainSkirtLength(IntPtr map, int length);
+
+    [LibraryImport(Lib, EntryPoint = "mln_map_get_terrain_skirt_length")]
+    public static partial int MapGetTerrainSkirtLength(IntPtr map);
+
     // ── Map – camera for point set (Tier 2) ───────────────────────────────────
     [LibraryImport(Lib, EntryPoint = "mln_map_camera_for_latlngs")]
     public static unsafe partial MlnStatus MapCameraForLatLngs(IntPtr map,

@@ -163,6 +163,7 @@ public class MapLibreMapController : IMapLibreMapController
             if (_mapView == null) return;
             _map = _mapView.Map;
             if (_map != null) _map.TerrainLoadMode = _terrainLoadMode;  // set before the map existed
+            if (_map != null) _map.TerrainSkirtLength = _terrainSkirtLength;
             // Rebuild after a tab switch: restore the camera saved at teardown
             // before the app's MapReady handlers run (so they can still override).
             if (_savedCamera is { } cam)
@@ -1381,6 +1382,21 @@ public class MapLibreMapController : IMapLibreMapController
     }
 
     public void SetTerrainLoadMode(TerrainLoadMode mode) => TerrainLoadMode = mode;
+
+    // Cached for the same reason as _terrainLoadMode.
+    private TerrainSkirtLength _terrainSkirtLength = TerrainSkirtLength.Auto;
+
+    public TerrainSkirtLength TerrainSkirtLength
+    {
+        get => _map?.TerrainSkirtLength ?? _terrainSkirtLength;
+        set
+        {
+            _terrainSkirtLength = value;
+            if (_map != null) _map.TerrainSkirtLength = value;
+        }
+    }
+
+    public void SetTerrainSkirtLength(TerrainSkirtLength length) => TerrainSkirtLength = length;
 
     // ── Tier 2 – camera / batch projection ───────────────────────────────────
     public CameraResult CameraForLatLngs(

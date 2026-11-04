@@ -1551,6 +1551,21 @@ mln_terrain_load_mode_t mln_map_get_terrain_load_mode(mln_map_t* map) noexcept {
     } catch (const std::exception&) { return MLN_TERRAIN_LOAD_QUALITY; }
 }
 
+mln_status_t mln_map_set_terrain_skirt_length(mln_map_t* map, mln_terrain_skirt_length_t length) noexcept {
+    if (!map) return set_error(MLN_INVALID_ARG, "mln_map_set_terrain_skirt_length: null handle");
+    try {
+        map_ptr(map)->map->setTerrainSkirtLength(static_cast<mln::TerrainSkirtLength>(length));
+        return MLN_OK;
+    } catch (const std::exception& e) { return set_native_error(e); }
+}
+
+mln_terrain_skirt_length_t mln_map_get_terrain_skirt_length(mln_map_t* map) noexcept {
+    if (!map) return MLN_TERRAIN_SKIRT_AUTO;
+    try {
+        return static_cast<mln_terrain_skirt_length_t>(map_ptr(map)->map->getTerrainSkirtLength());
+    } catch (const std::exception&) { return MLN_TERRAIN_SKIRT_AUTO; }
+}
+
 /* ─── Gesture helpers ───────────────────────────────────────────────────────── */
 
 mln_status_t mln_map_set_gesture_in_progress(mln_map_t* map, int in_progress) noexcept {

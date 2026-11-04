@@ -297,6 +297,12 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
     /// </summary>
     TerrainLoadMode TerrainLoadMode { get; set; }
 
+    /// <summary>
+    /// Whether terrain tiles carry vertical skirts along their edges. Defaults to
+    /// <see cref="TerrainSkirtLength.Auto"/>; no effect while terrain is off.
+    /// </summary>
+    TerrainSkirtLength TerrainSkirtLength { get; set; }
+
     // ── Tier 2 – camera / projection ─────────────────────────────────────────
     CameraResult CameraForLatLngs(
         IReadOnlyList<(double Lat, double Lon)> points,

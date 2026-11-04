@@ -2,6 +2,7 @@
 
 ## master
 ### ✨ Features and improvements
+- **`TerrainSkirtLength`: turn off the terrain tile skirts** — every 3D-terrain tile is extruded with vertical "skirts" along its edges, which hide the hairline gaps where tiles at different zoom levels meet. Over an opaque map that is all they do, but over a transparent background they show as vertical walls hanging off the terrain's edges. maplibre-native added a per-map switch, mirroring maplibre-gl-js's `MapOptions.terrainSkirtLength`, and it is now reachable the whole way down the stack, following `TerrainLoadMode`: `mln_map_set_terrain_skirt_length` / `mln_map_get_terrain_skirt_length` in the C ABI, `MlnMap.TerrainSkirtLength` in the bindings, a `TerrainSkirtLength` bindable property on the MAUI `MapLibreMap` and a dependency property on the WPF `MlnMapImage`. `Auto` (the default) skirts each edge by about a fifth of the tile's width; `None` builds no skirts, at the cost of visible stitches between zoom levels. Changing it rebuilds the terrain mesh, and it does nothing while terrain is off. The controllers cache it, so a value set before the map exists is applied once it does.
 - _...Add new stuff here..._
 
 ### 🐞 Bug fixes

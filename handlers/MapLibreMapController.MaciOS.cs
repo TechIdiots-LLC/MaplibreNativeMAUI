@@ -489,6 +489,7 @@ public class MapLibreMapController : IMapLibreMapController
                            observer: OnMapObserverEvent);
         _map.SetSize(w, h);
         _map.TerrainLoadMode = _terrainLoadMode;   // may have been set before the map existed
+        _map.TerrainSkirtLength = _terrainSkirtLength;
 
         if (!string.IsNullOrEmpty(_styleString))
         {
@@ -1409,6 +1410,21 @@ public class MapLibreMapController : IMapLibreMapController
     }
 
     public void SetTerrainLoadMode(TerrainLoadMode mode) => TerrainLoadMode = mode;
+
+    // Cached for the same reason as _terrainLoadMode.
+    private TerrainSkirtLength _terrainSkirtLength = TerrainSkirtLength.Auto;
+
+    public TerrainSkirtLength TerrainSkirtLength
+    {
+        get => _map?.TerrainSkirtLength ?? _terrainSkirtLength;
+        set
+        {
+            _terrainSkirtLength = value;
+            if (_map != null) _map.TerrainSkirtLength = value;
+        }
+    }
+
+    public void SetTerrainSkirtLength(TerrainSkirtLength length) => TerrainSkirtLength = length;
 
     // -- Tier 2 – camera / batch projection ───────────────────────────────────
     public CameraResult CameraForLatLngs(
