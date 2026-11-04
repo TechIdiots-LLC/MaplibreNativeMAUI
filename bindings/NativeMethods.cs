@@ -667,6 +667,12 @@ public static partial class NativeMethods
     [LibraryImport(Lib, EntryPoint = "mln_source_get_attribution")]
     public static partial IntPtr SourceGetAttribution(IntPtr source);
 
+    [LibraryImport(Lib, EntryPoint = "mln_source_set_volatile")]
+    public static partial MlnStatus SourceSetVolatile(IntPtr source, int isVolatile);
+
+    [LibraryImport(Lib, EntryPoint = "mln_source_is_volatile")]
+    public static partial int SourceIsVolatile(IntPtr source);
+
     // ── Layer – read-back (Tier 1) ────────────────────────────────────────────
     [LibraryImport(Lib, EntryPoint = "mln_layer_get_paint_property",
         StringMarshalling = StringMarshalling.Utf8)]

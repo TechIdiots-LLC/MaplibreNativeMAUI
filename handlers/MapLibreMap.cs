@@ -468,6 +468,20 @@ public partial class MapLibreMap : StackLayout
         handler.Controller.RemoveSource(sourceName);
     }
 
+    /// <summary>
+    /// Keeps a source's tiles out of the ambient cache on disk (or lets them back in), as
+    /// <c>Source.setVolatile</c> on MapLibre Android — for data that is stale by the next visit,
+    /// such as live radar or traffic, or that should not fill the offline database. Works for
+    /// any source by ID, including those defined in the style JSON. Applies to tiles requested
+    /// from then on, so call it right after adding the source (or from <c>StyleLoaded</c> for a
+    /// style's own). No-op for an unknown source.
+    /// </summary>
+    public void SetSourceVolatile(string sourceName, bool isVolatile)
+    {
+        if (Handler is not MapLibreMapHandler handler) return;
+        handler.Controller.SetSourceVolatile(sourceName, isVolatile);
+    }
+
     /// <summary>Removes a layer previously added to the style. No-op if it does not exist.</summary>
     public void RemoveLayer(string layerId)
     {

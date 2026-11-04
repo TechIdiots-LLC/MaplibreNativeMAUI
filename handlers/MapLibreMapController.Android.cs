@@ -1505,6 +1505,12 @@ public class MapLibreMapController : IMapLibreMapController
         _style.RemoveSource(sourceId);
     }
 
+    public void SetSourceVolatile(string sourceId, bool isVolatile)
+    {
+        if (!_styleReady || _style == null) return;
+        if (_style.GetSource(sourceId) is { } source) source.IsVolatile = isVolatile;
+    }
+
     public void SetTerrain(string sourceId, float exaggeration)
     {
         if (!_styleReady || _style == null) return;

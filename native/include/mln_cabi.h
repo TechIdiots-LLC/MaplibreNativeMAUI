@@ -334,6 +334,15 @@ MLN_CABI_API mln_source_t*  mln_style_get_source(mln_style_t* st, const char* so
  * Suitable for building an OSM-compliant attribution overlay.
  */
 MLN_CABI_API char*           mln_source_get_attribution(mln_source_t* src) MLN_CABI_NOEXCEPT;
+/**
+ * Mark a source volatile (pass 1 or 0): its tiles are never written to the ambient cache on
+ * disk, as Source.setVolatile on Android and MLNSource.isVolatile on iOS. For data that is
+ * stale by the next visit (live radar, traffic) or that should not fill the offline database.
+ * Applies to tiles requested from then on; set it right after adding the source.
+ */
+MLN_CABI_API mln_status_t   mln_source_set_volatile(mln_source_t* src, int is_volatile) MLN_CABI_NOEXCEPT;
+/** Returns 1 if the source is volatile, 0 otherwise or for a null handle. */
+MLN_CABI_API int             mln_source_is_volatile(mln_source_t* src) MLN_CABI_NOEXCEPT;
 
 /* ── Layer – read-back ──────────────────────────────────────────────────────── */
 /** Returns a JSON-encoded value or NULL if not set; caller frees. */

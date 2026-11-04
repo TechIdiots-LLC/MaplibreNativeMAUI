@@ -908,6 +908,16 @@ public partial class MlnMapImage : Grid
     }
 
     /// <summary>
+    /// Keeps a source's tiles out of the ambient cache on disk (or lets them back in), for data
+    /// that is stale by the next visit, such as live radar or traffic. Applies to tiles requested
+    /// from then on, so call it right after adding the source. No-op for an unknown source.
+    /// </summary>
+    public void SetSourceVolatile(string sourceId, bool isVolatile)
+    {
+        if (_style?.GetSource(sourceId) is { } source) source.IsVolatile = isVolatile;
+    }
+
+    /// <summary>
     /// Returns GeoJSON of rendered features in a box around (<paramref name="cx"/>, <paramref name="cy"/>)
     /// within <paramref name="thresholdPx"/> physical pixels, optionally filtered to <paramref name="layerIds"/>.
     /// </summary>

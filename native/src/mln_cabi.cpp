@@ -1918,6 +1918,17 @@ char* mln_source_get_attribution(mln_source_t* src) noexcept {
     } catch (...) { return nullptr; }
 }
 
+mln_status_t mln_source_set_volatile(mln_source_t* src, int is_volatile) noexcept {
+    if (!src) return set_error(MLN_INVALID_ARG, "mln_source_set_volatile: null handle");
+    source_ref(src).setVolatile(is_volatile != 0);
+    return MLN_OK;
+}
+
+int mln_source_is_volatile(mln_source_t* src) noexcept {
+    if (!src) return 0;
+    return source_ref(src).isVolatile() ? 1 : 0;
+}
+
 /* ─── Layer read-back ────────────────────────────────────────────────────────── */
 
 static char* style_property_to_json(const mln::style::StyleProperty& prop) {

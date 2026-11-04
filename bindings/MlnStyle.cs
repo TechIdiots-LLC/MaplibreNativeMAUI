@@ -427,6 +427,18 @@ public sealed class MlnSource
         NativeMethods.FreeString(ptr);
         return result;
     }
+
+    /// <summary>
+    /// Whether this source's tiles are kept out of the ambient cache on disk — for data that is
+    /// stale by the next visit, such as live radar or traffic, or that should not fill the
+    /// offline database. Applies to tiles requested from then on, so set it right after
+    /// adding the source.
+    /// </summary>
+    public bool IsVolatile
+    {
+        get => NativeMethods.SourceIsVolatile(Handle) != 0;
+        set => NativeMethods.SourceSetVolatile(Handle, value ? 1 : 0);
+    }
 }
 
 // ── Layer handle ──────────────────────────────────────────────────────────────

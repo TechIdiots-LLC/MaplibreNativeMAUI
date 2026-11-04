@@ -83,6 +83,8 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
     public void SetGeoJsonSource(string sourceName, string source);
     public void SetGeoJsonFeature(string sourceName, string geojsonFeature);
     public void RemoveSource(string sourceId);
+    /// <summary>Keep a source's tiles out of the ambient disk cache (or let them back in).</summary>
+    public void SetSourceVolatile(string sourceId, bool isVolatile);
 
     // 3D terrain (drapes the map over an existing raster-dem source)
     public void SetTerrain(string sourceId, float exaggeration);
