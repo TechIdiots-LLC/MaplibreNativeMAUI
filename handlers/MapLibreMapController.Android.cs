@@ -1868,8 +1868,10 @@ public class MapLibreMapController : IMapLibreMapController
             switch (e.ActionMasked)
             {
                 case MotionEventActions.Down:
-                    c._map?.SetGestureInProgress(true);
+                    // Cancel first: starting the gesture anchors the centre on the terrain, and
+                    // a transition still running would re-apply the altitude it started with.
                     c._map?.CancelTransitions();
+                    c._map?.SetGestureInProgress(true);
                     c._tpActive = false;
                     break;
 

@@ -590,6 +590,10 @@ static thread_local mln::ScreenCoordinate s_panAnchor;
 
 mln_status_t mln_map_on_pan_start(mln_map_t* map, double x, double y) noexcept {
     if (!map) return set_error(MLN_INVALID_ARG, "mln_map_on_pan_start: null handle");
+    try {
+        // With terrain, drag the ground being looked at, not a sea-level plane under it.
+        map_ptr(map)->map->anchorCenterOnTerrain();
+    } catch (const std::exception& e) { return set_native_error(e); }
     s_panStart  = map_ptr(map)->map->getCameraOptions();
     s_panAnchor = { x, y };
     return MLN_OK;
@@ -1545,8 +1549,15 @@ mln_terrain_load_mode_t mln_map_get_terrain_load_mode(mln_map_t* map) noexcept {
 
 mln_status_t mln_map_set_gesture_in_progress(mln_map_t* map, int in_progress) noexcept {
     if (!map) return set_error(MLN_INVALID_ARG, "mln_map_set_gesture_in_progress: null handle");
-    try { map_ptr(map)->map->setGestureInProgress(in_progress != 0); return MLN_OK; }
-    catch (const std::exception& e) { return set_native_error(e); }
+    try {
+        auto& m = *map_ptr(map)->map;
+        // With terrain, a gesture turns round the ground being looked at, not a sea-level point
+        // behind it. Anchor once, at the start, as maplibre-native's Android and iOS gestures do.
+        // Inert without terrain; the view does not move, only the centre and zoom it reports.
+        if (in_progress && !m.isGestureInProgress()) m.anchorCenterOnTerrain();
+        m.setGestureInProgress(in_progress != 0);
+        return MLN_OK;
+    } catch (const std::exception& e) { return set_native_error(e); }
 }
 
 int mln_map_is_gesture_in_progress(mln_map_t* map) noexcept {

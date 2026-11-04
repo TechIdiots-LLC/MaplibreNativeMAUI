@@ -239,7 +239,10 @@ MLN_CABI_API mln_status_t   mln_map_set_debug_options(mln_map_t* map, int option
 
 /* ── Map – gesture / interactive movement ──────────────────────────────────── */
 /** Inform the map that a user gesture is in progress (suppresses animated
- *  camera snap-back during panning).  Call with 1 on touch-down, 0 on touch-up. */
+ *  camera snap-back during panning).  Call with 1 on touch-down, 0 on touch-up.
+ *  With 3D terrain, the start of a gesture also anchors the centre on the terrain
+ *  under it (keeping the view), so the gesture turns round the ground being looked
+ *  at; the reported centre and zoom change accordingly. Cancel transitions first. */
 MLN_CABI_API mln_status_t   mln_map_set_gesture_in_progress(mln_map_t* map, int in_progress) MLN_CABI_NOEXCEPT;
 /** Returns 1 while a gesture is flagged in progress via mln_map_set_gesture_in_progress. */
 MLN_CABI_API int             mln_map_is_gesture_in_progress(mln_map_t* map) MLN_CABI_NOEXCEPT;
