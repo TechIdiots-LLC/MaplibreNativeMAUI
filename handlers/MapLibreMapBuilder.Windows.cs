@@ -51,5 +51,6 @@ public partial class MapLibreMapBuilder : IMapLibreMapOptionsSink
     public void SetTerrainControlPosition(MapControlCorner corner)     { }
     public void SetTerrainLoadMode(TerrainLoadMode mode)               { }
     public void SetTerrainSkirtLength(TerrainSkirtLength length)       { }
+    public void SetCenterClampedToGround(bool clamped)                 { }
 }
 #endif

@@ -385,6 +385,18 @@ public sealed class MlnMap : IDisposable
         set => NativeMethods.MapSetTerrainSkirtLength(Handle, (int)value);
     }
 
+    /// <summary>
+    /// Whether the map centre rides the terrain surface rather than sea level, as in
+    /// maplibre-gl-js. Off by default. With it on, pitching over tall ground keeps the camera
+    /// above it and the camera's eye is kept clear of the ground under it. Inert while terrain
+    /// is off.
+    /// </summary>
+    public bool CenterClampedToGround
+    {
+        get => NativeMethods.MapGetCenterClampedToGround(Handle) != 0;
+        set => NativeMethods.MapSetCenterClampedToGround(Handle, value ? 1 : 0);
+    }
+
     // ── Tier 2 – camera for point set ────────────────────────────────────────
     public unsafe CameraResult CameraForLatLngs(
         IReadOnlyList<(double Lat, double Lon)> points,

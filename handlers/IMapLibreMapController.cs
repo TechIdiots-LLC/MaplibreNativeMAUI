@@ -303,6 +303,12 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
     /// </summary>
     TerrainSkirtLength TerrainSkirtLength { get; set; }
 
+    /// <summary>
+    /// Whether the map centre rides the terrain surface rather than sea level. Off by
+    /// default; inert while terrain is off.
+    /// </summary>
+    bool CenterClampedToGround { get; set; }
+
     // ── Tier 2 – camera / projection ─────────────────────────────────────────
     CameraResult CameraForLatLngs(
         IReadOnlyList<(double Lat, double Lon)> points,

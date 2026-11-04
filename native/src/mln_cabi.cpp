@@ -1566,6 +1566,21 @@ mln_terrain_skirt_length_t mln_map_get_terrain_skirt_length(mln_map_t* map) noex
     } catch (const std::exception&) { return MLN_TERRAIN_SKIRT_AUTO; }
 }
 
+mln_status_t mln_map_set_center_clamped_to_ground(mln_map_t* map, int clamped) noexcept {
+    if (!map) return set_error(MLN_INVALID_ARG, "mln_map_set_center_clamped_to_ground: null handle");
+    try {
+        map_ptr(map)->map->setCenterClampedToGround(clamped != 0);
+        return MLN_OK;
+    } catch (const std::exception& e) { return set_native_error(e); }
+}
+
+int mln_map_get_center_clamped_to_ground(mln_map_t* map) noexcept {
+    if (!map) return 0;
+    try {
+        return map_ptr(map)->map->getCenterClampedToGround() ? 1 : 0;
+    } catch (const std::exception&) { return 0; }
+}
+
 /* ─── Gesture helpers ───────────────────────────────────────────────────────── */
 
 mln_status_t mln_map_set_gesture_in_progress(mln_map_t* map, int in_progress) noexcept {

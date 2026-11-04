@@ -228,6 +228,25 @@ public partial class MlnMapImage : Grid
                 if (d is MlnMapImage m && m._map != null)
                     m._map.TerrainSkirtLength = (TerrainSkirtLength)e.NewValue;
             }));
+    /// <summary>
+    /// Whether the map centre rides the terrain surface rather than sea level, as in
+    /// maplibre-gl-js. With it on, pitching over tall ground keeps the camera above it
+    /// instead of sinking in, and the camera's eye is kept clear of the ground under it.
+    /// During a drag the centre holds the height it started at. Off by default; inert while
+    /// terrain is off.
+    /// </summary>
+    public bool CenterClampedToGround
+    {
+        get => (bool)GetValue(CenterClampedToGroundProperty);
+        set => SetValue(CenterClampedToGroundProperty, value);
+    }
+    public static readonly DependencyProperty CenterClampedToGroundProperty =
+        DependencyProperty.Register(nameof(CenterClampedToGround), typeof(bool), typeof(MlnMapImage),
+            new PropertyMetadata(false, (d, e) =>
+            {
+                if (d is MlnMapImage m && m._map != null)
+                    m._map.CenterClampedToGround = (bool)e.NewValue;
+            }));
 
     public static readonly DependencyProperty TerrainControlPositionProperty =
         DependencyProperty.Register(nameof(TerrainControlPosition), typeof(MapControlCorner), typeof(MlnMapImage),
@@ -409,6 +428,7 @@ public partial class MlnMapImage : Grid
         _map.SetSize(_physW, _physH);
         _map.TerrainLoadMode = TerrainLoadMode;   // the DP may have been set before the map existed
         _map.TerrainSkirtLength = TerrainSkirtLength;
+        _map.CenterClampedToGround = CenterClampedToGround;
 
         var url = StyleUrl;
         if (!string.IsNullOrEmpty(url))

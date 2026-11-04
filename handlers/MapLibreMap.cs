@@ -69,6 +69,9 @@ public partial class MapLibreMap : StackLayout
     /// </summary>
     public static readonly BindableProperty TerrainSkirtLengthProperty =
         BindableProperty.Create(nameof(TerrainSkirtLength), typeof(TerrainSkirtLength), typeof(MapLibreMap), defaultValue: TerrainSkirtLength.Auto);
+    /// <summary>Whether the map centre rides the terrain surface. Default <c>false</c>.</summary>
+    public static readonly BindableProperty CenterClampedToGroundProperty =
+        BindableProperty.Create(nameof(CenterClampedToGround), typeof(bool), typeof(MapLibreMap), defaultValue: false);
     /// <summary>Corner the terrain control is anchored to. Default <see cref="MapControlCorner.TopRight"/>.</summary>
     public static readonly BindableProperty TerrainControlPositionProperty =
         BindableProperty.Create(nameof(TerrainControlPosition), typeof(MapControlCorner), typeof(MapLibreMap), defaultValue: MapControlCorner.TopRight);
@@ -360,6 +363,19 @@ public partial class MapLibreMap : StackLayout
     {
         get => (TerrainSkirtLength)GetValue(TerrainSkirtLengthProperty);
         set => SetValue(TerrainSkirtLengthProperty, value);
+    }
+
+    /// <summary>
+    /// Whether the map centre rides the terrain surface rather than sea level, as in
+    /// maplibre-gl-js. With it on, pitching over tall ground keeps the camera above it
+    /// instead of sinking in, and the camera's eye is kept clear of the ground under it.
+    /// During a gesture the centre holds the height it started at, so the camera does not
+    /// rise and fall with every ridge a drag passes. Off by default; inert while terrain is off.
+    /// </summary>
+    public bool CenterClampedToGround
+    {
+        get => (bool)GetValue(CenterClampedToGroundProperty);
+        set => SetValue(CenterClampedToGroundProperty, value);
     }
 
     public string? CustomAttribution

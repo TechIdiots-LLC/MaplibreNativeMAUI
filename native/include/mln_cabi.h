@@ -644,6 +644,18 @@ MLN_CABI_API mln_status_t   mln_map_set_terrain_skirt_length(mln_map_t* map,
 /** Returns the current setting, or MLN_TERRAIN_SKIRT_AUTO for a null handle. */
 MLN_CABI_API mln_terrain_skirt_length_t mln_map_get_terrain_skirt_length(mln_map_t* map) MLN_CABI_NOEXCEPT;
 
+/**
+ * Whether the map centre rides the terrain surface rather than sea level (pass 1 or 0).
+ * Off by default. With it on, the centre altitude follows the rendered terrain height under
+ * the centre, so pitching over tall ground keeps the camera above it, as in maplibre-gl-js,
+ * and the camera's eye is kept 10 m above the ground under it. During a gesture the centre
+ * holds the height it started at, and the end of the gesture anchors it on the ground without
+ * moving the camera. Inert while terrain is off.
+ */
+MLN_CABI_API mln_status_t   mln_map_set_center_clamped_to_ground(mln_map_t* map, int clamped) MLN_CABI_NOEXCEPT;
+/** Returns 1 when the centre is clamped to the ground, 0 otherwise or for a null handle. */
+MLN_CABI_API int             mln_map_get_center_clamped_to_ground(mln_map_t* map) MLN_CABI_NOEXCEPT;
+
 /* ── Offline regions + ambient cache ─────────────────────────────────────────
  *
  * Wraps mln::DatabaseFileSource. The manager shares the map's cache database

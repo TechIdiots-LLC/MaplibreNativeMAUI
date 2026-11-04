@@ -72,4 +72,5 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, FrameLayout>
     public void UpdateTerrainControlPosition(MapControlCorner corner)     => _controller.SetTerrainControlPosition(corner);
     public void UpdateTerrainLoadMode(TerrainLoadMode mode)               => _controller.SetTerrainLoadMode(mode);
     public void UpdateTerrainSkirtLength(TerrainSkirtLength length)       => _controller.SetTerrainSkirtLength(length);
+    public void UpdateCenterClampedToGround(bool clamped)                 => _controller.SetCenterClampedToGround(clamped);
 }

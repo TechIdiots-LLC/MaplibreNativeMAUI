@@ -598,6 +598,13 @@ public static partial class NativeMethods
     [LibraryImport(Lib, EntryPoint = "mln_map_get_terrain_skirt_length")]
     public static partial int MapGetTerrainSkirtLength(IntPtr map);
 
+    // ── Map – centre on the terrain ─────────────────────────────────────
+    [LibraryImport(Lib, EntryPoint = "mln_map_set_center_clamped_to_ground")]
+    public static partial MlnStatus MapSetCenterClampedToGround(IntPtr map, int clamped);
+
+    [LibraryImport(Lib, EntryPoint = "mln_map_get_center_clamped_to_ground")]
+    public static partial int MapGetCenterClampedToGround(IntPtr map);
+
     // ── Map – camera for point set (Tier 2) ───────────────────────────────────
     [LibraryImport(Lib, EntryPoint = "mln_map_camera_for_latlngs")]
     public static unsafe partial MlnStatus MapCameraForLatLngs(IntPtr map,

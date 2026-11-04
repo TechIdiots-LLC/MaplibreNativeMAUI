@@ -859,6 +859,7 @@ public class MapLibreMapController : IMapLibreMapController
         _map.SetSize(w, h);
         _map.TerrainLoadMode = _terrainLoadMode;   // may have been set before the map existed
         _map.TerrainSkirtLength = _terrainSkirtLength;
+        _map.CenterClampedToGround = _centerClampedToGround;
 
         if (!string.IsNullOrEmpty(_styleString))
         {
@@ -1786,6 +1787,21 @@ public class MapLibreMapController : IMapLibreMapController
     }
 
     public void SetTerrainSkirtLength(TerrainSkirtLength length) => TerrainSkirtLength = length;
+
+    // Cached for the same reason as _terrainLoadMode.
+    private bool _centerClampedToGround;
+
+    public bool CenterClampedToGround
+    {
+        get => _map?.CenterClampedToGround ?? _centerClampedToGround;
+        set
+        {
+            _centerClampedToGround = value;
+            if (_map != null) _map.CenterClampedToGround = value;
+        }
+    }
+
+    public void SetCenterClampedToGround(bool clamped) => CenterClampedToGround = clamped;
 
     // -- Tier 2 – camera / batch projection ───────────────────────────────────
     public CameraResult CameraForLatLngs(

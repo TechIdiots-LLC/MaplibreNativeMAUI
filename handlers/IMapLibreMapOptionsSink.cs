@@ -85,5 +85,10 @@ public interface IMapLibreMapOptionsSink
     /// </summary>
     void SetTerrainSkirtLength(TerrainSkirtLength length);
 
+    /// <summary>
+    /// Choose whether the map centre rides the terrain surface rather than sea level.
+    /// </summary>
+    void SetCenterClampedToGround(bool clamped);
+
     //void SetLocationEngineProperties(LocationEngineRequest? locationEngineRequest);
 }

@@ -36,6 +36,7 @@ public partial class MapLibreMapHandler
             [nameof(MapLibreMap.TerrainControlPosition)]     = MapTerrainControlPosition,
             [nameof(MapLibreMap.TerrainLoadMode)]            = MapTerrainLoadMode,
             [nameof(MapLibreMap.TerrainSkirtLength)]         = MapTerrainSkirtLength,
+            [nameof(MapLibreMap.CenterClampedToGround)]      = MapCenterClampedToGround,
         };
         
     public static void MapStyleUrl(MapLibreMapHandler handler, MapLibreMap view)
@@ -135,4 +136,7 @@ public partial class MapLibreMapHandler
 
     public static void MapTerrainSkirtLength(MapLibreMapHandler handler, MapLibreMap view)
         => handler.UpdateTerrainSkirtLength(view.TerrainSkirtLength);
+
+    public static void MapCenterClampedToGround(MapLibreMapHandler handler, MapLibreMap view)
+        => handler.UpdateCenterClampedToGround(view.CenterClampedToGround);
 }
