@@ -276,6 +276,49 @@ public sealed class MlnStyle
     public void SetLightProperty(string name, object? value)
         => SetLightProperty(name, JsonSerializer.Serialize(value));
 
+    /// <summary>
+    /// <c>false</c> while a style passed to a load call is still being fetched or parsed — for
+    /// example just after the style URL changes — and <c>true</c> once it has loaded.
+    /// </summary>
+    public bool IsLoaded => NativeMethods.StyleIsLoaded(Handle) != 0;
+
+    // ── Global state ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Sets a property read by the style's <c>["global-state", name]</c> expressions, as
+    /// maplibre-gl-js's <c>map.setGlobalStateProperty</c> does. Every expression and layer
+    /// visibility that reads it is re-evaluated; the layers themselves are not touched.
+    /// </summary>
+    /// <param name="valueJson">JSON-encoded value, e.g. <c>"true"</c> or <c>"\"metric\""</c>.
+    /// <c>"null"</c> resets the property to the default in the style's root <c>state</c>.</param>
+    /// <exception cref="InvalidOperationException">The style is still loading, or the value is not
+    /// valid JSON.</exception>
+    public void SetGlobalStateProperty(string name, string valueJson)
+    {
+        var status = NativeMethods.StyleSetGlobalStateProperty(Handle, name, valueJson);
+        if (status != MlnStatus.Ok)
+            throw new InvalidOperationException(
+                $"SetGlobalStateProperty failed ({status}): {NativeMethods.GetLastError()}");
+    }
+
+    /// <summary>Sets a global state property, serializing the value from a C# object
+    /// (<c>null</c> resets it to the style's default).</summary>
+    public void SetGlobalStateProperty(string name, object? value)
+        => SetGlobalStateProperty(name, JsonSerializer.Serialize(value));
+
+    /// <summary>
+    /// The global state as a JSON object: the defaults from the style's root <c>state</c>
+    /// with any values set over them. Empty object when the style declares none.
+    /// </summary>
+    public string GetGlobalState()
+    {
+        var ptr = NativeMethods.StyleGetGlobalState(Handle);
+        if (ptr == IntPtr.Zero) return "{}";
+        var result = Marshal.PtrToStringUTF8(ptr) ?? "{}";
+        NativeMethods.FreeString(ptr);
+        return result;
+    }
+
     // ── Style enumeration (Tier 1) ────────────────────────────────────────────
 
     /// <summary>Returns the URL from which the style was loaded, or empty string.</summary>

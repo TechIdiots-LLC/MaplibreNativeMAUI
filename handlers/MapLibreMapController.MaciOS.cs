@@ -1140,6 +1140,15 @@ public class MapLibreMapController : IMapLibreMapController
 
     public bool IsTerrainEnabled => _styleReady && _style != null && _style.IsTerrainEnabled;
 
+    public void SetGlobalStateProperty(string name, object? value)
+    {
+        // _styleReady stays set while a new style URL loads; core refuses until that is done.
+        if (!_styleReady || _style == null || !_style.IsLoaded) return;
+        _style.SetGlobalStateProperty(name, value);
+    }
+
+    public string GetGlobalState() => _styleReady && _style != null ? _style.GetGlobalState() : "{}";
+
 
     // -- Layers ----------------------------------------------------------------
 

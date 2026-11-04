@@ -435,6 +435,9 @@ MLN_CABI_API mln_status_t   mln_style_remove_image(mln_style_t* st, const char* 
 
 /** Returns the currently loaded style as a JSON string; caller must free with mln_free_string(). */
 MLN_CABI_API char*           mln_style_get_json(mln_style_t* st) MLN_CABI_NOEXCEPT;
+/** Returns 0 while a style passed to load_url/load_json is still being fetched or parsed,
+ *  1 once it has loaded (and for a style built up in code). 0 for a null handle. */
+MLN_CABI_API int             mln_style_is_loaded(mln_style_t* st) MLN_CABI_NOEXCEPT;
 
 /** Set the global style transition duration and delay (milliseconds). */
 MLN_CABI_API mln_status_t   mln_style_set_transition(mln_style_t* st,
@@ -447,6 +450,22 @@ MLN_CABI_API mln_status_t   mln_style_set_transition(mln_style_t* st,
 MLN_CABI_API mln_status_t   mln_style_set_light_property(mln_style_t* st,
                                                               const char* name,
                                                               const char* value_json) MLN_CABI_NOEXCEPT;
+
+/* ── Style – global state ───────────────────────────────────────────────────
+ *
+ * The values a "global-state" expression reads (["global-state", "name"]), as in
+ * maplibre-gl-js's map.setGlobalStateProperty. A style declares them, with their defaults,
+ * in its root "state" property; setting one re-evaluates every expression and layer
+ * visibility that reads it, without touching the layers themselves. */
+/** Set a global state property to a JSON-encoded value (e.g. "true", "\"metric\"", "42").
+ *  "null" resets it to the default in the style's root "state" property, or to null.
+ *  Returns MLN_INVALID_STATE while the style is still loading, MLN_INVALID_ARG for bad JSON. */
+MLN_CABI_API mln_status_t   mln_style_set_global_state_property(mln_style_t* st,
+                                                                     const char* name,
+                                                                     const char* value_json) MLN_CABI_NOEXCEPT;
+/** The global state as a JSON object string (the style's defaults with any values set over
+ *  them); caller must free with mln_free_string(). Returns NULL on error. */
+MLN_CABI_API char*           mln_style_get_global_state(mln_style_t* st) MLN_CABI_NOEXCEPT;
 
 /* ── Style – additional layer types ─────────────────────────────────────────── */
 MLN_CABI_API mln_layer_t*   mln_style_add_location_indicator_layer(mln_style_t* st,

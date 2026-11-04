@@ -564,6 +564,28 @@ public partial class MapLibreMap : StackLayout
         => Handler is MapLibreMapHandler handler && handler.Controller.IsTerrainEnabled;
 
     /// <summary>
+    /// Sets a property read by the style's <c>["global-state", name]</c> expressions, as
+    /// maplibre-gl-js's <c>map.setGlobalStateProperty</c> does — a way to restyle the map (switch
+    /// units, a theme, which categories show) by changing one value instead of re-setting layer
+    /// properties. Every expression and layer visibility that reads it is re-evaluated. A style
+    /// declares its properties and their defaults in its root <c>state</c>; <c>null</c> resets
+    /// one to that default. Has no effect until the style has loaded, so call it from
+    /// <c>StyleLoaded</c> or later.
+    /// </summary>
+    public void SetGlobalStateProperty(string name, object? value)
+    {
+        if (Handler is not MapLibreMapHandler handler) return;
+        handler.Controller.SetGlobalStateProperty(name, value);
+    }
+
+    /// <summary>
+    /// The global state as a JSON object: the style's root <c>state</c> defaults with any values
+    /// set over them. <c>"{}"</c> before the style has loaded.
+    /// </summary>
+    public string GetGlobalState()
+        => Handler is MapLibreMapHandler handler ? handler.Controller.GetGlobalState() : "{}";
+
+    /// <summary>
     /// Adds a vector source, from either a TileJSON <paramref name="tileUrl"/> or explicit
     /// <c>{z}/{x}/{y}</c> <paramref name="tileUrlTemplates"/>.
     /// </summary>

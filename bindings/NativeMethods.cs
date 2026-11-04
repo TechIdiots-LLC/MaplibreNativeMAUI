@@ -486,6 +486,17 @@ public static partial class NativeMethods
         StringMarshalling = StringMarshalling.Utf8)]
     public static partial MlnStatus StyleSetLightProperty(IntPtr style, string name, string valueJson);
 
+    [LibraryImport(Lib, EntryPoint = "mln_style_is_loaded")]
+    public static partial int StyleIsLoaded(IntPtr style);
+
+    // ── Style – global state ────────────────────────────────────────────
+    [LibraryImport(Lib, EntryPoint = "mln_style_set_global_state_property",
+        StringMarshalling = StringMarshalling.Utf8)]
+    public static partial MlnStatus StyleSetGlobalStateProperty(IntPtr style, string name, string valueJson);
+
+    [LibraryImport(Lib, EntryPoint = "mln_style_get_global_state")]
+    public static partial IntPtr StyleGetGlobalState(IntPtr style);
+
     [LibraryImport(Lib, EntryPoint = "mln_style_remove_layer",
         StringMarshalling = StringMarshalling.Utf8)]
     public static partial MlnStatus StyleRemoveLayer(IntPtr style, string layerId);

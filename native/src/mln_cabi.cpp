@@ -1379,6 +1379,40 @@ mln_status_t mln_map_remove_feature_state(mln_map_t* map,
     } catch (const std::exception& e) { return set_native_error(e); }
 }
 
+/* ─── Style global state ────────────────────────────────────────────────────── */
+
+int mln_style_is_loaded(mln_style_t* st) noexcept {
+    if (!st) return 0;
+    try { return style_ref(st).isLoaded() ? 1 : 0; }
+    catch (...) { return 0; }
+}
+
+mln_status_t mln_style_set_global_state_property(mln_style_t* st, const char* name,
+                                                    const char* value_json) noexcept {
+    if (!st || !name || !value_json)
+        return set_error(MLN_INVALID_ARG, "mln_style_set_global_state_property: null arg");
+    try {
+        auto& style = style_ref(st);
+        // Core throws a MisuseException here; report it as the state error it is.
+        if (!style.isLoaded())
+            return set_error(MLN_INVALID_STATE, "mln_style_set_global_state_property: style is still loading");
+        mln::JSDocument doc;
+        doc.Parse(value_json);
+        if (doc.HasParseError())
+            return set_error(MLN_INVALID_ARG, "mln_style_set_global_state_property: value is not valid JSON");
+        style.setGlobalStateProperty(name, jsValueToMbglValue(doc));
+        return MLN_OK;
+    } catch (const std::exception& e) { return set_native_error(e); }
+}
+
+char* mln_style_get_global_state(mln_style_t* st) noexcept {
+    if (!st) return nullptr;
+    try {
+        // GlobalStateMap is the same property map as FeatureState.
+        return featureStateToJson(style_ref(st).getGlobalState());
+    } catch (...) { return nullptr; }
+}
+
 /* ─── Source-feature / feature-extension queries ────────────────────────────── */
 
 char* mln_map_query_source_features(mln_map_t* map,

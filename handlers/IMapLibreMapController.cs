@@ -90,6 +90,10 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
     public void ToggleTerrain(string sourceId, float exaggeration);
     public bool IsTerrainEnabled { get; }
 
+    // Style global state (the values ["global-state", name] expressions read)
+    public void SetGlobalStateProperty(string name, object? value);
+    public string GetGlobalState();
+
     // Layers
     public void AddSymbolLayer(
         string layerName,

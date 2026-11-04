@@ -726,6 +726,22 @@ public partial class MlnMapImage : Grid
     /// <summary>Whether 3D terrain is currently enabled.</summary>
     public bool IsTerrainEnabled => _style != null && _style.IsTerrainEnabled;
 
+    /// <summary>
+    /// Sets a property read by the style's <c>["global-state", name]</c> expressions, as
+    /// maplibre-gl-js's <c>map.setGlobalStateProperty</c> does — restyle the map by changing one
+    /// value instead of re-setting layer properties. <c>null</c> resets it to the default in the
+    /// style's root <c>state</c>. Has no effect until the style has loaded.
+    /// </summary>
+    public void SetGlobalStateProperty(string name, object? value)
+    {
+        if (_style == null || !_style.IsLoaded) return;
+        _style.SetGlobalStateProperty(name, value);
+        _renderNeedsUpdate = true;
+    }
+
+    /// <summary>The global state as a JSON object; <c>"{}"</c> before the style has loaded.</summary>
+    public string GetGlobalState() => _style != null ? _style.GetGlobalState() : "{}";
+
     public void AddRasterSource(string sourceId, string url, int tileSize = 512)
     {
         if (_style == null) return;
