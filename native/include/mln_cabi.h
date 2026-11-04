@@ -286,7 +286,9 @@ MLN_CABI_API mln_status_t   mln_map_set_tile_lod_min_radius(mln_map_t* map, doub
 MLN_CABI_API mln_status_t   mln_map_set_tile_lod_scale(mln_map_t* map, double scale) MLN_CABI_NOEXCEPT;
 MLN_CABI_API mln_status_t   mln_map_set_tile_lod_pitch_threshold(mln_map_t* map, double threshold_rad) MLN_CABI_NOEXCEPT;
 MLN_CABI_API mln_status_t   mln_map_set_tile_lod_zoom_shift(mln_map_t* map, double shift) MLN_CABI_NOEXCEPT;
-/** mode: 0=default, 1=distance */
+/** mode: 0=default, 1=distance, 2=adaptive (per-tile zoom from the field of view and a
+ *  tile-count budget, as maplibre-gl-js selects tiles under terrain or a steep pitch; ignores
+ *  the four settings above) */
 MLN_CABI_API mln_status_t   mln_map_set_tile_lod_mode(mln_map_t* map, int mode) MLN_CABI_NOEXCEPT;
 
 /* ── Map – camera for points / geometry (Tier 2) ───────────────────────────── */
@@ -616,10 +618,13 @@ MLN_CABI_API int             mln_style_is_terrain_enabled(mln_style_t* st) MLN_C
 typedef enum mln_terrain_load_mode_t {
     MLN_TERRAIN_LOAD_QUALITY     = 0, /**< No budget: every revealed tile/drape builds at once.
                                         *   Sharp, but a big burst (zooming in over new coverage)
-                                        *   can stall a frame. Default. */
-    MLN_TERRAIN_LOAD_BALANCED    = 1, /**< 32 new-tile builds + 16 drape re-renders per frame. */
-    MLN_TERRAIN_LOAD_PERFORMANCE = 2, /**< 8 new-tile builds + 4 drape re-renders per frame:
-                                        *   smoothest on weak GPUs, most progressive fill-in. */
+                                        *   can stall a frame. The mesh follows the view past a
+                                        *   coarse DEM, up to 64 mesh tiles. Default. */
+    MLN_TERRAIN_LOAD_BALANCED    = 1, /**< 32 new-tile builds + 16 drape re-renders per frame;
+                                        *   mesh to z15, up to 48 mesh tiles. */
+    MLN_TERRAIN_LOAD_PERFORMANCE = 2, /**< 8 new-tile builds + 4 drape re-renders per frame;
+                                        *   mesh to z14, up to 24 mesh tiles: smoothest on weak
+                                        *   GPUs, most progressive fill-in. */
 } mln_terrain_load_mode_t;
 
 MLN_CABI_API mln_status_t   mln_map_set_terrain_load_mode(mln_map_t* map,

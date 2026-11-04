@@ -360,7 +360,7 @@ public sealed class MlnMap : IDisposable
     public void SetTileLodZoomShift(double shift)
         => NativeMethods.MapSetTileLodZoomShift(Handle, shift);
 
-    /// <param name="mode">0=Default 1=Distance</param>
+    /// <param name="mode">0=Default 1=Distance 2=Adaptive (maplibre-gl-js's tile selection)</param>
     public void SetTileLodMode(int mode)
         => NativeMethods.MapSetTileLodMode(Handle, mode);
 
