@@ -47,6 +47,20 @@
                     "How much terrain tile/drape work each frame may do while terrain loads. Quality (the default) builds everything at once and can stall a frame on a big burst; Balanced and Performance spread the work out for smoother interaction on weaker GPUs, at the cost of visible fill-in." />
                 <Picker x:Name="LoadModePicker" SelectedIndexChanged="OnLoadModeChanged" />
 
+                <HorizontalStackLayout Spacing="8">
+                    <Switch x:Name="ClampSwitch" Toggled="OnClampToggled" VerticalOptions="Center" />
+                    <Label Text="Clamp the centre to the ground" FontAttributes="Bold" VerticalOptions="Center" />
+                </HorizontalStackLayout>
+                <Label TextColor="Gray" FontSize="12" Text=
+                    "As in maplibre-gl-js: the map centre follows the terrain surface, so tilting over a mountain turns round the ground being looked at and the camera stays above it, instead of sinking towards a point at sea level." />
+
+                <HorizontalStackLayout Spacing="8">
+                    <Switch x:Name="SkirtSwitch" Toggled="OnSkirtToggled" VerticalOptions="Center" />
+                    <Label Text="Terrain tile skirts" FontAttributes="Bold" VerticalOptions="Center" />
+                </HorizontalStackLayout>
+                <Label TextColor="Gray" FontSize="12" Text=
+                    "The vertical strips along each terrain tile's edges that hide gaps between tiles at different zoom levels. Turn them off for a map drawn over a transparent background, where they show as walls." />
+
                 <Button x:Name="ToggleButton"
                         Text="Enable 3D Terrain"
                         Clicked="OnToggleTerrain"

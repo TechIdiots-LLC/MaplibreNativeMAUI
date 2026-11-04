@@ -69,6 +69,8 @@ public partial class TerrainPage : ContentPage
 
         LoadModePicker.ItemsSource = Enum.GetNames<TerrainLoadMode>().ToList();
         LoadModePicker.SelectedIndex = (int)Map.TerrainLoadMode;
+        ClampSwitch.IsToggled = Map.CenterClampedToGround;
+        SkirtSwitch.IsToggled = Map.TerrainSkirtLength == TerrainSkirtLength.Auto;
 
         Map.StyleLoaded += (_, _) =>
         {
@@ -141,6 +143,13 @@ public partial class TerrainPage : ContentPage
         if (LoadModePicker.SelectedIndex < 0) return;
         Map.TerrainLoadMode = (TerrainLoadMode)LoadModePicker.SelectedIndex;
     }
+
+    private void OnClampToggled(object? sender, ToggledEventArgs e)
+        => Map.CenterClampedToGround = e.Value;
+
+    // Rebuilds the terrain mesh, so the change shows at once.
+    private void OnSkirtToggled(object? sender, ToggledEventArgs e)
+        => Map.TerrainSkirtLength = e.Value ? TerrainSkirtLength.Auto : TerrainSkirtLength.None;
 
     private void UpdateStatus()
     {
