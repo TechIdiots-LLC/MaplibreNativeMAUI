@@ -906,6 +906,13 @@ MLN_CABI_API const char*     mln_cabi_version(void) MLN_CABI_NOEXCEPT;
 MLN_CABI_API void*  mln_android_acquire_window(void* jni_env, void* surface_jobject) MLN_CABI_NOEXCEPT;
 /** Release an ANativeWindow obtained via mln_android_acquire_window. */
 MLN_CABI_API void   mln_android_release_window(void* window) MLN_CABI_NOEXCEPT;
+/** Serve asset:// and file:///android_asset/ URLs from the APK's assets/ folder through the
+ *  given android.content.res.AssetManager (a JNI jobject), as the MapLibre Android SDK does;
+ *  byte ranges are honoured, so pmtiles://asset://… reads only what it needs. MAUI places
+ *  Resources/Raw files there. Without it, asset:// resolves against the asset path on the
+ *  filesystem, where APK assets do not exist. Must be called before the first map is created
+ *  (file sources are cached per map); only the first call takes effect. */
+MLN_CABI_API mln_status_t mln_android_set_asset_manager(void* jni_env, void* asset_manager_jobject) MLN_CABI_NOEXCEPT;
 #endif /* __ANDROID__ */
 
 /* ── Host HTTP provider (all platforms) ────────────────────────────────────── */

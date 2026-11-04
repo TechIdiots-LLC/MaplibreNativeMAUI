@@ -26,6 +26,11 @@ public sealed class MlnMap : IDisposable
         string? apiKey = null,
         ulong   maxCacheSizeBytes = 0)
     {
+        assetPath ??= DefaultAssetPath();
+#if ANDROID
+        EnsureAndroidAssetManager();
+#endif
+
         NativeMethods.MapObserverFn? nativeObserver = null;
         if (observer != null)
         {
@@ -486,6 +491,40 @@ public sealed class MlnMap : IDisposable
             throw new InvalidOperationException("Style is not yet loaded.");
         return new MlnStyle(styleHandle);
     }
+
+    // ── asset:// ──────────────────────────────────────────────────────────────
+    //
+    // asset://name resolves to the app's bundled files, where MAUI puts Resources/Raw
+    // (MauiAsset) items: the bundle's resources on iOS/macCatalyst and the app directory on
+    // Windows. With no asset path at all, core falls back to "." — the process's working
+    // directory, which is nowhere in particular. Android is handled natively instead, below.
+
+    private static string? DefaultAssetPath()
+    {
+#if IOS || MACCATALYST
+        return Foundation.NSBundle.MainBundle.ResourcePath;
+#elif ANDROID
+        return null;   // APK assets are not files; EnsureAndroidAssetManager serves them
+#else
+        return AppContext.BaseDirectory.TrimEnd('\\', '/');
+#endif
+    }
+
+#if ANDROID
+    private static int _assetManagerSet;
+
+    // APK assets live inside the APK, so the filesystem asset path cannot reach them. Hand
+    // the app's AssetManager to native, which then serves asset:// (and
+    // file:///android_asset/) from it, as the MapLibre Android SDK does. Native file sources
+    // are cached per map, so this has to happen before the first map is created.
+    private static void EnsureAndroidAssetManager()
+    {
+        if (Interlocked.Exchange(ref _assetManagerSet, 1) != 0) return;
+        var assets = Android.App.Application.Context.Assets;
+        if (assets != null)
+            NativeMethods.AndroidSetAssetManager(Android.Runtime.JNIEnv.Handle, assets.Handle);
+    }
+#endif
 
     public void Dispose()
     {

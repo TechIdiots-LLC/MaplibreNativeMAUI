@@ -65,8 +65,14 @@ if(WIN32)
     endif()
 elseif(ANDROID)
     target_sources(mln-cabi PRIVATE src/platform_frontend_android.cpp)
+    # asset:// from the APK's assets/ folder (the SDK's AssetManagerFileSource is not in
+    # mbgl-core). Needs file_source_request.hpp from platform/default/include, which
+    # android.cmake adds to mbgl-core privately.
+    target_sources(mln-cabi PRIVATE src/android_asset_file_source.cpp)
     target_link_libraries(mln-cabi PRIVATE EGL android log)
-    target_include_directories(mln-cabi PRIVATE "${MAPLIBRE_NATIVE_DIR}/src")
+    target_include_directories(mln-cabi PRIVATE
+        "${MAPLIBRE_NATIVE_DIR}/src"
+        "${MAPLIBRE_NATIVE_DIR}/platform/default/include")
     # Platform stub sources — symbols normally provided by MapLibreAndroid JNI SDK
     # that are absent in a standalone NDK build.
     target_sources(mln-cabi PRIVATE

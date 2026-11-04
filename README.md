@@ -415,6 +415,32 @@ Every map surface uses a persistent tile/resource cache database by default
 (`MlnCache.DefaultPath` — `{LocalApplicationData}/MapLibreNative.Maui/{processName}/cache.db`),
 so tiles survive app restarts.
 
+### Bundled files (`asset://`)
+
+Styles, GeoJSON, sprites, glyphs and whole tile archives can ship inside the app.
+Add them as `MauiAsset` items (anything under `Resources/Raw/`) and reference them
+with `asset://`, using the asset's logical name:
+
+```csharp
+map.StyleUrl = "asset://styles/offline.json";                       // Resources/Raw/styles/offline.json
+map.AddVectorSource("local", "pmtiles://asset://region.pmtiles", null, minZoom: 0, maxZoom: 14);
+```
+
+`asset://` resolves to the app's bundled files on every platform: the APK's `assets/`
+folder on Android (read through Android's `AssetManager`, as the MapLibre Android SDK
+does — `file:///android_asset/…` works there too), the app bundle's resources on
+iOS/macCatalyst, and the app directory on Windows and WPF. Pass an explicit `assetPath`
+to `MlnMap` to point it somewhere else (not on Android).
+
+PMTiles reads only the byte ranges it needs. On Android, store archives uncompressed in
+the APK, or each seek decompresses everything before it:
+
+```xml
+<PropertyGroup>
+  <AndroidStoreUncompressedFileExtensions>.pmtiles</AndroidStoreUncompressedFileExtensions>
+</PropertyGroup>
+```
+
 ### Offline mode
 
 MapLibre's network access can be toggled process-wide. When offline, all network

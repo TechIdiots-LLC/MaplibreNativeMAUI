@@ -741,6 +741,10 @@ public static partial class NativeMethods
     [DllImport(Lib, EntryPoint = "mln_android_release_window")]
     public static extern void AndroidReleaseWindow(IntPtr window);
 
+    // ── Android APK assets for asset:// ────────────────────────────────────────
+    [DllImport(Lib, EntryPoint = "mln_android_set_asset_manager")]
+    public static extern MlnStatus AndroidSetAssetManager(IntPtr jniEnv, IntPtr assetManager);
+
     // ── Android HTTP provider ──────────────────────────────────────────────────
 
     /// <summary>
