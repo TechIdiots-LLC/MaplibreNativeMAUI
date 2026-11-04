@@ -1000,6 +1000,17 @@ public partial class MlnMapImage : Grid
         e.Handled = true;
     }
 
+    // A drag flags a gesture in progress natively; end it if capture goes elsewhere (alt-tab,
+    // a popup) rather than leaving it set until the next button-up. Button-up clears
+    // _isDragging before releasing capture, so this is a no-op on the normal path.
+    protected override void OnLostMouseCapture(MouseEventArgs e)
+    {
+        base.OnLostMouseCapture(e);
+        if (_map == null || !_isDragging) return;
+        _isDragging = false;
+        _map.OnPanEnd();
+    }
+
     protected override void OnMouseWheel(MouseWheelEventArgs e)
     {
         base.OnMouseWheel(e);

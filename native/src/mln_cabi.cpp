@@ -591,8 +591,12 @@ static thread_local mln::ScreenCoordinate s_panAnchor;
 mln_status_t mln_map_on_pan_start(mln_map_t* map, double x, double y) noexcept {
     if (!map) return set_error(MLN_INVALID_ARG, "mln_map_on_pan_start: null handle");
     try {
+        auto& m = *map_ptr(map)->map;
         // With terrain, drag the ground being looked at, not a sea-level plane under it.
-        map_ptr(map)->map->anchorCenterOnTerrain();
+        m.anchorCenterOnTerrain();
+        // A drag is a gesture, as macOS's pan is: with the centre clamped to the ground it
+        // holds the camera height for the drag and re-anchors when it ends.
+        m.setGestureInProgress(true);
     } catch (const std::exception& e) { return set_native_error(e); }
     s_panStart  = map_ptr(map)->map->getCameraOptions();
     s_panAnchor = { x, y };
@@ -605,8 +609,10 @@ mln_status_t mln_map_on_pan_move(mln_map_t* map, double dx, double dy) noexcept 
     catch (const std::exception& e) { return set_native_error(e); }
 }
 
-mln_status_t mln_map_on_pan_end(mln_map_t* /*map*/) noexcept {
-    return MLN_OK;
+mln_status_t mln_map_on_pan_end(mln_map_t* map) noexcept {
+    if (!map) return set_error(MLN_INVALID_ARG, "mln_map_on_pan_end: null handle");
+    try { map_ptr(map)->map->setGestureInProgress(false); return MLN_OK; }
+    catch (const std::exception& e) { return set_native_error(e); }
 }
 
 mln_status_t mln_map_on_pinch(mln_map_t* map, double scale_factor, double cx, double cy) noexcept {
