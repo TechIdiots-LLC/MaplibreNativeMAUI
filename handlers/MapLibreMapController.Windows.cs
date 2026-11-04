@@ -1225,6 +1225,10 @@ public class MapLibreMapController : IMapLibreMapController
     {
         if (_mapView?.Map is { } m)
         {
+            // Gestures over terrain raise the centre onto the ground, and a centre and zoom
+            // mean that view only at that altitude. The rebuilt map starts at sea level, so
+            // save the sea-level equivalent; this map is about to go, so moving it is harmless.
+            m.SetCenterAltitudeKeepingView(0);
             var (lat, lon) = m.Center;
             _savedCamera = (lat, lon, m.Zoom, m.Bearing, m.Pitch);
         }
