@@ -1531,11 +1531,17 @@ public class MapLibreMapController : IMapLibreMapController
     private UIRotationGestureRecognizer? _rotateRecognizer;
     private UIPanGestureRecognizer?      _tiltRecognizer;
     private UITapGestureRecognizer?      _twoFingerTapRecognizer;
+    private UIPanGestureRecognizer?      _wheelRecognizer;
 
     private int _activeGestures;      // recognizers between Began and their end
     private int _twoFingerGestures;   // of those, pinch/rotate/tilt — they own the camera
 
     private const double TiltDegreesPerPoint = -0.5;   // Android's TpDegreesPerPixelMoved, per dp
+
+    // Scroll distance per wheel notch. macOS scrolls a notch as one line; taking a line as ~10
+    // points makes a notch one Windows wheel tick (0.5 zoom levels in mln_map_on_scroll).
+    // Unmeasured — tune on a device.
+    private const double WheelPointsPerTick = 10.0;
 
     private static double ScreenScale => UIScreen.MainScreen.Scale;
 
@@ -1589,6 +1595,19 @@ public class MapLibreMapController : IMapLibreMapController
         surface.AddGestureRecognizer(tap);
         surface.AddGestureRecognizer(longPress);
         surface.AddGestureRecognizer(_twoFingerTapRecognizer);
+
+        // A mouse wheel — on macCatalyst, or an iPad with a mouse — zooms about the pointer, as
+        // on WinUI and WPF (MLNMapView has no wheel zoom of its own). Discrete scrolls only: a
+        // trackpad or Magic Mouse scrolls continuously, and pinches to zoom instead.
+        if (OperatingSystem.IsIOSVersionAtLeast(13, 4) || OperatingSystem.IsMacCatalystVersionAtLeast(13, 4))
+        {
+            _wheelRecognizer = new UIPanGestureRecognizer(OnWheelGesture)
+            {
+                AllowedScrollTypesMask = UIScrollTypeMask.Discrete,
+                MaximumNumberOfTouches = 0,   // scroll events only, never a touch
+            };
+            surface.AddGestureRecognizer(_wheelRecognizer);
+        }
         ApplyGestureFlags();
     }
 
@@ -1599,6 +1618,7 @@ public class MapLibreMapController : IMapLibreMapController
         if (_rotateRecognizer != null) _rotateRecognizer.Enabled = _rotateGesturesEnabled;
         if (_tiltRecognizer   != null) _tiltRecognizer.Enabled   = _tiltGesturesEnabled;
         if (_twoFingerTapRecognizer != null) _twoFingerTapRecognizer.Enabled = _zoomGesturesEnabled;
+        if (_wheelRecognizer        != null) _wheelRecognizer.Enabled        = _zoomGesturesEnabled;
     }
 
     private void BeginGesture(bool twoFinger)
@@ -1735,6 +1755,19 @@ public class MapLibreMapController : IMapLibreMapController
         double zoom = _map.Zoom;
         var (x, y) = Px(tap.LocationInView(tap.View));
         _map.ScaleBy(Math.Pow(2, Math.Round(zoom) - 1.0 - zoom), x, y, durationMs: 300);
+    }
+
+    private void OnWheelGesture(UIPanGestureRecognizer wheel)
+    {
+        if (_map == null) return;
+        if (wheel.State != UIGestureRecognizerState.Began && wheel.State != UIGestureRecognizerState.Changed) return;
+        var t = wheel.TranslationInView(wheel.View);
+        wheel.SetTranslation(CGPoint.Empty, wheel.View);
+        if (t.Y == 0) return;
+        var (x, y) = Px(wheel.LocationInView(wheel.View));
+        // Content scrolled down zooms in, as a negative wheel deltaY does in maplibre-gl-js;
+        // macOS's natural-scrolling setting flips both alike.
+        _map.OnScroll(t.Y / WheelPointsPerTick, x, y);
     }
 
     private void OnLongPressGesture(UILongPressGestureRecognizer press)
