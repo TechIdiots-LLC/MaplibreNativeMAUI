@@ -423,6 +423,9 @@ MLN_CABI_API mln_status_t   mln_map_camera_for_bounds(mln_map_t* map,
                                                           double* out_zoom, double* out_bearing,
                                                           double* out_pitch) MLN_CABI_NOEXCEPT;
 
+/** Project a location to a screen pixel at sea level. With 3D terrain this is where the location
+ *  would be drawn without its terrain height; mln_map_pixel_for_latlng_on_terrain puts it on the
+ *  drawn surface. Same for the inverse below and mln_map_latlng_for_pixel_on_terrain. */
 MLN_CABI_API void            mln_map_pixel_for_latlng(mln_map_t* map,
                                                          double lat, double lon,
                                                          double* out_x, double* out_y) MLN_CABI_NOEXCEPT;
@@ -710,6 +713,59 @@ MLN_CABI_API int             mln_map_set_center_altitude_keeping_view(mln_map_t*
  * gesture does (see mln_map_set_gesture_in_progress). Inert while terrain is off.
  */
 MLN_CABI_API mln_status_t   mln_map_anchor_center_on_terrain(mln_map_t* map) MLN_CABI_NOEXCEPT;
+
+/* ── Map – projection onto 3D terrain ────────────────────────────────────────
+ *
+ * The map keeps its own copy of the terrain heights the renderer has loaded, so these answer at
+ * once, on the map's thread, without waiting on a frame. Heights are metres above sea level with
+ * the terrain's exaggeration applied, as the terrain is drawn. Without terrain, or where no DEM
+ * tile has loaded yet, each falls back to its sea-level counterpart (mln_map_pixel_for_latlng,
+ * mln_map_latlng_for_pixel, ...). Returned locations are wrapped to [-180, 180]. */
+
+/** Terrain height at a location. Returns 1 and writes *out_elevation_m where terrain data is
+ *  loaded; returns 0 and leaves it untouched without terrain, where no DEM tile covers the
+ *  location yet, or for a null argument. */
+MLN_CABI_API int             mln_map_get_terrain_elevation(mln_map_t* map,
+                                                             double lat, double lon,
+                                                             double* out_elevation_m) MLN_CABI_NOEXCEPT;
+/** Screen pixel of the terrain surface at a location (the location raised to its terrain height):
+ *  where to draw a marker or overlay so it sits on the ground it marks. */
+MLN_CABI_API void            mln_map_pixel_for_latlng_on_terrain(mln_map_t* map,
+                                                                   double lat, double lon,
+                                                                   double* out_x, double* out_y) MLN_CABI_NOEXCEPT;
+/** Location of the terrain surface under a screen pixel: the nearest surface along the pixel's
+ *  line of sight, so a ridge in front wins over the valley behind it. What a tap should report.
+ *  To turn a pixel into a camera centre, use mln_map_latlng_for_pixel_at_center_altitude. */
+MLN_CABI_API void            mln_map_latlng_for_pixel_on_terrain(mln_map_t* map,
+                                                                   double x, double y,
+                                                                   double* out_lat, double* out_lon) MLN_CABI_NOEXCEPT;
+/** Batch mln_map_pixel_for_latlng_on_terrain. Layout as mln_map_pixels_for_latlngs. */
+MLN_CABI_API mln_status_t   mln_map_pixels_for_latlngs_on_terrain(mln_map_t* map,
+                                                                     const double* latlngs, int count,
+                                                                     double* out_xy) MLN_CABI_NOEXCEPT;
+/** Batch mln_map_latlng_for_pixel_on_terrain. Layout as mln_map_latlngs_for_pixels. */
+MLN_CABI_API mln_status_t   mln_map_latlngs_for_pixels_on_terrain(mln_map_t* map,
+                                                                     const double* xy, int count,
+                                                                     double* out_ll) MLN_CABI_NOEXCEPT;
+/** Screen pixel of a point elevation_m above sea level, for a height you already know (a flight
+ *  altitude, or a height from mln_map_get_terrain_elevation plus an offset). */
+MLN_CABI_API void            mln_map_pixel_for_latlng_at_elevation(mln_map_t* map,
+                                                                     double lat, double lon,
+                                                                     double elevation_m,
+                                                                     double* out_x, double* out_y) MLN_CABI_NOEXCEPT;
+/** Location where a screen pixel's line of sight crosses the plane elevation_m above sea level. */
+MLN_CABI_API void            mln_map_latlng_for_pixel_at_elevation(mln_map_t* map,
+                                                                     double x, double y,
+                                                                     double elevation_m,
+                                                                     double* out_lat, double* out_lon) MLN_CABI_NOEXCEPT;
+/** Location under a screen pixel on the plane the camera's centre sits on (see
+ *  mln_map_get_center_altitude: sea level until a gesture or the ground clamp lifts it). For code
+ *  that turns a screen point into a camera centre: a centre taken from the terrain pick instead
+ *  lies on the ground in front of that plane and moves the view by about
+ *  (terrain height - centre altitude) * tan(pitch). */
+MLN_CABI_API void            mln_map_latlng_for_pixel_at_center_altitude(mln_map_t* map,
+                                                                           double x, double y,
+                                                                           double* out_lat, double* out_lon) MLN_CABI_NOEXCEPT;
 
 /* ── Offline regions + ambient cache ─────────────────────────────────────────
  *

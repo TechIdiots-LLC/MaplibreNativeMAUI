@@ -625,6 +625,39 @@ public static partial class NativeMethods
     [LibraryImport(Lib, EntryPoint = "mln_map_anchor_center_on_terrain")]
     public static partial MlnStatus MapAnchorCenterOnTerrain(IntPtr map);
 
+    // ── Map – projection onto 3D terrain ────────────────────────────────
+    [LibraryImport(Lib, EntryPoint = "mln_map_get_terrain_elevation")]
+    public static partial int MapGetTerrainElevation(IntPtr map, double lat, double lon,
+        out double outElevationMeters);
+
+    [LibraryImport(Lib, EntryPoint = "mln_map_pixel_for_latlng_on_terrain")]
+    public static partial void MapPixelForLatLngOnTerrain(IntPtr map, double lat, double lon,
+        out double outX, out double outY);
+
+    [LibraryImport(Lib, EntryPoint = "mln_map_latlng_for_pixel_on_terrain")]
+    public static partial void MapLatLngForPixelOnTerrain(IntPtr map, double x, double y,
+        out double outLat, out double outLon);
+
+    [LibraryImport(Lib, EntryPoint = "mln_map_pixels_for_latlngs_on_terrain")]
+    public static unsafe partial MlnStatus MapPixelsForLatLngsOnTerrain(IntPtr map,
+        double* latLngs, int count, double* outXy);
+
+    [LibraryImport(Lib, EntryPoint = "mln_map_latlngs_for_pixels_on_terrain")]
+    public static unsafe partial MlnStatus MapLatLngsForPixelsOnTerrain(IntPtr map,
+        double* xy, int count, double* outLatLngs);
+
+    [LibraryImport(Lib, EntryPoint = "mln_map_pixel_for_latlng_at_elevation")]
+    public static partial void MapPixelForLatLngAtElevation(IntPtr map, double lat, double lon,
+        double elevationMeters, out double outX, out double outY);
+
+    [LibraryImport(Lib, EntryPoint = "mln_map_latlng_for_pixel_at_elevation")]
+    public static partial void MapLatLngForPixelAtElevation(IntPtr map, double x, double y,
+        double elevationMeters, out double outLat, out double outLon);
+
+    [LibraryImport(Lib, EntryPoint = "mln_map_latlng_for_pixel_at_center_altitude")]
+    public static partial void MapLatLngForPixelAtCenterAltitude(IntPtr map, double x, double y,
+        out double outLat, out double outLon);
+
     // ── Map – camera for point set (Tier 2) ───────────────────────────────────
     [LibraryImport(Lib, EntryPoint = "mln_map_camera_for_latlngs")]
     public static unsafe partial MlnStatus MapCameraForLatLngs(IntPtr map,

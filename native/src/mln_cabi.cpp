@@ -1637,6 +1637,115 @@ mln_status_t mln_map_anchor_center_on_terrain(mln_map_t* map) noexcept {
     } catch (const std::exception& e) { return set_native_error(e); }
 }
 
+/* ─── Projection onto 3D terrain ────────────────────────────────────────────── */
+
+int mln_map_get_terrain_elevation(mln_map_t* map, double lat, double lon,
+                                  double* out_elevation_m) noexcept {
+    if (!map || !out_elevation_m) return 0;
+    try {
+        auto& m = *map_ptr(map)->map;
+        // The height index keys DEM tiles by their unwrapped x, and near the antimeridian the
+        // drawn tiles have wrap != 0: look up the copy of the location nearest the centre, as
+        // Map::pixelForLatLngOnTerrain does.
+        mln::LatLng ll = mln::LatLng{ lat, lon }.wrapped();
+        if (const auto center = m.getCameraOptions().center) ll.unwrapForShortestPath(*center);
+        auto elevation = m.getTerrainElevation(ll);
+        if (!elevation) elevation = m.getTerrainElevation(mln::LatLng{ lat, lon }.wrapped());
+        if (!elevation) return 0;
+        *out_elevation_m = *elevation;
+        return 1;
+    } catch (const std::exception&) { return 0; }
+}
+
+void mln_map_pixel_for_latlng_on_terrain(mln_map_t* map, double lat, double lon,
+                                         double* out_x, double* out_y) noexcept {
+    if (!map || !out_x || !out_y) return;
+    try {
+        const auto sc = map_ptr(map)->map->pixelForLatLngOnTerrain(mln::LatLng{ lat, lon });
+        *out_x = sc.x;
+        *out_y = sc.y;
+    } catch (const std::exception&) {}
+}
+
+void mln_map_latlng_for_pixel_on_terrain(mln_map_t* map, double x, double y,
+                                         double* out_lat, double* out_lon) noexcept {
+    if (!map || !out_lat || !out_lon) return;
+    try {
+        const auto ll = map_ptr(map)->map->latLngForPixelOnTerrain(mln::ScreenCoordinate{ x, y }).wrapped();
+        *out_lat = ll.latitude();
+        *out_lon = ll.longitude();
+    } catch (const std::exception&) {}
+}
+
+mln_status_t mln_map_pixels_for_latlngs_on_terrain(mln_map_t* map,
+                                                   const double* latlngs, int count,
+                                                   double* out_xy) noexcept {
+    if (!map || !latlngs || !out_xy || count < 0)
+        return set_error(MLN_INVALID_ARG, "mln_map_pixels_for_latlngs_on_terrain: null arg");
+    try {
+        std::vector<mln::LatLng> pts;
+        pts.reserve(static_cast<size_t>(count));
+        for (int i = 0; i < count; ++i)
+            pts.emplace_back(latlngs[i * 2], latlngs[i * 2 + 1]);
+        const auto pixels = map_ptr(map)->map->pixelsForLatLngsOnTerrain(pts);
+        for (size_t i = 0; i < pixels.size(); ++i) {
+            out_xy[i * 2]     = pixels[i].x;
+            out_xy[i * 2 + 1] = pixels[i].y;
+        }
+        return MLN_OK;
+    } catch (const std::exception& e) { return set_native_error(e); }
+}
+
+mln_status_t mln_map_latlngs_for_pixels_on_terrain(mln_map_t* map,
+                                                   const double* xy, int count,
+                                                   double* out_ll) noexcept {
+    if (!map || !xy || !out_ll || count < 0)
+        return set_error(MLN_INVALID_ARG, "mln_map_latlngs_for_pixels_on_terrain: null arg");
+    try {
+        std::vector<mln::ScreenCoordinate> pts;
+        pts.reserve(static_cast<size_t>(count));
+        for (int i = 0; i < count; ++i)
+            pts.emplace_back(xy[i * 2], xy[i * 2 + 1]);
+        const auto latlngs = map_ptr(map)->map->latLngsForPixelsOnTerrain(pts);
+        for (size_t i = 0; i < latlngs.size(); ++i) {
+            const auto ll = latlngs[i].wrapped();
+            out_ll[i * 2]     = ll.latitude();
+            out_ll[i * 2 + 1] = ll.longitude();
+        }
+        return MLN_OK;
+    } catch (const std::exception& e) { return set_native_error(e); }
+}
+
+void mln_map_pixel_for_latlng_at_elevation(mln_map_t* map, double lat, double lon, double elevation_m,
+                                           double* out_x, double* out_y) noexcept {
+    if (!map || !out_x || !out_y) return;
+    try {
+        const auto sc = map_ptr(map)->map->pixelForLatLng(mln::LatLng{ lat, lon }, elevation_m);
+        *out_x = sc.x;
+        *out_y = sc.y;
+    } catch (const std::exception&) {}
+}
+
+void mln_map_latlng_for_pixel_at_elevation(mln_map_t* map, double x, double y, double elevation_m,
+                                           double* out_lat, double* out_lon) noexcept {
+    if (!map || !out_lat || !out_lon) return;
+    try {
+        const auto ll = map_ptr(map)->map->latLngForPixel(mln::ScreenCoordinate{ x, y }, elevation_m).wrapped();
+        *out_lat = ll.latitude();
+        *out_lon = ll.longitude();
+    } catch (const std::exception&) {}
+}
+
+void mln_map_latlng_for_pixel_at_center_altitude(mln_map_t* map, double x, double y,
+                                                 double* out_lat, double* out_lon) noexcept {
+    if (!map || !out_lat || !out_lon) return;
+    try {
+        const auto ll = map_ptr(map)->map->latLngForPixelAtCenterAltitude(mln::ScreenCoordinate{ x, y }).wrapped();
+        *out_lat = ll.latitude();
+        *out_lon = ll.longitude();
+    } catch (const std::exception&) {}
+}
+
 /* ─── Gesture helpers ───────────────────────────────────────────────────────── */
 
 mln_status_t mln_map_set_gesture_in_progress(mln_map_t* map, int in_progress) noexcept {

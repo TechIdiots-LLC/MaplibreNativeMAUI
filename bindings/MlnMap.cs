@@ -425,6 +425,76 @@ public sealed class MlnMap : IDisposable
     public void AnchorCenterOnTerrain()
         => NativeMethods.MapAnchorCenterOnTerrain(Handle);
 
+    // ── Projection onto 3D terrain ───────────────────────────────────────────
+    // Answered from the map's own copy of the loaded terrain heights, without waiting on a frame.
+    // Without terrain, or where no DEM tile has loaded yet, each falls back to its sea-level
+    // counterpart (PixelForLatLng, LatLngForPixel, ...).
+
+    /// <summary>
+    /// Terrain height in metres above sea level at a location, exaggeration applied as the
+    /// terrain is drawn; <c>null</c> without terrain or where no DEM tile covers it yet.
+    /// </summary>
+    public double? GetTerrainElevation(double lat, double lon)
+        => NativeMethods.MapGetTerrainElevation(Handle, lat, lon, out var elevation) != 0
+            ? elevation : null;
+
+    /// <summary>
+    /// Screen pixel of the terrain surface at a location: where a marker or overlay sits on
+    /// the ground it marks. <see cref="PixelForLatLng"/> answers at sea level.
+    /// </summary>
+    public (double X, double Y) PixelForLatLngOnTerrain(double lat, double lon)
+    {
+        NativeMethods.MapPixelForLatLngOnTerrain(Handle, lat, lon, out var x, out var y);
+        return (x, y);
+    }
+
+    /// <summary>
+    /// Location of the terrain surface under a screen pixel, the nearest along its line of
+    /// sight (a ridge in front wins): what a tap should report. To turn a pixel into a camera
+    /// centre use <see cref="LatLngForPixelAtCenterAltitude"/>.
+    /// </summary>
+    public (double Lat, double Lon) LatLngForPixelOnTerrain(double x, double y)
+    {
+        NativeMethods.MapLatLngForPixelOnTerrain(Handle, x, y, out var lat, out var lon);
+        return (lat, lon);
+    }
+
+    public unsafe (double X, double Y)[] PixelsForLatLngsOnTerrain(
+        IReadOnlyList<(double Lat, double Lon)> points)
+        => ProjectBatch(points, &NativeMethods.MapPixelsForLatLngsOnTerrain);
+
+    public unsafe (double Lat, double Lon)[] LatLngsForPixelsOnTerrain(
+        IReadOnlyList<(double X, double Y)> pixels)
+        => ProjectBatch(pixels, &NativeMethods.MapLatLngsForPixelsOnTerrain);
+
+    /// <summary>Screen pixel of a point <paramref name="elevationMeters"/> above sea level.</summary>
+    public (double X, double Y) PixelForLatLngAtElevation(double lat, double lon, double elevationMeters)
+    {
+        NativeMethods.MapPixelForLatLngAtElevation(Handle, lat, lon, elevationMeters, out var x, out var y);
+        return (x, y);
+    }
+
+    /// <summary>
+    /// Location where a screen pixel's line of sight crosses the plane
+    /// <paramref name="elevationMeters"/> above sea level.
+    /// </summary>
+    public (double Lat, double Lon) LatLngForPixelAtElevation(double x, double y, double elevationMeters)
+    {
+        NativeMethods.MapLatLngForPixelAtElevation(Handle, x, y, elevationMeters, out var lat, out var lon);
+        return (lat, lon);
+    }
+
+    /// <summary>
+    /// Location under a screen pixel on the plane the camera's centre sits on
+    /// (<see cref="CenterAltitude"/>). For code that turns a screen point into a camera centre:
+    /// one taken from the terrain pick lies on the ground in front of that plane and moves the view.
+    /// </summary>
+    public (double Lat, double Lon) LatLngForPixelAtCenterAltitude(double x, double y)
+    {
+        NativeMethods.MapLatLngForPixelAtCenterAltitude(Handle, x, y, out var lat, out var lon);
+        return (lat, lon);
+    }
+
     // ── Tier 2 – camera for point set ────────────────────────────────────────
     public unsafe CameraResult CameraForLatLngs(
         IReadOnlyList<(double Lat, double Lon)> points,
@@ -450,37 +520,27 @@ public sealed class MlnMap : IDisposable
     // ── Tier 2 – batch projection ─────────────────────────────────────────────
     public unsafe (double X, double Y)[] PixelsForLatLngs(
         IReadOnlyList<(double Lat, double Lon)> points)
-    {
-        var flat = new double[points.Count * 2];
-        for (int i = 0; i < points.Count; i++)
-        {
-            flat[i * 2]     = points[i].Lat;
-            flat[i * 2 + 1] = points[i].Lon;
-        }
-        var outXy = new double[points.Count * 2];
-        fixed (double* inPtr = flat, outPtr = outXy)
-            NativeMethods.MapPixelsForLatLngs(Handle, inPtr, points.Count, outPtr);
-        var result = new (double X, double Y)[points.Count];
-        for (int i = 0; i < points.Count; i++)
-            result[i] = (outXy[i * 2], outXy[i * 2 + 1]);
-        return result;
-    }
+        => ProjectBatch(points, &NativeMethods.MapPixelsForLatLngs);
 
     public unsafe (double Lat, double Lon)[] LatLngsForPixels(
         IReadOnlyList<(double X, double Y)> pixels)
+        => ProjectBatch(pixels, &NativeMethods.MapLatLngsForPixels);
+
+    // Flattens the pairs to [a0, b0, a1, b1, ...], runs one batch projection over them and pairs
+    // the output back up. Every batch call in the C ABI shares that layout.
+    private unsafe (double, double)[] ProjectBatch(
+        IReadOnlyList<(double, double)> input,
+        delegate*<IntPtr, double*, int, double*, MlnStatus> project)
     {
-        var flat = new double[pixels.Count * 2];
-        for (int i = 0; i < pixels.Count; i++)
-        {
-            flat[i * 2]     = pixels[i].X;
-            flat[i * 2 + 1] = pixels[i].Y;
-        }
-        var outLl = new double[pixels.Count * 2];
-        fixed (double* inPtr = flat, outPtr = outLl)
-            NativeMethods.MapLatLngsForPixels(Handle, inPtr, pixels.Count, outPtr);
-        var result = new (double Lat, double Lon)[pixels.Count];
-        for (int i = 0; i < pixels.Count; i++)
-            result[i] = (outLl[i * 2], outLl[i * 2 + 1]);
+        var flat = new double[input.Count * 2];
+        for (int i = 0; i < input.Count; i++)
+            (flat[i * 2], flat[i * 2 + 1]) = input[i];
+        var output = new double[input.Count * 2];
+        fixed (double* inPtr = flat, outPtr = output)
+            project(Handle, inPtr, input.Count, outPtr);
+        var result = new (double, double)[input.Count];
+        for (int i = 0; i < input.Count; i++)
+            result[i] = (output[i * 2], output[i * 2 + 1]);
         return result;
     }
 
