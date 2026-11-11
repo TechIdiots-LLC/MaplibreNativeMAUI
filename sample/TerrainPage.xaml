@@ -69,6 +69,11 @@
 
                 <Label x:Name="StatusLabel" FontSize="12" TextColor="Gray" Text="Terrain: off" />
 
+                <Label Text="Tap the map:" FontAttributes="Bold" />
+                <Label TextColor="Gray" FontSize="12" Text=
+                    "With terrain on, a tap reports the ground under the finger: the nearest surface along its line of sight. The camera-centre plane pick is what camera code uses to turn a screen point into a centre; tilted over high ground it lands well behind the tapped spot." />
+                <Label x:Name="TapLabel" FontSize="12" Text="Tap the map to see where it lands." />
+
             </VerticalStackLayout>
         </ScrollView>
     </Grid>

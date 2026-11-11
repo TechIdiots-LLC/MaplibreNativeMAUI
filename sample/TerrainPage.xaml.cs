@@ -1,4 +1,7 @@
 using MapLibreNative.Maui;
+using MapLibreNative.Maui.Handlers;
+using MapLibreNative.Maui.Handlers.EventArgs;
+using MapLibreNative.Maui.Handlers.Geometry;
 
 namespace MauiSample;
 
@@ -81,7 +84,35 @@ public partial class TerrainPage : ContentPage
             UpdateStatus();
         };
 
+        Map.MapClick += OnMapClick;
+
         StylePicker.SelectedIndex = 0; // triggers OnStyleChanged -> loads the first style
+    }
+
+    // The click's coordinate is the terrain pick. Set it against the pick on the camera
+    // centre's plane, and the ground height there, to show what the terrain pick changes.
+    private void OnMapClick(object? sender, MapClickEventArgs e)
+    {
+        if ((Map.Handler as MapLibreMapHandler)?.Controller is not { } ctrl) return;
+        var ground = e.LatLng;
+        var plane  = ctrl.ScreenPointToLatLngAtCenterAltitude(e.ScreenX, e.ScreenY);
+        double? elevation = ctrl.GetTerrainElevation(ground.Latitude, ground.Longitude);
+        TapLabel.Text =
+            $"Ground: {ground.Latitude:F5}, {ground.Longitude:F5}" +
+            (elevation is { } h ? $" at {h:N0} m" : " (no terrain height here)") +
+            $"\nCamera-centre plane ({ctrl.GetCenterAltitude():N0} m): {plane.Latitude:F5}, {plane.Longitude:F5}," +
+            $" {DistanceMeters(ground, plane):N0} m away";
+    }
+
+    // Great-circle distance, good enough to show the gap between the two picks.
+    private static double DistanceMeters(LatLng a, LatLng b)
+    {
+        const double R = 6_371_000;
+        double rad(double d) => d * Math.PI / 180;
+        double dLat = rad(b.Latitude - a.Latitude), dLon = rad(b.Longitude - a.Longitude);
+        double h = Math.Sin(dLat / 2) * Math.Sin(dLat / 2) +
+                   Math.Cos(rad(a.Latitude)) * Math.Cos(rad(b.Latitude)) * Math.Sin(dLon / 2) * Math.Sin(dLon / 2);
+        return 2 * R * Math.Asin(Math.Sqrt(h));
     }
 
     // Adds the picked raster-dem source (+ a hillshade layer so the relief is visible)
