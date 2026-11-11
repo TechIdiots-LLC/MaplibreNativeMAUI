@@ -763,11 +763,34 @@ public partial class MapLibreMap : StackLayout
         return handler.Controller.QueryRenderedFeaturesInBox(x1, y1, x2, y2, layerIds);
     }
 
-    /// <summary>Converts a geographic coordinate to a screen point (physical pixels).</summary>
+    /// <summary>
+    /// Converts a geographic coordinate to a screen point (physical pixels). With 3D terrain
+    /// the point is where the location is drawn on the terrain surface.
+    /// </summary>
     public (double X, double Y) LatLngToScreenPoint(double latitude, double longitude)
     {
         if (Handler is not MapLibreMapHandler handler) return (0, 0);
         return handler.Controller.LatLngToScreenPoint(latitude, longitude);
+    }
+
+    /// <summary>
+    /// Converts a screen point (physical pixels) to a geographic coordinate. With 3D terrain
+    /// it is the nearest ground along the point's line of sight, as a tap reports it.
+    /// </summary>
+    public LatLng ScreenPointToLatLng(double x, double y)
+    {
+        if (Handler is not MapLibreMapHandler handler) return new LatLng(0, 0);
+        return handler.Controller.ScreenPointToLatLng(x, y);
+    }
+
+    /// <summary>
+    /// Terrain height in metres above sea level at a location, exaggeration applied as the
+    /// terrain is drawn; <see langword="null"/> without terrain or before a DEM tile covers it.
+    /// </summary>
+    public double? GetTerrainElevation(double latitude, double longitude)
+    {
+        if (Handler is not MapLibreMapHandler handler) return null;
+        return handler.Controller.GetTerrainElevation(latitude, longitude);
     }
 
     // ── Visible region ───────────────────────────────────────────────────

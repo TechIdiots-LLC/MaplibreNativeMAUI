@@ -230,9 +230,42 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
     public double GetPitch();
     public LatLng GetCenter();
 
-    // Projection
+    // Projection. With 3D terrain both answer on the terrain surface, as MapLibre's iOS and
+    // Android SDKs do: a point lands where its location is drawn on the ground, and a screen
+    // point gives the nearest ground along its line of sight. Without terrain, or before a DEM
+    // tile covers the spot, they answer at sea level. The batch versions below do the same.
     public (double X, double Y) LatLngToScreenPoint(double latitude, double longitude);
     public LatLng ScreenPointToLatLng(double x, double y);
+
+    /// <summary>
+    /// The location under a screen point on the plane the camera's centre sits on
+    /// (<see cref="GetCenterAltitude"/>), for code that turns a screen point into a camera
+    /// centre. <see cref="ScreenPointToLatLng"/> answers on the terrain in front of that plane,
+    /// and a centre taken from it moves the view.
+    /// </summary>
+    public LatLng ScreenPointToLatLngAtCenterAltitude(double x, double y);
+
+    /// <summary>
+    /// Terrain height in metres above sea level at a location, exaggeration applied as the
+    /// terrain is drawn; <see langword="null"/> without terrain or before a DEM tile covers it.
+    /// </summary>
+    public double? GetTerrainElevation(double latitude, double longitude);
+
+    /// <summary>
+    /// The camera centre's altitude in metres above sea level: 0 unless a gesture over terrain,
+    /// <see cref="CenterClampedToGround"/> or <see cref="SetCenterAltitudeKeepingView"/> raised it.
+    /// A centre and zoom describe the same view only at the same centre altitude, so save this
+    /// with a camera and restore it with <see cref="SetCenterAltitudeKeepingView"/> first.
+    /// </summary>
+    public double GetCenterAltitude();
+
+    /// <summary>
+    /// Moves the centre along the line of sight to <paramref name="altitudeMeters"/> without
+    /// moving the camera (0 is sea level). Returns <see langword="false"/>, changing nothing,
+    /// when it is already there, at a near-grazing pitch, where the zoom limits or bounds would
+    /// cut the move short, or before the map exists.
+    /// </summary>
+    public bool SetCenterAltitudeKeepingView(double altitudeMeters);
 
     // Feature queries
     public string? QueryRenderedFeaturesAtPoint(double x, double y, string? layerIds = null);

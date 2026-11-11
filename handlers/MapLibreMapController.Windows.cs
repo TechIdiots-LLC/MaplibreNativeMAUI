@@ -1306,14 +1306,29 @@ public class MapLibreMapController : IMapLibreMapController
     }
 
     public (double X, double Y) LatLngToScreenPoint(double latitude, double longitude)
-        => _map?.PixelForLatLng(latitude, longitude) ?? (0, 0);
+        => _map?.PixelForLatLngOnTerrain(latitude, longitude) ?? (0, 0);
 
     public LatLng ScreenPointToLatLng(double x, double y)
     {
         if (_map == null) return new LatLng(0, 0);
-        var (lat, lon) = _map.LatLngForPixel(x, y);
+        var (lat, lon) = _map.LatLngForPixelOnTerrain(x, y);
         return new LatLng(lat, lon);
     }
+
+    public LatLng ScreenPointToLatLngAtCenterAltitude(double x, double y)
+    {
+        if (_map == null) return new LatLng(0, 0);
+        var (lat, lon) = _map.LatLngForPixelAtCenterAltitude(x, y);
+        return new LatLng(lat, lon);
+    }
+
+    public double? GetTerrainElevation(double latitude, double longitude)
+        => _map?.GetTerrainElevation(latitude, longitude);
+
+    public double GetCenterAltitude() => _map?.CenterAltitude ?? 0;
+
+    public bool SetCenterAltitudeKeepingView(double altitudeMeters)
+        => _map?.SetCenterAltitudeKeepingView(altitudeMeters) ?? false;
 
     public string? QueryRenderedFeaturesAtPoint(double x, double y, string? layerIds = null)
         => _map?.QueryRenderedFeaturesAtPoint(x, y, layerIds);
@@ -1440,10 +1455,10 @@ public class MapLibreMapController : IMapLibreMapController
         => _map?.CameraForLatLngs(points, padTop, padLeft, padBottom, padRight) ?? default;
 
     public (double X, double Y)[] PixelsForLatLngs(IReadOnlyList<(double Lat, double Lon)> points)
-        => _map?.PixelsForLatLngs(points) ?? [];
+        => _map?.PixelsForLatLngsOnTerrain(points) ?? [];
 
     public (double Lat, double Lon)[] LatLngsForPixels(IReadOnlyList<(double X, double Y)> pixels)
-        => _map?.LatLngsForPixels(pixels) ?? [];
+        => _map?.LatLngsForPixelsOnTerrain(pixels) ?? [];
 
     // ── Debug overlays ────────────────────────────────────────────────────────────
 

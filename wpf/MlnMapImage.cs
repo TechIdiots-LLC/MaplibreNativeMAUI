@@ -1059,7 +1059,7 @@ public partial class MlnMapImage : Grid
         if (Math.Abs(pos.X - _downPos.X) <= ClickThresholdPx && Math.Abs(pos.Y - _downPos.Y) <= ClickThresholdPx)
         {
             var p = ToPhysical(pos);
-            var ll = _map.LatLngForPixel(p.X, p.Y);
+            var ll = _map.LatLngForPixelOnTerrain(p.X, p.Y);
             MapClicked?.Invoke(this, new MlnMapClickEventArgs((int)p.X, (int)p.Y, ll.Lat, ll.Lon));
         }
         e.Handled = true;
