@@ -55,7 +55,11 @@ target_sources(mln-cabi PRIVATE
 # ── Platform-specific frontend ────────────────────────────────────────────────
 if(WIN32)
     target_sources(mln-cabi PRIVATE src/platform_frontend_windows.cpp)
-    target_compile_options(mln-cabi PRIVATE /wd4267)
+    # /EHsc: mln-cabi catches exceptions from mbgl-core at every C entry point. maplibre-native
+    # gives its own targets /EHsc through mbgl-compiler-options, which this target does not
+    # link, and CI's -DCMAKE_CXX_FLAGS=/wd4267 replaces CMake's default flags, /EHsc with them:
+    # without it MSVC warns C4530 and skips destroying locals on the way to those catches.
+    target_compile_options(mln-cabi PRIVATE /EHsc /wd4267)
     target_include_directories(mln-cabi PRIVATE "${MAPLIBRE_NATIVE_DIR}/src")
     # Vulkan build: the offscreen frontend reuses mln::vulkan::HeadlessBackend,
     # whose header lives in platform/default/include (added to mbgl-core by
