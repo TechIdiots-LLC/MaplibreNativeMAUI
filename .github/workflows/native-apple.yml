@@ -68,10 +68,11 @@ jobs:
           CLANGXX=$(xcrun -f clang++)
           for ARCH in x86_64 arm64; do
             TRIPLE="${ARCH}-apple-ios15.0-macabi"
-            # -iframework/-I add the iOSSupport headers; -Wno-overriding-t-option
-            # suppresses the conflict when maplibre-native's macos.cmake injects
-            # -mmacosx-version-min (the -target triple always takes precedence).
-            EXTRA_FLAGS="-iframework $IOSUPPORT_FWKS -I$IOSUPPORT_INC -Wno-overriding-t-option"
+            # -iframework/-I add the iOSSupport headers. -Wno-overriding-option
+            # (-Wno-overriding-t-option on older clang) silences the conflict with the
+            # -mmacosx-version-min=14.3 maplibre-native adds when no deployment target
+            # is set (#4661): the -target triple wins, but -Werror fails on the warning.
+            EXTRA_FLAGS="-iframework $IOSUPPORT_FWKS -I$IOSUPPORT_INC -Wno-overriding-option -Wno-overriding-t-option"
             # CMAKE_<LANG>_COMPILER_TARGET is the canonical CMake way to set the
             # clang -target triple; it is inserted first in every compile command
             # and cannot be overridden by subdirectory flag manipulation, which

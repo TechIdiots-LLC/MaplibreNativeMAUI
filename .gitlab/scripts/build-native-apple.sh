@@ -46,10 +46,12 @@ case "$TARGET" in
     # tagged macCatalyst rather than plain macOS (else the app link fails with "built for
     # macOS"). CMAKE_<LANG>_COMPILER_TARGET goes first on every compile line, where subdirectory
     # flag changes cannot override it. The iOSSupport paths provide UIKit and friends;
-    # -Wno-overriding-t-option silences the -mmacosx-version-min that maplibre-native's
-    # macOS setup adds (the -target triple wins).
+    # -Wno-overriding-option silences the -mmacosx-version-min=14.3 that maplibre-native adds
+    # on Darwin when no deployment target is set (#4661): the -target triple wins, but under
+    # -Werror the warning fails the build. -Wno-overriding-t-option is its old name, for older
+    # clang; -Wno-unknown-warning-option covers whichever name a clang does not know.
     SDK=$(xcrun --sdk macosx --show-sdk-path)
-    FLAGS="-iframework $SDK/System/iOSSupport/System/Library/Frameworks -I$SDK/System/iOSSupport/usr/include -Wno-overriding-t-option"
+    FLAGS="-iframework $SDK/System/iOSSupport/System/Library/Frameworks -I$SDK/System/iOSSupport/usr/include -Wno-overriding-option -Wno-overriding-t-option"
     CLANG=$(xcrun -f clang)
     CLANGXX=$(xcrun -f clang++)
     SLICES=()

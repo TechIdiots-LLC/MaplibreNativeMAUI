@@ -79,7 +79,7 @@ jobs:
           CLANGXX=$(xcrun -f clang++)
           for ARCH in x86_64 arm64; do
             TRIPLE="${ARCH}-apple-ios15.0-macabi"
-            EXTRA_FLAGS="-iframework $IOSUPPORT_FWKS -I$IOSUPPORT_INC -Wno-overriding-t-option"
+            EXTRA_FLAGS="-iframework $IOSUPPORT_FWKS -I$IOSUPPORT_INC -Wno-overriding-option -Wno-overriding-t-option"
             cmake -B "build-${ARCH}" \
               -G Ninja \
               -DCMAKE_SYSTEM_NAME=Darwin \
