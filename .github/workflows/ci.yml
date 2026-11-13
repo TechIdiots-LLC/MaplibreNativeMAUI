@@ -161,6 +161,21 @@ jobs:
             -p:Version=${{ env.CI_VER }} \
             -o artifacts/
 
+      # As release.yml does: nuget.org rejects any package over 250 MB with a bare
+      # 413, and this catches it before a release gets as far as the push.
+      - name: Report package sizes
+        shell: bash
+        run: |
+          LIMIT=$((250 * 1024 * 1024))
+          for pkg in artifacts/*.nupkg; do
+            SIZE=$(stat -c%s "$pkg" 2>/dev/null || stat -f%z "$pkg")
+            echo "$(basename "$pkg"): $((SIZE / 1048576)) MiB"
+            if [ "$SIZE" -gt "$LIMIT" ]; then
+              echo "::error::$(basename "$pkg") is over nuget.org's 250 MB limit and cannot be pushed"
+              exit 1
+            fi
+          done
+
       - name: Upload NuGet artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -510,6 +525,19 @@ jobs:
             fi
           done
           exit $fail
+
+      - name: Report package sizes
+        shell: bash
+        run: |
+          LIMIT=$((250 * 1024 * 1024))
+          for pkg in artifacts/*.nupkg; do
+            SIZE=$(stat -c%s "$pkg" 2>/dev/null || stat -f%z "$pkg")
+            echo "$(basename "$pkg"): $((SIZE / 1048576)) MiB"
+            if [ "$SIZE" -gt "$LIMIT" ]; then
+              echo "::error::$(basename "$pkg") is over nuget.org's 250 MB limit and cannot be pushed"
+              exit 1
+            fi
+          done
 
       - name: Upload NuGet Vulkan artifact
         uses: actions/upload-artifact@v7
