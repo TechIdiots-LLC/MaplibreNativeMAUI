@@ -81,7 +81,7 @@ native-android:
         RENDERER: [opengl, vulkan]
   # The NDK zip (~650 MB), so each job doesn't download it again
   cache:
-    key: android-ndk-r27
+    key: android-ndk-r28c
     paths:
       - .cache/
   before_script:

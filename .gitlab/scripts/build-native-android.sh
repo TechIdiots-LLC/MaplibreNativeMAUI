@@ -5,14 +5,15 @@
 #   build-native-android.sh <arm64-v8a|armeabi-v7a|x86_64> <opengl|vulkan>
 #
 # Needs cmake (3.25+), ninja, python3, curl and unzip. ANDROID_NDK_ROOT may point at an NDK
-# 27.0.12077973; without it the NDK zip is downloaded into .cache/ (which CI caches) and
-# unpacked under /tmp. Run from the repository root, with the submodules checked out.
+# 28.2.13676358 (r28c, maplibre-native's ndkVersion); without it the NDK zip is downloaded into
+# .cache/ (which CI caches) and unpacked under /tmp. Run from the repository root, with the
+# submodules checked out.
 set -euo pipefail
 
 ABI=${1:?ABI (arm64-v8a, armeabi-v7a or x86_64)}
 RENDERER=${2:?renderer (opengl or vulkan)}
-NDK_RELEASE=r27
-NDK_REVISION=27.0.12077973
+NDK_RELEASE=r28c
+NDK_REVISION=28.2.13676358
 BUILD_DIR=build/android-$ABI-$RENDERER
 OUT=native-out/android-$ABI-$RENDERER
 
