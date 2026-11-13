@@ -18,7 +18,7 @@ env:
 jobs:
   version-check:
     name: Check version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     outputs:
       version:   ${{ steps.check.outputs.version }}
       published: ${{ steps.check.outputs.published }}
@@ -85,11 +85,14 @@ jobs:
   # ── NuGet packaging ───────────────────────────────────────────────────────
   pack:
     name: Pack NuGet
-    runs-on: macos-latest
+    runs-on: macos-26
     needs: [version-check, build-windows, build-android, build-apple]
     if: needs.version-check.outputs.published == 'false'
 
     steps:
+      - name: Select Xcode 26.5
+        run: sudo xcode-select -s /Applications/Xcode_26.5.app
+
       - uses: actions/checkout@v4
 
       - name: Set up .NET 8 and 9 SDKs
@@ -197,11 +200,14 @@ jobs:
   # Windows-less one.
   pack-mobile:
     name: Pack NuGet (mobile feed)
-    runs-on: macos-latest
+    runs-on: macos-26
     needs: [version-check, build-android, build-apple]
     if: needs.version-check.outputs.published == 'false'
 
     steps:
+      - name: Select Xcode 26.5
+        run: sudo xcode-select -s /Applications/Xcode_26.5.app
+
       - uses: actions/checkout@v4
 
       - name: Set up .NET 8 and 9 SDKs
@@ -545,11 +551,14 @@ jobs:
   # ── Vulkan NuGet packaging ────────────────────────────────────────────────
   pack-vulkan:
     name: Pack Vulkan NuGet
-    runs-on: macos-latest
+    runs-on: macos-26
     needs: [version-check, build-windows-vulkan, build-android-vulkan, build-apple-vulkan]
     if: needs.version-check.outputs.published == 'false'
 
     steps:
+      - name: Select Xcode 26.5
+        run: sudo xcode-select -s /Applications/Xcode_26.5.app
+
       - uses: actions/checkout@v4
 
       - name: Set up .NET 8 and 9 SDKs
@@ -639,7 +648,7 @@ jobs:
   # ── GitHub Release ────────────────────────────────────────────────────────
   release:
     name: Publish GitHub Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs: [version-check, pack, pack-wpf, pack-vulkan, samples-mobile]
     if: needs.version-check.outputs.published == 'false'
     environment: release

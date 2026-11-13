@@ -20,7 +20,7 @@ env:
 jobs:
   build-docs:
     name: Build documentation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v4
@@ -44,7 +44,7 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     needs: build-docs
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

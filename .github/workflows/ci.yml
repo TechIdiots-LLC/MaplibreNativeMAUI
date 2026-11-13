@@ -20,7 +20,7 @@ jobs:
   # ── Read version ──────────────────────────────────────────────────────────
   version:
     name: Read version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     outputs:
       version: ${{ steps.read.outputs.version }}
     steps:
@@ -67,12 +67,15 @@ jobs:
   # ── NuGet pack (verify packability, no publish) ───────────────────────────
   pack:
     name: Pack NuGet
-    runs-on: macos-latest
+    runs-on: macos-26
     needs: [version, build-windows, build-android, build-apple]
     outputs:
       ci_ver: ${{ steps.ci_ver.outputs.ci_ver }}
 
     steps:
+      - name: Select Xcode 26.5
+        run: sudo xcode-select -s /Applications/Xcode_26.5.app
+
       - uses: actions/checkout@v4
 
       - name: Set up .NET 8 and 9 SDKs
@@ -415,10 +418,13 @@ jobs:
   # ── Pack Maui.MapLibre.Native.Vulkan NuGet ────────────────────────────────
   pack-vulkan:
     name: Pack NuGet (Vulkan)
-    runs-on: macos-latest
+    runs-on: macos-26
     needs: [version, build-windows-vulkan, build-android-vulkan, build-apple-vulkan]
 
     steps:
+      - name: Select Xcode 26.5
+        run: sudo xcode-select -s /Applications/Xcode_26.5.app
+
       - uses: actions/checkout@v4
         with:
           submodules: false

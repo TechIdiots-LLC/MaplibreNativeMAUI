@@ -16,7 +16,7 @@ jobs:
         arch: [x64, arm64]
         include:
           - arch: x64
-            runs-on: windows-latest
+            runs-on: windows-2022
             vcpkg-triplet: x64-windows
             msvc-arch: x64
             vs-arch: x64
