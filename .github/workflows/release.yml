@@ -525,11 +525,21 @@ jobs:
             -p:EnableWindowsTargeting=true \
             -p:UseLocalPackages=true
 
+      # Zipped here with ditto, which keeps the executable bit and symlinks that
+      # upload-artifact drops from a bare .app, and named per platform: both
+      # builds make a MauiSample.app.
+      - name: Zip iOS simulator app
+        run: |
+          APP=$(find sample/bin/Release/net9.0-ios/iossimulator-arm64 -name '*.app' -type d -prune | head -1)
+          [ -n "$APP" ] || { echo "::error::No .app under sample/bin/Release/net9.0-ios/iossimulator-arm64"; exit 1; }
+          mkdir -p sample-zips
+          ditto -c -k --keepParent "$APP" sample-zips/MauiSample-ios-simulator-arm64.zip
+
       - name: Upload iOS simulator app
         uses: actions/upload-artifact@v7
         with:
           name: sample-ios-simulator
-          path: sample/bin/Release/net9.0-ios/iossimulator-arm64/**/*.app
+          path: sample-zips/MauiSample-ios-simulator-*.zip
           retention-days: 7
 
       - name: Build MauiSample (macCatalyst)
@@ -541,11 +551,25 @@ jobs:
             -p:EnableWindowsTargeting=true \
             -p:UseLocalPackages=true
 
+      # One app per architecture, under maccatalyst-arm64/ and maccatalyst-x64/
+      - name: Zip macCatalyst apps
+        run: |
+          found=0
+          mkdir -p sample-zips
+          for dir in sample/bin/Release/net9.0-maccatalyst/maccatalyst-*; do
+            APP=$(find "$dir" -name '*.app' -type d -prune | head -1)
+            [ -n "$APP" ] || continue
+            ditto -c -k --keepParent "$APP" "sample-zips/MauiSample-$(basename "$dir").zip"
+            found=1
+          done
+          [ "$found" = 1 ] || { echo "::error::No .app under sample/bin/Release/net9.0-maccatalyst"; exit 1; }
+          ls -l sample-zips
+
       - name: Upload macCatalyst app
         uses: actions/upload-artifact@v7
         with:
           name: sample-maccatalyst
-          path: sample/bin/Release/net9.0-maccatalyst/**/*.app
+          path: sample-zips/MauiSample-maccatalyst-*.zip
           retention-days: 7
 
   # ── Vulkan NuGet packaging ────────────────────────────────────────────────
@@ -682,25 +706,13 @@ jobs:
           name: mobile-samples
           path: artifacts/
 
-      - name: Download iOS simulator app
+      # Already zipped by samples-mobile
+      - name: Download iOS simulator and macCatalyst apps
         uses: actions/download-artifact@v8
         with:
-          name: sample-ios-simulator
-          path: artifacts/ios-simulator/
-
-      - name: Download macCatalyst app
-        uses: actions/download-artifact@v8
-        with:
-          name: sample-maccatalyst
-          path: artifacts/maccatalyst/
-
-      - name: Zip iOS simulator and macCatalyst apps
-        run: |
-          for app in artifacts/ios-simulator/**/*.app artifacts/maccatalyst/**/*.app; do
-            [ -d "$app" ] || continue
-            name=$(basename "$app" .app)
-            zip -r "artifacts/${name}.zip" "$app"
-          done
+          pattern: sample-*
+          merge-multiple: true
+          path: artifacts/
 
       - name: Extract changelog for version
         run: |
