@@ -20,11 +20,17 @@ jobs:
             vcpkg-triplet: x64-windows
             msvc-arch: x64
             vs-arch: x64
+            msvc-toolset: ""
           - arch: arm64
             runs-on: windows-11-arm
             vcpkg-triplet: arm64-windows
             msvc-arch: arm64
             vs-arch: ARM64
+            # The image's default toolset, MSVC 14.52 since image 20261111, crashes (C1001) on
+            # maplibre-native's style expression templates. 14.44 (VS 2022) is installed beside
+            # it, vcpkg already builds the dependencies with it (the triplet asks for v143), and
+            # the x64 legs use it on windows-2022.
+            msvc-toolset: "14.44"
 
     steps:
       - name: Enable Git long paths
@@ -38,6 +44,7 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.msvc-arch }}
+          toolset: ${{ matrix.msvc-toolset }}
 
       - name: Get vcpkg commit ID
         id: vcpkg-id
