@@ -647,6 +647,28 @@ jobs:
             -p:_MlnNativeDir=$(pwd)/bindings/native-vulkan/ \
             -o artifacts/
 
+      # As ci.yml does: the arrange step above tolerates missing natives, so check
+      # the Apple ones made it in before the package is published.
+      - name: Verify Vulkan package ships Apple native (parity with base)
+        run: |
+          PKG=$(ls artifacts/MapLibreNative.Maui.Vulkan.*.nupkg | head -1)
+          echo "Inspecting $PKG"
+          CONTENTS=$(unzip -Z1 "$PKG")
+          echo "$CONTENTS"
+          fail=0
+          for entry in \
+            "buildTransitive/MapLibreNative.Maui.Vulkan.targets" \
+            "buildTransitive/native/maccatalyst/libmln-cabi.a" \
+            "buildTransitive/native/ios/libmln-cabi.xcframework/Info.plist"; do
+            if echo "$CONTENTS" | grep -q "$entry"; then
+              echo "OK  $entry"
+            else
+              echo "MISSING  $entry"
+              fail=1
+            fi
+          done
+          exit $fail
+
       # nuget.org rejects any package over 250 MB with a bare 413, so the size
       # is worth seeing in the log before the push step is reached.
       - name: Report package sizes
