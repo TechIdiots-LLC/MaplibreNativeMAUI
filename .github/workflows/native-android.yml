@@ -33,6 +33,9 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # The default also installs the long-retired "tools" package, which sdkmanager no longer finds (exit 1)
+          packages: platform-tools
 
       - name: Install NDK 27
         run: sdkmanager "ndk;27.0.12077973"
