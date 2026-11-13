@@ -9,7 +9,8 @@ env:
 jobs:
   build:
     name: ${{ matrix.name }}
-    runs-on: macos-14
+    # As maplibre-native's iOS builds, with the Xcode the .NET iOS and Mac Catalyst builds use
+    runs-on: macos-26
     strategy:
       fail-fast: false
       matrix:
@@ -42,6 +43,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      - name: Select Xcode 26.5
+        run: sudo xcode-select -s /Applications/Xcode_26.5.app
 
       # Vulkan headers + VMA are vendored by maplibre-native, and mln-cabi is a static
       # archive that uses Vulkan's dynamic dispatch loader — so no Vulkan library is
