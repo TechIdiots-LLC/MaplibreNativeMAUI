@@ -24,7 +24,7 @@ jobs:
       published: ${{ steps.check.outputs.published }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Read VERSION and check GitHub releases
         id: check
@@ -93,10 +93,10 @@ jobs:
       - name: Select Xcode 26.5
         run: sudo xcode-select -s /Applications/Xcode_26.5.app
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up .NET 8 and 9 SDKs
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
@@ -104,7 +104,7 @@ jobs:
             10.0.x
 
       - name: Download all native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: native-*
           path: native-artifacts
@@ -176,7 +176,7 @@ jobs:
           done
 
       - name: Upload NuGet artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nuget-packages
           path: artifacts/*.nupkg
@@ -208,10 +208,10 @@ jobs:
       - name: Select Xcode 26.5
         run: sudo xcode-select -s /Applications/Xcode_26.5.app
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up .NET 8 and 9 SDKs
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
@@ -219,19 +219,19 @@ jobs:
             10.0.x
 
       - name: Download Android native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: native-android-*
           path: native-artifacts
 
       - name: Download Apple native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: native-ios*
           path: native-artifacts
 
       - name: Download macCatalyst native artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: native-maccatalyst
           path: native-artifacts/native-maccatalyst
@@ -289,7 +289,7 @@ jobs:
             -o artifacts/
 
       - name: Upload mobile feed
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mobile-local-feed
           path: artifacts/*.nupkg
@@ -303,10 +303,10 @@ jobs:
     if: needs.version-check.outputs.published == 'false'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up .NET 8 and 9 SDKs
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
@@ -314,13 +314,13 @@ jobs:
             10.0.x
 
       - name: Download Windows native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: native-windows-*
           path: native-artifacts
 
       - name: Download Windows Vulkan native
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: native-mln-windows-x64-vulkan
           path: vulkan-native
@@ -346,7 +346,7 @@ jobs:
             -o artifacts/
 
       - name: Download MAUI NuGet packages (for local feed)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nuget-packages
           path: local-feed
@@ -450,14 +450,14 @@ jobs:
           }
 
       - name: Upload WPF NuGet artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nuget-packages-wpf
           path: artifacts/*.nupkg
           retention-days: 7
 
       - name: Upload Windows samples
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-samples
           path: samples/*.zip
@@ -476,10 +476,10 @@ jobs:
     if: needs.version-check.outputs.published == 'false'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up .NET 8 and 9 SDKs
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
@@ -487,7 +487,7 @@ jobs:
             10.0.x
 
       - name: Download MAUI NuGet packages (for local feed)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: mobile-local-feed
           path: local-feed
@@ -507,7 +507,7 @@ jobs:
             -p:UseLocalPackages=true
 
       - name: Upload Android APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mobile-samples
           path: sample/bin/Release/net9.0-android/*Signed.apk
@@ -526,7 +526,7 @@ jobs:
             -p:UseLocalPackages=true
 
       - name: Upload iOS simulator app
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sample-ios-simulator
           path: sample/bin/Release/net9.0-ios/iossimulator-arm64/**/*.app
@@ -542,7 +542,7 @@ jobs:
             -p:UseLocalPackages=true
 
       - name: Upload macCatalyst app
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sample-maccatalyst
           path: sample/bin/Release/net9.0-maccatalyst/**/*.app
@@ -559,10 +559,10 @@ jobs:
       - name: Select Xcode 26.5
         run: sudo xcode-select -s /Applications/Xcode_26.5.app
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up .NET 8 and 9 SDKs
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
@@ -572,7 +572,7 @@ jobs:
       # Vulkan native artifacts for every platform share the native-mln-*-vulkan
       # naming (Windows/Android/Apple), so one pattern collects them all.
       - name: Download MLN Vulkan native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: native-mln-*
           path: mln-artifacts
@@ -639,7 +639,7 @@ jobs:
           done
 
       - name: Upload Vulkan NuGet artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nuget-packages-vulkan
           path: artifacts/*.nupkg
@@ -654,42 +654,42 @@ jobs:
     environment: release
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up .NET SDK (for nuget push)
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             9.0.x
             10.0.x
 
       - name: Download NuGet packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: nuget-packages*
           merge-multiple: true
           path: artifacts/
 
       - name: Download Windows sample zips
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: windows-samples
           path: artifacts/
 
       - name: Download mobile samples (Android APK)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: mobile-samples
           path: artifacts/
 
       - name: Download iOS simulator app
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: sample-ios-simulator
           path: artifacts/ios-simulator/
 
       - name: Download macCatalyst app
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: sample-maccatalyst
           path: artifacts/maccatalyst/

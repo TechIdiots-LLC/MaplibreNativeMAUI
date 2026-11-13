@@ -30,7 +30,7 @@ jobs:
       - name: Enable Git long paths
         run: git config --global core.longpaths true
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -47,7 +47,7 @@ jobs:
           Add-Content -Path $env:GITHUB_OUTPUT -Value "commit_id=$id"
 
       - name: Cache vcpkg binary cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         continue-on-error: true
         with:
           path: dependencies/maplibre-native/platform/windows/vendor/vcpkg/archives
@@ -83,7 +83,7 @@ jobs:
         run: cmake --build build --target mln-cabi --config Release --parallel
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: native-windows-${{ matrix.arch }}
           path: build/**/mln-cabi.dll
