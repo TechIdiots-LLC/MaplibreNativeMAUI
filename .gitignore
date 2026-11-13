@@ -18,6 +18,8 @@ mono_crash.*
 
 # Native build artifacts (populated by CI workflows; not committed)
 bindings/native/
+# Where .gitlab/scripts/ put the natives they build
+/native-out/
 
 # Build results
 [Dd]ebug/
