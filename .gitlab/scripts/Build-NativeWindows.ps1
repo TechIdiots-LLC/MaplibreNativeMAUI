@@ -103,7 +103,7 @@ for ($attempt = 1; $attempt -le 3; $attempt++) {
         "-DMLN_WITH_OPENGL=$gl" `
         "-DMLN_WITH_EGL=OFF" `
         "-DMLN_WITH_VULKAN=$vk" `
-        "-DCMAKE_CXX_FLAGS=/wd4267"
+        "-DCMAKE_CXX_FLAGS=/EHsc /wd4267"
     if ($LASTEXITCODE -eq 0) { break }
     if ($attempt -eq 3) { exit $LASTEXITCODE }
     Write-Host "Configure failed (exit $LASTEXITCODE); cleaning and retrying"
