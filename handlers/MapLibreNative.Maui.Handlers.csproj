@@ -18,6 +18,14 @@
         <PackageId>MapLibreNative.Maui.Handlers</PackageId>
     </PropertyGroup>
 
+    <!-- The packages are packed on macOS. There the Windows App SDK build tools (1.7.20250829.1,
+         which the net10.0 Windows target brings in) try to expand the referenced MAUI .pri files
+         with makepri.exe, a Windows program, and the pack fails ("Exec format error"). This library
+         has no XAML or other PRI resources, so PRI handling is off when building on another OS. -->
+    <PropertyGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows' And !$([MSBuild]::IsOSPlatform('Windows'))">
+        <AppxGeneratePriEnabled>false</AppxGeneratePriEnabled>
+    </PropertyGroup>
+
     <ItemGroup>
         <PackageReference Include="GeoJSON.Text" Version="1.1.0" />
         <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)"/>
