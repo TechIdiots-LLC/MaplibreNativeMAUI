@@ -416,11 +416,14 @@ jobs:
         shell: bash
         run: |
           DLL=$(find vulkan-native -name mln-cabi.dll | head -1)
+          PDB=$(find vulkan-native -name mln-cabi.pdb | head -1)
           if [ -z "$DLL" ]; then echo "Vulkan mln-cabi.dll not found"; exit 1; fi
           echo "Overlaying Vulkan native: $DLL"
           for app in ConsoleExample WpfExample MauiSample; do
             cp -r "publish/${app}-win-x64" "publish/${app}-vulkan-win-x64"
             cp "$DLL" "publish/${app}-vulkan-win-x64/mln-cabi.dll"
+            # Otherwise the OpenGL build's .pdb stays beside the Vulkan DLL
+            [ -n "$PDB" ] && cp "$PDB" "publish/${app}-vulkan-win-x64/mln-cabi.pdb"
             find "publish/${app}-vulkan-win-x64" -path "*runtimes/win-x64/native/mln-cabi.dll" \
               -exec cp "$DLL" {} \;
           done
