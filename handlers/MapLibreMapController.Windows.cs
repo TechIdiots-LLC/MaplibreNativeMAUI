@@ -1104,15 +1104,8 @@ public class MapLibreMapController : IMapLibreMapController
         if (!string.IsNullOrWhiteSpace(_customAttribution))
             parts.Add(_customAttribution!);
         var attributions = MlnStyle.EnsureMapLibreAttribution(parts);
-        // Strip HTML tags to plain text (attribution strings from OSM are like
-        // "© <a href='...'>OpenStreetMap</a> contributors" — we strip the links for now).
-        var sb = new System.Text.StringBuilder();
-        foreach (var part in attributions)
-        {
-            if (sb.Length > 0) sb.Append(" | ");
-            sb.Append(StripHtmlTags(part));
-        }
-        _attrText = sb.ToString();
+        // Attribution strings are HTML, like "&copy; <a href='...'>OpenStreetMap</a> contributors".
+        _attrText = MlnAttribution.ToPlainText(attributions);
         if (_attrText.Length > 0)
         {
             // Only re-expand the banner when the attribution content actually changed —
@@ -1127,35 +1120,6 @@ public class MapLibreMapController : IMapLibreMapController
             _appliedAttribution = null;
             RefreshAttributionControl();
         }
-    }
-
-    private static string StripHtmlTags(string html)
-    {
-        if (string.IsNullOrEmpty(html)) return html;
-        var sb = new System.Text.StringBuilder(html.Length);
-        bool inTag = false;
-        foreach (char c in html)
-        {
-            if      (c == '<') inTag = true;
-            else if (c == '>') inTag = false;
-            else if (!inTag)   sb.Append(c);
-        }
-        return DecodeHtmlEntities(sb.ToString().Trim());
-    }
-
-    private static string DecodeHtmlEntities(string text)
-    {
-        if (string.IsNullOrEmpty(text) || !text.Contains('&')) return text;
-        return text
-            .Replace("&amp;",   "&")
-            .Replace("&copy;",  "\u00A9")
-            .Replace("&reg;",   "\u00AE")
-            .Replace("&trade;", "\u2122")
-            .Replace("&mdash;", "\u2014")
-            .Replace("&ndash;", "\u2013")
-            .Replace("&nbsp;",  "\u00A0")
-            .Replace("&lt;",    "<")
-            .Replace("&gt;",    ">");
     }
 
     public void SetShowNavigationControls(bool show)

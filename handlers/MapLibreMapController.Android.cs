@@ -8,7 +8,6 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using MapLibreNative.Maui;
 using MapLibreNative.Maui.Handlers.Geometry;
 using Map    = MapLibreNative.Maui.Handlers.Maps.Map;
@@ -1367,72 +1366,18 @@ public class MapLibreMapController : IMapLibreMapController
     private static ISpanned BuildAttributionSpanned(
         System.Collections.Generic.IReadOnlyList<string> parts, bool links)
     {
-        // Parse each part's HTML <a href> tags into URLSpans so links are clickable
-        // (or, with links off, keep only the link text).
-        var sb  = new SpannableStringBuilder();
-        var hrefRe = new Regex(
-            @"<a\b[^>]*?href=[""']?([^""'\s>]+)[""']?[^>]*>(.*?)</a>",
-            RegexOptions.IgnoreCase | RegexOptions.Singleline);
-
-        bool first = true;
-        foreach (var part in parts)
+        // Each link becomes a URLSpan, which LinkMovementMethod opens on a tap; with links
+        // off only its text is kept.
+        var sb = new SpannableStringBuilder();
+        foreach (var seg in MlnAttribution.Parse(parts))
         {
-            if (!first) sb.Append(" | ");
-            first = false;
-
-            int pos = 0;
-            foreach (Match m in hrefRe.Matches(part))
-            {
-                // Plain text before this <a>
-                if (m.Index > pos)
-                    sb.Append(DecodeHtmlEntities(StripHtmlTags(part[pos..m.Index])));
-
-                // Link text with URLSpan
-                string href     = m.Groups[1].Value;
-                string linkText = DecodeHtmlEntities(StripHtmlTags(m.Groups[2].Value));
-                int start = sb.Length();
-                sb.Append(linkText);
-                if (links && Uri.TryCreate(href, UriKind.Absolute, out _))
-                    sb.SetSpan(new Android.Text.Style.URLSpan(href),
-                               start, sb.Length(),
-                               SpanTypes.InclusiveInclusive);
-
-                pos = m.Index + m.Length;
-            }
-            // Remaining text
-            if (pos < part.Length)
-                sb.Append(DecodeHtmlEntities(StripHtmlTags(part[pos..])));
+            int start = sb.Length();
+            sb.Append(seg.Text);
+            if (links && seg.Link != null)
+                sb.SetSpan(new Android.Text.Style.URLSpan(seg.Link.AbsoluteUri),
+                           start, sb.Length(), SpanTypes.ExclusiveExclusive);
         }
         return sb;
-    }
-
-    private static string StripHtmlTags(string html)
-    {
-        if (string.IsNullOrEmpty(html)) return html;
-        var sb2   = new System.Text.StringBuilder(html.Length);
-        bool inTag = false;
-        foreach (char c in html)
-        {
-            if      (c == '<') inTag = true;
-            else if (c == '>') inTag = false;
-            else if (!inTag)   sb2.Append(c);
-        }
-        return sb2.ToString().Trim();
-    }
-
-    private static string DecodeHtmlEntities(string text)
-    {
-        if (string.IsNullOrEmpty(text) || !text.Contains('&')) return text;
-        return text
-            .Replace("&amp;",   "&")
-            .Replace("&lt;",    "<")
-            .Replace("&gt;",    ">")
-            .Replace("&quot;",  "\"")
-            .Replace("&#39;",   "'")
-            .Replace("&nbsp;",  "\u00A0")
-            .Replace("&copy;",  "\u00A9")
-            .Replace("&reg;",   "\u00AE")
-            .Replace("&trade;", "\u2122");
     }
 
     // -- Sources ---------------------------------------------------------------
