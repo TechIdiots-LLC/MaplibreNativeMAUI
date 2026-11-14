@@ -1802,15 +1802,7 @@ public partial class MlnMapImage : Grid
     {
         if (_style == null || _attrTextBlock == null || _attrBorder == null) return;
         var parts = MlnStyle.EnsureMapLibreAttribution(_style.GetSourceAttributions());
-        var sb = new System.Text.StringBuilder();
-        foreach (var part in parts)
-        {
-            var text = StripHtml(part);
-            if (text.Length == 0) continue;
-            if (sb.Length > 0) sb.Append(" | ");
-            sb.Append(text);
-        }
-        _attrText = sb.ToString();
+        _attrText = MlnAttribution.ToPlainText(parts);
         if (_attrText.Length > 0 && ShowAttributionControl)
         {
             _attrLoaded = true;
@@ -1852,20 +1844,6 @@ public partial class MlnMapImage : Grid
         if (_attrTextBlock == null) return;
         _attrCollapsed = true;
         _attrTextBlock.Text = "ⓘ";
-    }
-
-    private static string StripHtml(string html)
-    {
-        if (string.IsNullOrEmpty(html)) return string.Empty;
-        var sb = new System.Text.StringBuilder(html.Length);
-        bool inTag = false;
-        foreach (char c in html)
-        {
-            if (c == '<') inTag = true;
-            else if (c == '>') inTag = false;
-            else if (!inTag) sb.Append(c);
-        }
-        return sb.ToString().Trim();
     }
 
     private void Teardown()

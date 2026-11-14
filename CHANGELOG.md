@@ -6,6 +6,7 @@
 - _...Add new stuff here..._
 
 ### 🐞 Bug fixes
+- **Attribution text lost its spaces, or showed `&copy;`** — each platform stripped the attribution HTML in its own way. Android and iOS/macCatalyst trimmed every piece of text around a link, so `&copy; <a …>OpenStreetMap</a> contributors` read `©OpenStreetMapcontributors`. WPF never decoded entities, so OpenFreeMap's `&copy; OpenMapTiles` showed as written. WinUI decoded only a short list. All four now share one parser in the bindings, `MlnAttribution.Parse` (and `ToPlainText`), which keeps the spaces, decodes every HTML entity and makes only http(s) links into links.
 - _...Add new stuff here..._
 
 ## 5.0.0-pre.5
