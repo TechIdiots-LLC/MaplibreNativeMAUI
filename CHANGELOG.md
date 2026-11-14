@@ -2,6 +2,7 @@
 
 ## master
 ### ✨ Features and improvements
+- **`AttributionLinksEnabled`: show the attribution without opening a browser** ([#37](https://github.com/TechIdiots-LLC/MaplibreNativeMAUI/issues/37)) — tapping a link in the attribution opens it in the browser on Android and iOS/macCatalyst, which a kiosk app that must stay in the foreground cannot allow. Set `AttributionLinksEnabled="False"` on `MapLibreMap` and the attribution is still shown, as the data licences require, but as plain text that opens nothing. On iOS the text is then not selectable either, so its selection menu's "Search Web" cannot open Safari. Default `true`.
 - _...Add new stuff here..._
 
 ### 🐞 Bug fixes

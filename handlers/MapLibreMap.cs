@@ -85,6 +85,14 @@ public partial class MapLibreMap : StackLayout
     /// <summary>Extra attribution text appended after source-derived attributions.</summary>
     public static readonly BindableProperty CustomAttributionProperty =
         BindableProperty.Create(nameof(CustomAttribution), typeof(string), typeof(MapLibreMap));
+    /// <summary>
+    /// Whether the attribution's links can be tapped. Default <c>true</c>: on Android and
+    /// iOS/macCatalyst a tap opens the link in the browser. Set <c>false</c> to show the
+    /// attribution as plain text that opens nothing, e.g. on a kiosk where the app must stay
+    /// in the foreground. Windows and WPF always show plain text.
+    /// </summary>
+    public static readonly BindableProperty AttributionLinksEnabledProperty =
+        BindableProperty.Create(nameof(AttributionLinksEnabled), typeof(bool), typeof(MapLibreMap), defaultValue: true);
     /// <summary>Corner the navigation control is anchored to. Default <see cref="MapControlCorner.TopRight"/>.</summary>
     public static readonly BindableProperty NavigationControlPositionProperty =
         BindableProperty.Create(nameof(NavigationControlPosition), typeof(MapControlCorner), typeof(MapLibreMap), defaultValue: MapControlCorner.TopRight);
@@ -382,6 +390,13 @@ public partial class MapLibreMap : StackLayout
     {
         get => (string?)GetValue(CustomAttributionProperty);
         set => SetValue(CustomAttributionProperty, value);
+    }
+
+    /// <inheritdoc cref="AttributionLinksEnabledProperty"/>
+    public bool AttributionLinksEnabled
+    {
+        get => (bool)GetValue(AttributionLinksEnabledProperty);
+        set => SetValue(AttributionLinksEnabledProperty, value);
     }
 
     /// <summary>

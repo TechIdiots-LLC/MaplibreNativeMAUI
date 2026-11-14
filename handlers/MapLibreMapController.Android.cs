@@ -315,6 +315,7 @@ public class MapLibreMapController : IMapLibreMapController
     private TextView        _attrView         = null!;  // expanded full text
     private TextView        _attrButton       = null!;  // collapsed ⓘ button
     private bool            _showAttrControl  = true;
+    private bool            _attrLinksEnabled = true;   // false: plain text, a tap opens no browser
     private string?         _customAttribution;
     private int             _attrCollapseGen;            // generation counter for auto-collapse timer
     private bool            _attrLoaded;                 // true once attribution content has been fetched
@@ -470,7 +471,7 @@ public class MapLibreMapController : IMapLibreMapController
         _attrView.SetTextColor(Android.Graphics.Color.Argb(220, 50, 50, 50));
         _attrView.SetBackgroundColor(Android.Graphics.Color.Argb(180, 255, 255, 255));
         _attrView.SetPadding(8, 4, 8, 4);
-        _attrView.MovementMethod = LinkMovementMethod.Instance;
+        _attrView.MovementMethod = _attrLinksEnabled ? LinkMovementMethod.Instance : null;
         _attrView.Visibility = ViewStates.Gone;
 
         var container = new FrameLayout(ctx);
@@ -1346,6 +1347,16 @@ private IReadOnlyList<string> _reportedAttributions = [];
         RefreshAttribution();
     }
 
+    public void SetAttributionLinksEnabled(bool enabled)
+    {
+        if (_attrLinksEnabled == enabled) return;
+        _attrLinksEnabled = enabled;
+        // LinkMovementMethod is what turns a tap on a URLSpan into a browser launch.
+        _attrView.MovementMethod = enabled ? LinkMovementMethod.Instance : null;
+        _appliedAttribution = null;   // rebuild the text with or without its link spans
+        RefreshAttribution();
+    }
+
     // -- Attribution -----------------------------------------------------------
 
     private void RefreshAttribution()
@@ -1383,7 +1394,7 @@ private IReadOnlyList<string> _reportedAttributions = [];
         if (content == _appliedAttribution) return;
         _appliedAttribution = content;
 
-        _attrView.TextFormatted = BuildAttributionSpanned(attributions);
+        _attrView.TextFormatted = BuildAttributionSpanned(attributions, _attrLinksEnabled);
         ExpandAttribution();
     }
 
@@ -1424,9 +1435,10 @@ private IReadOnlyList<string> _reportedAttributions = [];
     }
 
     private static ISpanned BuildAttributionSpanned(
-        System.Collections.Generic.IReadOnlyList<string> parts)
+        System.Collections.Generic.IReadOnlyList<string> parts, bool links)
     {
-        // Parse each part's HTML <a href> tags into URLSpans so links are clickable.
+        // Parse each part's HTML <a href> tags into URLSpans so links are clickable
+        // (or, with links off, keep only the link text).
         var sb  = new SpannableStringBuilder();
         var hrefRe = new Regex(
             @"<a\b[^>]*?href=[""']?([^""'\s>]+)[""']?[^>]*>(.*?)</a>",
@@ -1450,7 +1462,7 @@ private IReadOnlyList<string> _reportedAttributions = [];
                 string linkText = DecodeHtmlEntities(StripHtmlTags(m.Groups[2].Value));
                 int start = sb.Length();
                 sb.Append(linkText);
-                if (Uri.TryCreate(href, UriKind.Absolute, out _))
+                if (links && Uri.TryCreate(href, UriKind.Absolute, out _))
                     sb.SetSpan(new Android.Text.Style.URLSpan(href),
                                start, sb.Length(),
                                SpanTypes.InclusiveInclusive);
