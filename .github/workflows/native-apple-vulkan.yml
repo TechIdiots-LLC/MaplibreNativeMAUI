@@ -9,7 +9,8 @@ env:
 jobs:
   build:
     name: ${{ matrix.name }}
-    runs-on: macos-14
+    # As maplibre-native's iOS builds, with the Xcode the .NET iOS and Mac Catalyst builds use
+    runs-on: macos-26
     strategy:
       fail-fast: false
       matrix:
@@ -39,9 +40,12 @@ jobs:
       - name: Enable Git long paths
         run: git config --global core.longpaths true
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
+
+      - name: Select Xcode 26.5
+        run: sudo xcode-select -s /Applications/Xcode_26.5.app
 
       # Vulkan headers + VMA are vendored by maplibre-native, and mln-cabi is a static
       # archive that uses Vulkan's dynamic dispatch loader — so no Vulkan library is
@@ -55,12 +59,6 @@ jobs:
           vulkan-query-version: latest
           vulkan-components: Vulkan-Headers, Vulkan-Loader
           vulkan-use-cache: true
-
-      - name: Patch darwin.cmake for macCatalyst
-        if: ${{ matrix.artifact == 'native-mln-maccatalyst-vulkan' }}
-        run: |
-          echo 'target_link_libraries(mbgl-core PRIVATE mbgl-vendor-filesystem)' \
-            >> dependencies/maplibre-native/platform/darwin/darwin.cmake
 
       - name: Configure CMake
         if: ${{ matrix.artifact != 'native-mln-maccatalyst-vulkan' }}
@@ -85,7 +83,7 @@ jobs:
           CLANGXX=$(xcrun -f clang++)
           for ARCH in x86_64 arm64; do
             TRIPLE="${ARCH}-apple-ios15.0-macabi"
-            EXTRA_FLAGS="-iframework $IOSUPPORT_FWKS -I$IOSUPPORT_INC -Wno-overriding-t-option"
+            EXTRA_FLAGS="-iframework $IOSUPPORT_FWKS -I$IOSUPPORT_INC -Wno-overriding-option -Wno-overriding-t-option"
             cmake -B "build-${ARCH}" \
               -G Ninja \
               -DCMAKE_SYSTEM_NAME=Darwin \
@@ -159,7 +157,7 @@ jobs:
           echo "Found: $LIB"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: ${{ steps.find-lib.outputs.path }}

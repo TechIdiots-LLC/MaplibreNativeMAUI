@@ -239,7 +239,10 @@ MLN_CABI_API mln_status_t   mln_map_set_debug_options(mln_map_t* map, int option
 
 /* ── Map – gesture / interactive movement ──────────────────────────────────── */
 /** Inform the map that a user gesture is in progress (suppresses animated
- *  camera snap-back during panning).  Call with 1 on touch-down, 0 on touch-up. */
+ *  camera snap-back during panning).  Call with 1 on touch-down, 0 on touch-up.
+ *  With 3D terrain, the start of a gesture also anchors the centre on the terrain
+ *  under it (keeping the view), so the gesture turns round the ground being looked
+ *  at; the reported centre and zoom change accordingly. Cancel transitions first. */
 MLN_CABI_API mln_status_t   mln_map_set_gesture_in_progress(mln_map_t* map, int in_progress) MLN_CABI_NOEXCEPT;
 /** Returns 1 while a gesture is flagged in progress via mln_map_set_gesture_in_progress. */
 MLN_CABI_API int             mln_map_is_gesture_in_progress(mln_map_t* map) MLN_CABI_NOEXCEPT;
@@ -283,7 +286,9 @@ MLN_CABI_API mln_status_t   mln_map_set_tile_lod_min_radius(mln_map_t* map, doub
 MLN_CABI_API mln_status_t   mln_map_set_tile_lod_scale(mln_map_t* map, double scale) MLN_CABI_NOEXCEPT;
 MLN_CABI_API mln_status_t   mln_map_set_tile_lod_pitch_threshold(mln_map_t* map, double threshold_rad) MLN_CABI_NOEXCEPT;
 MLN_CABI_API mln_status_t   mln_map_set_tile_lod_zoom_shift(mln_map_t* map, double shift) MLN_CABI_NOEXCEPT;
-/** mode: 0=default, 1=distance */
+/** mode: 0=default, 1=distance, 2=adaptive (per-tile zoom from the field of view and a
+ *  tile-count budget, as maplibre-gl-js selects tiles under terrain or a steep pitch; ignores
+ *  the four settings above) */
 MLN_CABI_API mln_status_t   mln_map_set_tile_lod_mode(mln_map_t* map, int mode) MLN_CABI_NOEXCEPT;
 
 /* ── Map – camera for points / geometry (Tier 2) ───────────────────────────── */
@@ -329,6 +334,15 @@ MLN_CABI_API mln_source_t*  mln_style_get_source(mln_style_t* st, const char* so
  * Suitable for building an OSM-compliant attribution overlay.
  */
 MLN_CABI_API char*           mln_source_get_attribution(mln_source_t* src) MLN_CABI_NOEXCEPT;
+/**
+ * Mark a source volatile (pass 1 or 0): its tiles are never written to the ambient cache on
+ * disk, as Source.setVolatile on Android and MLNSource.isVolatile on iOS. For data that is
+ * stale by the next visit (live radar, traffic) or that should not fill the offline database.
+ * Applies to tiles requested from then on; set it right after adding the source.
+ */
+MLN_CABI_API mln_status_t   mln_source_set_volatile(mln_source_t* src, int is_volatile) MLN_CABI_NOEXCEPT;
+/** Returns 1 if the source is volatile, 0 otherwise or for a null handle. */
+MLN_CABI_API int             mln_source_is_volatile(mln_source_t* src) MLN_CABI_NOEXCEPT;
 
 /* ── Layer – read-back ──────────────────────────────────────────────────────── */
 /** Returns a JSON-encoded value or NULL if not set; caller frees. */
@@ -409,6 +423,9 @@ MLN_CABI_API mln_status_t   mln_map_camera_for_bounds(mln_map_t* map,
                                                           double* out_zoom, double* out_bearing,
                                                           double* out_pitch) MLN_CABI_NOEXCEPT;
 
+/** Project a location to a screen pixel at sea level. With 3D terrain this is where the location
+ *  would be drawn without its terrain height; mln_map_pixel_for_latlng_on_terrain puts it on the
+ *  drawn surface. Same for the inverse below and mln_map_latlng_for_pixel_on_terrain. */
 MLN_CABI_API void            mln_map_pixel_for_latlng(mln_map_t* map,
                                                          double lat, double lon,
                                                          double* out_x, double* out_y) MLN_CABI_NOEXCEPT;
@@ -430,6 +447,9 @@ MLN_CABI_API mln_status_t   mln_style_remove_image(mln_style_t* st, const char* 
 
 /** Returns the currently loaded style as a JSON string; caller must free with mln_free_string(). */
 MLN_CABI_API char*           mln_style_get_json(mln_style_t* st) MLN_CABI_NOEXCEPT;
+/** Returns 0 while a style passed to load_url/load_json is still being fetched or parsed,
+ *  1 once it has loaded (and for a style built up in code). 0 for a null handle. */
+MLN_CABI_API int             mln_style_is_loaded(mln_style_t* st) MLN_CABI_NOEXCEPT;
 
 /** Set the global style transition duration and delay (milliseconds). */
 MLN_CABI_API mln_status_t   mln_style_set_transition(mln_style_t* st,
@@ -442,6 +462,22 @@ MLN_CABI_API mln_status_t   mln_style_set_transition(mln_style_t* st,
 MLN_CABI_API mln_status_t   mln_style_set_light_property(mln_style_t* st,
                                                               const char* name,
                                                               const char* value_json) MLN_CABI_NOEXCEPT;
+
+/* ── Style – global state ───────────────────────────────────────────────────
+ *
+ * The values a "global-state" expression reads (["global-state", "name"]), as in
+ * maplibre-gl-js's map.setGlobalStateProperty. A style declares them, with their defaults,
+ * in its root "state" property; setting one re-evaluates every expression and layer
+ * visibility that reads it, without touching the layers themselves. */
+/** Set a global state property to a JSON-encoded value (e.g. "true", "\"metric\"", "42").
+ *  "null" resets it to the default in the style's root "state" property, or to null.
+ *  Returns MLN_INVALID_STATE while the style is still loading, MLN_INVALID_ARG for bad JSON. */
+MLN_CABI_API mln_status_t   mln_style_set_global_state_property(mln_style_t* st,
+                                                                     const char* name,
+                                                                     const char* value_json) MLN_CABI_NOEXCEPT;
+/** The global state as a JSON object string (the style's defaults with any values set over
+ *  them); caller must free with mln_free_string(). Returns NULL on error. */
+MLN_CABI_API char*           mln_style_get_global_state(mln_style_t* st) MLN_CABI_NOEXCEPT;
 
 /* ── Style – additional layer types ─────────────────────────────────────────── */
 MLN_CABI_API mln_layer_t*   mln_style_add_location_indicator_layer(mln_style_t* st,
@@ -613,16 +649,123 @@ MLN_CABI_API int             mln_style_is_terrain_enabled(mln_style_t* st) MLN_C
 typedef enum mln_terrain_load_mode_t {
     MLN_TERRAIN_LOAD_QUALITY     = 0, /**< No budget: every revealed tile/drape builds at once.
                                         *   Sharp, but a big burst (zooming in over new coverage)
-                                        *   can stall a frame. Default. */
-    MLN_TERRAIN_LOAD_BALANCED    = 1, /**< 32 new-tile builds + 16 drape re-renders per frame. */
-    MLN_TERRAIN_LOAD_PERFORMANCE = 2, /**< 8 new-tile builds + 4 drape re-renders per frame:
-                                        *   smoothest on weak GPUs, most progressive fill-in. */
+                                        *   can stall a frame. The mesh follows the view past a
+                                        *   coarse DEM, up to 64 mesh tiles. Default. */
+    MLN_TERRAIN_LOAD_BALANCED    = 1, /**< 32 new-tile builds + 16 drape re-renders per frame;
+                                        *   mesh to z15, up to 48 mesh tiles. */
+    MLN_TERRAIN_LOAD_PERFORMANCE = 2, /**< 8 new-tile builds + 4 drape re-renders per frame;
+                                        *   mesh to z14, up to 24 mesh tiles: smoothest on weak
+                                        *   GPUs, most progressive fill-in. */
 } mln_terrain_load_mode_t;
 
 MLN_CABI_API mln_status_t   mln_map_set_terrain_load_mode(mln_map_t* map,
                                                             mln_terrain_load_mode_t mode) MLN_CABI_NOEXCEPT;
 /** Returns the current mode, or MLN_TERRAIN_LOAD_QUALITY for a null handle. */
 MLN_CABI_API mln_terrain_load_mode_t mln_map_get_terrain_load_mode(mln_map_t* map) MLN_CABI_NOEXCEPT;
+
+/**
+ * The vertical skirts extruded from every terrain tile edge. They hide the hairline gaps
+ * between neighbouring tiles at different zoom levels, but show as vertical artifacts where
+ * the map is drawn over a transparent background. Values match mln::TerrainSkirtLength and
+ * maplibre-gl-js's MapOptions.terrainSkirtLength. Changing it rebuilds the terrain mesh.
+ */
+typedef enum mln_terrain_skirt_length_t {
+    MLN_TERRAIN_SKIRT_AUTO = 0, /**< Skirt each edge by ~1/5 of the tile's width. Default. */
+    MLN_TERRAIN_SKIRT_NONE = 1, /**< No skirts: no artifacts over a transparent background,
+                                  *   at the cost of visible stitches between zoom levels. */
+} mln_terrain_skirt_length_t;
+
+MLN_CABI_API mln_status_t   mln_map_set_terrain_skirt_length(mln_map_t* map,
+                                                               mln_terrain_skirt_length_t length) MLN_CABI_NOEXCEPT;
+/** Returns the current setting, or MLN_TERRAIN_SKIRT_AUTO for a null handle. */
+MLN_CABI_API mln_terrain_skirt_length_t mln_map_get_terrain_skirt_length(mln_map_t* map) MLN_CABI_NOEXCEPT;
+
+/**
+ * Whether the map centre rides the terrain surface rather than sea level (pass 1 or 0).
+ * Off by default. With it on, the centre altitude follows the rendered terrain height under
+ * the centre, so pitching over tall ground keeps the camera above it, as in maplibre-gl-js,
+ * and the camera's eye is kept 10 m above the ground under it. During a gesture the centre
+ * holds the height it started at, and the end of the gesture anchors it on the ground without
+ * moving the camera. Inert while terrain is off.
+ */
+MLN_CABI_API mln_status_t   mln_map_set_center_clamped_to_ground(mln_map_t* map, int clamped) MLN_CABI_NOEXCEPT;
+/** Returns 1 when the centre is clamped to the ground, 0 otherwise or for a null handle. */
+MLN_CABI_API int             mln_map_get_center_clamped_to_ground(mln_map_t* map) MLN_CABI_NOEXCEPT;
+
+/**
+ * The centre's altitude in metres above sea level (exaggeration applied, as the terrain is
+ * drawn). 0 unless gestures, the clamp or the calls below raised it. A centre and zoom describe
+ * the same view only at the same centre altitude: save this with a camera and restore it with
+ * mln_map_set_center_altitude_keeping_view before putting the saved centre and zoom back.
+ * Returns 0 for a null handle.
+ */
+MLN_CABI_API double          mln_map_get_center_altitude(mln_map_t* map) MLN_CABI_NOEXCEPT;
+/**
+ * Move the centre along the line of sight to altitude_m without moving the camera: the
+ * centre and zoom change, nothing on screen does. 0 puts the centre back at sea level.
+ * Returns 1 when it moved; 0, changing nothing, when it was already there, when the pitch is
+ * so steep (over ~84 degrees) that the line of sight nearly grazes that plane, or when the zoom
+ * limits or bounds would cut the move short, or for a null handle.
+ */
+MLN_CABI_API int             mln_map_set_center_altitude_keeping_view(mln_map_t* map, double altitude_m) MLN_CABI_NOEXCEPT;
+/**
+ * Move the centre onto the terrain under it without moving the camera — what the start of a
+ * gesture does (see mln_map_set_gesture_in_progress). Inert while terrain is off.
+ */
+MLN_CABI_API mln_status_t   mln_map_anchor_center_on_terrain(mln_map_t* map) MLN_CABI_NOEXCEPT;
+
+/* ── Map – projection onto 3D terrain ────────────────────────────────────────
+ *
+ * The map keeps its own copy of the terrain heights the renderer has loaded, so these answer at
+ * once, on the map's thread, without waiting on a frame. Heights are metres above sea level with
+ * the terrain's exaggeration applied, as the terrain is drawn. Without terrain, or where no DEM
+ * tile has loaded yet, each falls back to its sea-level counterpart (mln_map_pixel_for_latlng,
+ * mln_map_latlng_for_pixel, ...). Returned locations are wrapped to [-180, 180]. */
+
+/** Terrain height at a location. Returns 1 and writes *out_elevation_m where terrain data is
+ *  loaded; returns 0 and leaves it untouched without terrain, where no DEM tile covers the
+ *  location yet, or for a null argument. */
+MLN_CABI_API int             mln_map_get_terrain_elevation(mln_map_t* map,
+                                                             double lat, double lon,
+                                                             double* out_elevation_m) MLN_CABI_NOEXCEPT;
+/** Screen pixel of the terrain surface at a location (the location raised to its terrain height):
+ *  where to draw a marker or overlay so it sits on the ground it marks. */
+MLN_CABI_API void            mln_map_pixel_for_latlng_on_terrain(mln_map_t* map,
+                                                                   double lat, double lon,
+                                                                   double* out_x, double* out_y) MLN_CABI_NOEXCEPT;
+/** Location of the terrain surface under a screen pixel: the nearest surface along the pixel's
+ *  line of sight, so a ridge in front wins over the valley behind it. What a tap should report.
+ *  To turn a pixel into a camera centre, use mln_map_latlng_for_pixel_at_center_altitude. */
+MLN_CABI_API void            mln_map_latlng_for_pixel_on_terrain(mln_map_t* map,
+                                                                   double x, double y,
+                                                                   double* out_lat, double* out_lon) MLN_CABI_NOEXCEPT;
+/** Batch mln_map_pixel_for_latlng_on_terrain. Layout as mln_map_pixels_for_latlngs. */
+MLN_CABI_API mln_status_t   mln_map_pixels_for_latlngs_on_terrain(mln_map_t* map,
+                                                                     const double* latlngs, int count,
+                                                                     double* out_xy) MLN_CABI_NOEXCEPT;
+/** Batch mln_map_latlng_for_pixel_on_terrain. Layout as mln_map_latlngs_for_pixels. */
+MLN_CABI_API mln_status_t   mln_map_latlngs_for_pixels_on_terrain(mln_map_t* map,
+                                                                     const double* xy, int count,
+                                                                     double* out_ll) MLN_CABI_NOEXCEPT;
+/** Screen pixel of a point elevation_m above sea level, for a height you already know (a flight
+ *  altitude, or a height from mln_map_get_terrain_elevation plus an offset). */
+MLN_CABI_API void            mln_map_pixel_for_latlng_at_elevation(mln_map_t* map,
+                                                                     double lat, double lon,
+                                                                     double elevation_m,
+                                                                     double* out_x, double* out_y) MLN_CABI_NOEXCEPT;
+/** Location where a screen pixel's line of sight crosses the plane elevation_m above sea level. */
+MLN_CABI_API void            mln_map_latlng_for_pixel_at_elevation(mln_map_t* map,
+                                                                     double x, double y,
+                                                                     double elevation_m,
+                                                                     double* out_lat, double* out_lon) MLN_CABI_NOEXCEPT;
+/** Location under a screen pixel on the plane the camera's centre sits on (see
+ *  mln_map_get_center_altitude: sea level until a gesture or the ground clamp lifts it). For code
+ *  that turns a screen point into a camera centre: a centre taken from the terrain pick instead
+ *  lies on the ground in front of that plane and moves the view by about
+ *  (terrain height - centre altitude) * tan(pitch). */
+MLN_CABI_API void            mln_map_latlng_for_pixel_at_center_altitude(mln_map_t* map,
+                                                                           double x, double y,
+                                                                           double* out_lat, double* out_lon) MLN_CABI_NOEXCEPT;
 
 /* ── Offline regions + ambient cache ─────────────────────────────────────────
  *
@@ -819,6 +962,13 @@ MLN_CABI_API const char*     mln_cabi_version(void) MLN_CABI_NOEXCEPT;
 MLN_CABI_API void*  mln_android_acquire_window(void* jni_env, void* surface_jobject) MLN_CABI_NOEXCEPT;
 /** Release an ANativeWindow obtained via mln_android_acquire_window. */
 MLN_CABI_API void   mln_android_release_window(void* window) MLN_CABI_NOEXCEPT;
+/** Serve asset:// and file:///android_asset/ URLs from the APK's assets/ folder through the
+ *  given android.content.res.AssetManager (a JNI jobject), as the MapLibre Android SDK does;
+ *  byte ranges are honoured, so pmtiles://asset://… reads only what it needs. MAUI places
+ *  Resources/Raw files there. Without it, asset:// resolves against the asset path on the
+ *  filesystem, where APK assets do not exist. Must be called before the first map is created
+ *  (file sources are cached per map); only the first call takes effect. */
+MLN_CABI_API mln_status_t mln_android_set_asset_manager(void* jni_env, void* asset_manager_jobject) MLN_CABI_NOEXCEPT;
 #endif /* __ANDROID__ */
 
 /* ── Host HTTP provider (all platforms) ────────────────────────────────────── */

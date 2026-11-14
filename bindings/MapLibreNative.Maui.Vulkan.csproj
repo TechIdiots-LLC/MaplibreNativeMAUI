@@ -16,13 +16,6 @@
     <PackageId>MapLibreNative.Maui.Vulkan</PackageId>
   </PropertyGroup>
 
-  <!-- Exclude the maplibre-native-ffi exploration files — this package uses the same mln-cabi ABI as MapLibreNative.Maui. -->
-  <ItemGroup>
-    <Compile Remove="NativeMethods.Mln.cs" />
-    <Compile Remove="MlnMap.cs" />
-    <Compile Remove="MlnRuntime.cs" />
-  </ItemGroup>
-
   <!--
     Native library name per platform:
       Windows  : mln-cabi.dll

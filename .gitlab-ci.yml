@@ -1,0 +1,197 @@
+# MaplibreNativeMAUI CI on gitlab.techidiots.net. GitLab is the primary repository and is mirrored
+# to github.com/TechIdiots-LLC/MaplibreNativeMAUI, where releases are made: packing, NuGet publish
+# and bump-version stay GitHub workflows. GitLab ignores .github/; this is a port of the GitHub CI
+# checks (ci.yml and the native-*.yml it calls), so branches and merge requests are checked here
+# before they reach the mirror.
+#
+#   native-windows   Windows shell runner (tag "windows"): mln-cabi.dll for win-x64 and win-arm64,
+#                    OpenGL and Vulkan (.gitlab/scripts/Build-NativeWindows.ps1). arm64 is
+#                    cross-built on the x64 runner; GitHub builds it on an arm64 runner.
+#   native-android   Linux Docker runner (tag "linux"): libmln-cabi.so for arm64-v8a, armeabi-v7a
+#                    and x86_64, OpenGL and Vulkan (.gitlab/scripts/build-native-android.sh).
+#   native-apple     macOS runner (tag "macos"): the Metal libmln-cabi.a for iOS, the iOS simulator
+#                    and macCatalyst (.gitlab/scripts/build-native-apple.sh). MACOS_RUNNER "false"
+#                    skips it. The Apple Vulkan build (MoltenVK) is GitHub-only for now: it needs the
+#                    Vulkan SDK, which the macOS runner script does not install.
+#   dotnet           Windows runner: stages the OpenGL natives under bindings/native/ and builds the
+#                    bindings, handlers (Windows, Android, iOS, macCatalyst), the WPF control and the
+#                    samples. The Windows MauiSample (x64), the WPF and console samples and a
+#                    debug-signed Android MauiSample APK are job artifacts (7 days).
+#
+# Native job outputs land in native-out/<platform>-<abi>-<renderer>/ (artifacts, 7 days).
+#
+# Runs for merge requests, pushes to main, and Build > Pipelines > Run pipeline on any branch.
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    # Avoid a duplicate branch pipeline while a merge request is open for the branch
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS && $CI_PIPELINE_SOURCE == "push"
+      when: never
+    - if: $CI_COMMIT_BRANCH
+
+variables:
+  # maplibre-native and its vendored libraries (vcpkg on Windows) are submodules. Shallow is
+  # enough: vcpkg runs in classic mode from its checked-out port tree.
+  GIT_SUBMODULE_STRATEGY: recursive
+  GIT_SUBMODULE_DEPTH: 1
+  MACOS_RUNNER:
+    value: "true"
+    description: "Build the Apple natives on the runner tagged macos ('false' to skip them)."
+
+default:
+  tags: [windows]
+
+stages:
+  - native
+  - dotnet
+
+.ci-rules: &ci-rules
+  - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  - if: $CI_PIPELINE_SOURCE == "web"
+  - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# ── Native ──────────────────────────────────────────────────────────────────────────────────
+
+native-windows:
+  stage: native
+  rules: *ci-rules
+  timeout: 2h
+  parallel:
+    matrix:
+      - ARCH: [x64, arm64]
+        RENDERER: [opengl, vulkan]
+  script:
+    - ./.gitlab/scripts/Build-NativeWindows.ps1 -Arch $env:ARCH -Renderer $env:RENDERER
+  artifacts:
+    name: native-win-$ARCH-$RENDERER
+    paths:
+      - native-out/
+    expire_in: 7 days
+
+native-android:
+  stage: native
+  tags: [linux]
+  image: ubuntu:24.04
+  rules: *ci-rules
+  timeout: 2h
+  parallel:
+    matrix:
+      - ABI: [arm64-v8a, armeabi-v7a, x86_64]
+        RENDERER: [opengl, vulkan]
+  # The NDK zip (~650 MB), so each job doesn't download it again
+  cache:
+    key: android-ndk-r28c
+    paths:
+      - .cache/
+  before_script:
+    - apt-get update -qq
+    - DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends
+        ca-certificates curl unzip git cmake ninja-build python3 > /dev/null
+    - git config --global --add safe.directory '*'
+  script:
+    - bash .gitlab/scripts/build-native-android.sh "$ABI" "$RENDERER"
+  artifacts:
+    name: native-android-$ABI-$RENDERER
+    paths:
+      - native-out/
+    expire_in: 7 days
+
+native-apple:
+  stage: native
+  tags: [macos]
+  rules:
+    - if: $MACOS_RUNNER != "true"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "web"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  timeout: 2h
+  parallel:
+    matrix:
+      - TARGET: [ios, iossimulator, maccatalyst]
+  script:
+    - bash .gitlab/scripts/build-native-apple.sh "$TARGET"
+  artifacts:
+    name: native-apple-$TARGET
+    paths:
+      - native-out/
+    expire_in: 7 days
+
+# ── .NET ────────────────────────────────────────────────────────────────────────────────────
+
+# SDK band 10.0.4xx with workload set 10.0.401 (MAUI 10.0.20), as VistumblerMAUI pins it. The
+# runner's dotnet-workload-env (gitlab-runner-install) gives the pin a .NET install of its own,
+# so parallel jobs don't restore workloads into the shared C:\Program Files\dotnet at once.
+.dotnet-windows: &dotnet-windows
+  - |
+    $envHelper = Get-Command dotnet-workload-env -ErrorAction SilentlyContinue
+    if (-not $envHelper -and (Test-Path 'C:\GitLab-Runner\bin\dotnet-workload-env.ps1')) { $envHelper = 'C:\GitLab-Runner\bin\dotnet-workload-env.ps1' }
+    if ($envHelper) { & $envHelper -Sdk 10.0.4xx -WorkloadSet 10.0.401 }
+    else { dotnet workload restore maplibre-maui.sln }
+    dotnet --version
+
+dotnet:
+  stage: dotnet
+  rules: *ci-rules
+  # The OpenGL natives are the ones the packages ship. Both renderers' legs are listed because
+  # needs: takes whole matrix jobs; only the opengl outputs are staged.
+  needs:
+    - job: native-windows
+    - job: native-android
+  variables:
+    # The managed build needs no native sources
+    GIT_SUBMODULE_STRATEGY: none
+    TFM_WINDOWS: net10.0-windows10.0.19041.0
+  script:
+    - *dotnet-windows
+    - |
+      $stage = [ordered]@{
+        'win-x64-opengl'             = 'win-x64'
+        'win-arm64-opengl'           = 'win-arm64'
+        'android-arm64-v8a-opengl'   = 'android-arm64'
+        'android-armeabi-v7a-opengl' = 'android-arm'
+        'android-x86_64-opengl'      = 'android-x64'
+      }
+      foreach ($from in $stage.Keys) {
+        $to = "bindings/native/$($stage[$from])"
+        if (-not (Test-Path "native-out/$from")) { throw "native-out/$from is missing" }
+        New-Item -ItemType Directory -Force $to | Out-Null
+        Copy-Item "native-out/$from/*" $to
+      }
+      Get-ChildItem bindings/native -Recurse -File | ForEach-Object { $_.FullName }
+    # Class libraries: every platform the packages target. iOS and macCatalyst compile on
+    # Windows; only their native link needs a Mac.
+    - |
+      foreach ($tfm in @($env:TFM_WINDOWS, 'net10.0-android', 'net10.0-ios', 'net10.0-maccatalyst')) {
+        dotnet build handlers/MapLibreNative.Maui.Handlers.csproj -c Release -f $tfm
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      }
+    - dotnet build wpf/MapLibreNative.Maui.WPF.csproj -c Release -f $env:TFM_WINDOWS
+    # Samples. -p:TargetFrameworks narrows the restore, down through the project references, to the
+    # framework being published: with an explicit RID, restoring the bindings' mobile frameworks
+    # fails (NU1102).
+    - dotnet publish sample/MauiSample.csproj -c Release -f $env:TFM_WINDOWS -r win-x64
+        "-p:TargetFrameworks=$env:TFM_WINDOWS" -p:WindowsPackageType=None -o publish/MauiSample-win-x64
+    - dotnet publish sample/WpfExample/WpfExample.csproj -c Release -f $env:TFM_WINDOWS -r win-x64
+        "-p:TargetFrameworks=$env:TFM_WINDOWS" --self-contained false -o publish/WpfExample-win-x64
+    - dotnet publish sample/ConsoleExample/ConsoleExample.csproj -c Release -f $env:TFM_WINDOWS -r win-x64
+        "-p:TargetFrameworks=$env:TFM_WINDOWS" --self-contained false -o publish/ConsoleExample-win-x64
+    # Not release-signed: .NET Android falls back to a debug key, so this installs on a clean device
+    # but won't upgrade a release install.
+    - dotnet build sample/MauiSample.csproj -c Release -f net10.0-android "-p:TargetFrameworks=net10.0-android"
+    - |
+      New-Item -ItemType Directory -Force samples | Out-Null
+      $tag = "ci$env:CI_PIPELINE_IID-$env:CI_COMMIT_SHORT_SHA"
+      foreach ($app in 'MauiSample-win-x64', 'WpfExample-win-x64', 'ConsoleExample-win-x64') {
+        Compress-Archive -Path "publish/$app/*" -DestinationPath "samples/$app-$tag.zip"
+      }
+      $apk = Get-ChildItem sample/bin/Release/net10.0-android -Filter *-Signed.apk -Recurse | Select-Object -First 1
+      if (-not $apk) { throw 'No signed APK under sample/bin/Release/net10.0-android' }
+      Copy-Item $apk.FullName "samples/MauiSample-android-$tag-debug-signed.apk"
+      Get-ChildItem samples | ForEach-Object { '{0}  {1:N1} MiB' -f $_.Name, ($_.Length / 1MB) }
+  artifacts:
+    name: samples
+    paths:
+      - samples/
+    expire_in: 7 days

@@ -590,6 +590,14 @@ static thread_local mln::ScreenCoordinate s_panAnchor;
 
 mln_status_t mln_map_on_pan_start(mln_map_t* map, double x, double y) noexcept {
     if (!map) return set_error(MLN_INVALID_ARG, "mln_map_on_pan_start: null handle");
+    try {
+        auto& m = *map_ptr(map)->map;
+        // With terrain, drag the ground being looked at, not a sea-level plane under it.
+        m.anchorCenterOnTerrain();
+        // A drag is a gesture, as macOS's pan is: with the centre clamped to the ground it
+        // holds the camera height for the drag and re-anchors when it ends.
+        m.setGestureInProgress(true);
+    } catch (const std::exception& e) { return set_native_error(e); }
     s_panStart  = map_ptr(map)->map->getCameraOptions();
     s_panAnchor = { x, y };
     return MLN_OK;
@@ -601,8 +609,10 @@ mln_status_t mln_map_on_pan_move(mln_map_t* map, double dx, double dy) noexcept 
     catch (const std::exception& e) { return set_native_error(e); }
 }
 
-mln_status_t mln_map_on_pan_end(mln_map_t* /*map*/) noexcept {
-    return MLN_OK;
+mln_status_t mln_map_on_pan_end(mln_map_t* map) noexcept {
+    if (!map) return set_error(MLN_INVALID_ARG, "mln_map_on_pan_end: null handle");
+    try { map_ptr(map)->map->setGestureInProgress(false); return MLN_OK; }
+    catch (const std::exception& e) { return set_native_error(e); }
 }
 
 mln_status_t mln_map_on_pinch(mln_map_t* map, double scale_factor, double cx, double cy) noexcept {
@@ -1369,6 +1379,40 @@ mln_status_t mln_map_remove_feature_state(mln_map_t* map,
     } catch (const std::exception& e) { return set_native_error(e); }
 }
 
+/* ─── Style global state ────────────────────────────────────────────────────── */
+
+int mln_style_is_loaded(mln_style_t* st) noexcept {
+    if (!st) return 0;
+    try { return style_ref(st).isLoaded() ? 1 : 0; }
+    catch (...) { return 0; }
+}
+
+mln_status_t mln_style_set_global_state_property(mln_style_t* st, const char* name,
+                                                    const char* value_json) noexcept {
+    if (!st || !name || !value_json)
+        return set_error(MLN_INVALID_ARG, "mln_style_set_global_state_property: null arg");
+    try {
+        auto& style = style_ref(st);
+        // Core throws a MisuseException here; report it as the state error it is.
+        if (!style.isLoaded())
+            return set_error(MLN_INVALID_STATE, "mln_style_set_global_state_property: style is still loading");
+        mln::JSDocument doc;
+        doc.Parse(value_json);
+        if (doc.HasParseError())
+            return set_error(MLN_INVALID_ARG, "mln_style_set_global_state_property: value is not valid JSON");
+        style.setGlobalStateProperty(name, jsValueToMbglValue(doc));
+        return MLN_OK;
+    } catch (const std::exception& e) { return set_native_error(e); }
+}
+
+char* mln_style_get_global_state(mln_style_t* st) noexcept {
+    if (!st) return nullptr;
+    try {
+        // GlobalStateMap is the same property map as FeatureState.
+        return featureStateToJson(style_ref(st).getGlobalState());
+    } catch (...) { return nullptr; }
+}
+
 /* ─── Source-feature / feature-extension queries ────────────────────────────── */
 
 char* mln_map_query_source_features(mln_map_t* map,
@@ -1541,12 +1585,180 @@ mln_terrain_load_mode_t mln_map_get_terrain_load_mode(mln_map_t* map) noexcept {
     } catch (const std::exception&) { return MLN_TERRAIN_LOAD_QUALITY; }
 }
 
+mln_status_t mln_map_set_terrain_skirt_length(mln_map_t* map, mln_terrain_skirt_length_t length) noexcept {
+    if (!map) return set_error(MLN_INVALID_ARG, "mln_map_set_terrain_skirt_length: null handle");
+    try {
+        map_ptr(map)->map->setTerrainSkirtLength(static_cast<mln::TerrainSkirtLength>(length));
+        return MLN_OK;
+    } catch (const std::exception& e) { return set_native_error(e); }
+}
+
+mln_terrain_skirt_length_t mln_map_get_terrain_skirt_length(mln_map_t* map) noexcept {
+    if (!map) return MLN_TERRAIN_SKIRT_AUTO;
+    try {
+        return static_cast<mln_terrain_skirt_length_t>(map_ptr(map)->map->getTerrainSkirtLength());
+    } catch (const std::exception&) { return MLN_TERRAIN_SKIRT_AUTO; }
+}
+
+mln_status_t mln_map_set_center_clamped_to_ground(mln_map_t* map, int clamped) noexcept {
+    if (!map) return set_error(MLN_INVALID_ARG, "mln_map_set_center_clamped_to_ground: null handle");
+    try {
+        map_ptr(map)->map->setCenterClampedToGround(clamped != 0);
+        return MLN_OK;
+    } catch (const std::exception& e) { return set_native_error(e); }
+}
+
+int mln_map_get_center_clamped_to_ground(mln_map_t* map) noexcept {
+    if (!map) return 0;
+    try {
+        return map_ptr(map)->map->getCenterClampedToGround() ? 1 : 0;
+    } catch (const std::exception&) { return 0; }
+}
+
+double mln_map_get_center_altitude(mln_map_t* map) noexcept {
+    if (!map) return 0.0;
+    try {
+        return map_ptr(map)->map->getCameraOptions().centerAltitude.value_or(0.0);
+    } catch (const std::exception&) { return 0.0; }
+}
+
+int mln_map_set_center_altitude_keeping_view(mln_map_t* map, double altitude_m) noexcept {
+    if (!map) return 0;
+    try {
+        return map_ptr(map)->map->setCenterAltitudeKeepingView(altitude_m) ? 1 : 0;
+    } catch (const std::exception&) { return 0; }
+}
+
+mln_status_t mln_map_anchor_center_on_terrain(mln_map_t* map) noexcept {
+    if (!map) return set_error(MLN_INVALID_ARG, "mln_map_anchor_center_on_terrain: null handle");
+    try {
+        map_ptr(map)->map->anchorCenterOnTerrain();
+        return MLN_OK;
+    } catch (const std::exception& e) { return set_native_error(e); }
+}
+
+/* ─── Projection onto 3D terrain ────────────────────────────────────────────── */
+
+int mln_map_get_terrain_elevation(mln_map_t* map, double lat, double lon,
+                                  double* out_elevation_m) noexcept {
+    if (!map || !out_elevation_m) return 0;
+    try {
+        auto& m = *map_ptr(map)->map;
+        // The height index keys DEM tiles by their unwrapped x, and near the antimeridian the
+        // drawn tiles have wrap != 0: look up the copy of the location nearest the centre, as
+        // Map::pixelForLatLngOnTerrain does.
+        mln::LatLng ll = mln::LatLng{ lat, lon }.wrapped();
+        if (const auto center = m.getCameraOptions().center) ll.unwrapForShortestPath(*center);
+        auto elevation = m.getTerrainElevation(ll);
+        if (!elevation) elevation = m.getTerrainElevation(mln::LatLng{ lat, lon }.wrapped());
+        if (!elevation) return 0;
+        *out_elevation_m = *elevation;
+        return 1;
+    } catch (const std::exception&) { return 0; }
+}
+
+void mln_map_pixel_for_latlng_on_terrain(mln_map_t* map, double lat, double lon,
+                                         double* out_x, double* out_y) noexcept {
+    if (!map || !out_x || !out_y) return;
+    try {
+        const auto sc = map_ptr(map)->map->pixelForLatLngOnTerrain(mln::LatLng{ lat, lon });
+        *out_x = sc.x;
+        *out_y = sc.y;
+    } catch (const std::exception&) {}
+}
+
+void mln_map_latlng_for_pixel_on_terrain(mln_map_t* map, double x, double y,
+                                         double* out_lat, double* out_lon) noexcept {
+    if (!map || !out_lat || !out_lon) return;
+    try {
+        const auto ll = map_ptr(map)->map->latLngForPixelOnTerrain(mln::ScreenCoordinate{ x, y }).wrapped();
+        *out_lat = ll.latitude();
+        *out_lon = ll.longitude();
+    } catch (const std::exception&) {}
+}
+
+mln_status_t mln_map_pixels_for_latlngs_on_terrain(mln_map_t* map,
+                                                   const double* latlngs, int count,
+                                                   double* out_xy) noexcept {
+    if (!map || !latlngs || !out_xy || count < 0)
+        return set_error(MLN_INVALID_ARG, "mln_map_pixels_for_latlngs_on_terrain: null arg");
+    try {
+        std::vector<mln::LatLng> pts;
+        pts.reserve(static_cast<size_t>(count));
+        for (int i = 0; i < count; ++i)
+            pts.emplace_back(latlngs[i * 2], latlngs[i * 2 + 1]);
+        const auto pixels = map_ptr(map)->map->pixelsForLatLngsOnTerrain(pts);
+        for (size_t i = 0; i < pixels.size(); ++i) {
+            out_xy[i * 2]     = pixels[i].x;
+            out_xy[i * 2 + 1] = pixels[i].y;
+        }
+        return MLN_OK;
+    } catch (const std::exception& e) { return set_native_error(e); }
+}
+
+mln_status_t mln_map_latlngs_for_pixels_on_terrain(mln_map_t* map,
+                                                   const double* xy, int count,
+                                                   double* out_ll) noexcept {
+    if (!map || !xy || !out_ll || count < 0)
+        return set_error(MLN_INVALID_ARG, "mln_map_latlngs_for_pixels_on_terrain: null arg");
+    try {
+        std::vector<mln::ScreenCoordinate> pts;
+        pts.reserve(static_cast<size_t>(count));
+        for (int i = 0; i < count; ++i)
+            pts.emplace_back(xy[i * 2], xy[i * 2 + 1]);
+        const auto latlngs = map_ptr(map)->map->latLngsForPixelsOnTerrain(pts);
+        for (size_t i = 0; i < latlngs.size(); ++i) {
+            const auto ll = latlngs[i].wrapped();
+            out_ll[i * 2]     = ll.latitude();
+            out_ll[i * 2 + 1] = ll.longitude();
+        }
+        return MLN_OK;
+    } catch (const std::exception& e) { return set_native_error(e); }
+}
+
+void mln_map_pixel_for_latlng_at_elevation(mln_map_t* map, double lat, double lon, double elevation_m,
+                                           double* out_x, double* out_y) noexcept {
+    if (!map || !out_x || !out_y) return;
+    try {
+        const auto sc = map_ptr(map)->map->pixelForLatLng(mln::LatLng{ lat, lon }, elevation_m);
+        *out_x = sc.x;
+        *out_y = sc.y;
+    } catch (const std::exception&) {}
+}
+
+void mln_map_latlng_for_pixel_at_elevation(mln_map_t* map, double x, double y, double elevation_m,
+                                           double* out_lat, double* out_lon) noexcept {
+    if (!map || !out_lat || !out_lon) return;
+    try {
+        const auto ll = map_ptr(map)->map->latLngForPixel(mln::ScreenCoordinate{ x, y }, elevation_m).wrapped();
+        *out_lat = ll.latitude();
+        *out_lon = ll.longitude();
+    } catch (const std::exception&) {}
+}
+
+void mln_map_latlng_for_pixel_at_center_altitude(mln_map_t* map, double x, double y,
+                                                 double* out_lat, double* out_lon) noexcept {
+    if (!map || !out_lat || !out_lon) return;
+    try {
+        const auto ll = map_ptr(map)->map->latLngForPixelAtCenterAltitude(mln::ScreenCoordinate{ x, y }).wrapped();
+        *out_lat = ll.latitude();
+        *out_lon = ll.longitude();
+    } catch (const std::exception&) {}
+}
+
 /* ─── Gesture helpers ───────────────────────────────────────────────────────── */
 
 mln_status_t mln_map_set_gesture_in_progress(mln_map_t* map, int in_progress) noexcept {
     if (!map) return set_error(MLN_INVALID_ARG, "mln_map_set_gesture_in_progress: null handle");
-    try { map_ptr(map)->map->setGestureInProgress(in_progress != 0); return MLN_OK; }
-    catch (const std::exception& e) { return set_native_error(e); }
+    try {
+        auto& m = *map_ptr(map)->map;
+        // With terrain, a gesture turns round the ground being looked at, not a sea-level point
+        // behind it. Anchor once, at the start, as maplibre-native's Android and iOS gestures do.
+        // Inert without terrain; the view does not move, only the centre and zoom it reports.
+        if (in_progress && !m.isGestureInProgress()) m.anchorCenterOnTerrain();
+        m.setGestureInProgress(in_progress != 0);
+        return MLN_OK;
+    } catch (const std::exception& e) { return set_native_error(e); }
 }
 
 int mln_map_is_gesture_in_progress(mln_map_t* map) noexcept {
@@ -1813,6 +2025,17 @@ char* mln_source_get_attribution(mln_source_t* src) noexcept {
         if (!attr) return nullptr;
         return dup_string(*attr);
     } catch (...) { return nullptr; }
+}
+
+mln_status_t mln_source_set_volatile(mln_source_t* src, int is_volatile) noexcept {
+    if (!src) return set_error(MLN_INVALID_ARG, "mln_source_set_volatile: null handle");
+    source_ref(src).setVolatile(is_volatile != 0);
+    return MLN_OK;
+}
+
+int mln_source_is_volatile(mln_source_t* src) noexcept {
+    if (!src) return 0;
+    return source_ref(src).isVolatile() ? 1 : 0;
 }
 
 /* ─── Layer read-back ────────────────────────────────────────────────────────── */

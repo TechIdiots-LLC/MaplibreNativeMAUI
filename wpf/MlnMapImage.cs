@@ -210,6 +210,43 @@ public partial class MlnMapImage : Grid
                 if (d is MlnMapImage m && m._map != null)
                     m._map.TerrainLoadMode = (TerrainLoadMode)e.NewValue;
             }));
+    /// <summary>
+    /// Whether terrain tiles carry vertical skirts along their edges. The skirts hide the
+    /// hairline gaps between tiles at different zoom levels, but show as vertical artifacts
+    /// over a transparent background — use <see cref="MapLibreNative.Maui.TerrainSkirtLength.None"/>
+    /// there. Changing it rebuilds the terrain mesh; it does nothing while terrain is off.
+    /// </summary>
+    public TerrainSkirtLength TerrainSkirtLength
+    {
+        get => (TerrainSkirtLength)GetValue(TerrainSkirtLengthProperty);
+        set => SetValue(TerrainSkirtLengthProperty, value);
+    }
+    public static readonly DependencyProperty TerrainSkirtLengthProperty =
+        DependencyProperty.Register(nameof(TerrainSkirtLength), typeof(TerrainSkirtLength), typeof(MlnMapImage),
+            new PropertyMetadata(MapLibreNative.Maui.TerrainSkirtLength.Auto, (d, e) =>
+            {
+                if (d is MlnMapImage m && m._map != null)
+                    m._map.TerrainSkirtLength = (TerrainSkirtLength)e.NewValue;
+            }));
+    /// <summary>
+    /// Whether the map centre rides the terrain surface rather than sea level, as in
+    /// maplibre-gl-js. With it on, pitching over tall ground keeps the camera above it
+    /// instead of sinking in, and the camera's eye is kept clear of the ground under it.
+    /// During a drag the centre holds the height it started at. Off by default; inert while
+    /// terrain is off.
+    /// </summary>
+    public bool CenterClampedToGround
+    {
+        get => (bool)GetValue(CenterClampedToGroundProperty);
+        set => SetValue(CenterClampedToGroundProperty, value);
+    }
+    public static readonly DependencyProperty CenterClampedToGroundProperty =
+        DependencyProperty.Register(nameof(CenterClampedToGround), typeof(bool), typeof(MlnMapImage),
+            new PropertyMetadata(false, (d, e) =>
+            {
+                if (d is MlnMapImage m && m._map != null)
+                    m._map.CenterClampedToGround = (bool)e.NewValue;
+            }));
 
     public static readonly DependencyProperty TerrainControlPositionProperty =
         DependencyProperty.Register(nameof(TerrainControlPosition), typeof(MapControlCorner), typeof(MlnMapImage),
@@ -390,6 +427,8 @@ public partial class MlnMapImage : Grid
                            pixelRatio: pixelRatio, observer: OnMapObserverEvent);
         _map.SetSize(_physW, _physH);
         _map.TerrainLoadMode = TerrainLoadMode;   // the DP may have been set before the map existed
+        _map.TerrainSkirtLength = TerrainSkirtLength;
+        _map.CenterClampedToGround = CenterClampedToGround;
 
         var url = StyleUrl;
         if (!string.IsNullOrEmpty(url))
@@ -665,6 +704,7 @@ public partial class MlnMapImage : Grid
         if (_style == null) return;
         _style.SetTerrain(sourceId, exaggeration);
         _renderNeedsUpdate = true;
+        RefreshTerrainButton();   // the on-map control follows terrain set from code too
     }
 
     /// <summary>Disables 3D terrain; the map renders flat again.</summary>
@@ -673,6 +713,7 @@ public partial class MlnMapImage : Grid
         if (_style == null) return;
         _style.RemoveTerrain();
         _renderNeedsUpdate = true;
+        RefreshTerrainButton();
     }
 
     /// <summary>Turns 3D terrain on if it is off, or off if it is on.</summary>
@@ -682,10 +723,27 @@ public partial class MlnMapImage : Grid
         if (_style.IsTerrainEnabled) _style.RemoveTerrain();
         else _style.SetTerrain(sourceId, exaggeration);
         _renderNeedsUpdate = true;
+        RefreshTerrainButton();
     }
 
     /// <summary>Whether 3D terrain is currently enabled.</summary>
     public bool IsTerrainEnabled => _style != null && _style.IsTerrainEnabled;
+
+    /// <summary>
+    /// Sets a property read by the style's <c>["global-state", name]</c> expressions, as
+    /// maplibre-gl-js's <c>map.setGlobalStateProperty</c> does — restyle the map by changing one
+    /// value instead of re-setting layer properties. <c>null</c> resets it to the default in the
+    /// style's root <c>state</c>. Has no effect until the style has loaded.
+    /// </summary>
+    public void SetGlobalStateProperty(string name, object? value)
+    {
+        if (_style == null || !_style.IsLoaded) return;
+        _style.SetGlobalStateProperty(name, value);
+        _renderNeedsUpdate = true;
+    }
+
+    /// <summary>The global state as a JSON object; <c>"{}"</c> before the style has loaded.</summary>
+    public string GetGlobalState() => _style != null ? _style.GetGlobalState() : "{}";
 
     public void AddRasterSource(string sourceId, string url, int tileSize = 512)
     {
@@ -853,6 +911,16 @@ public partial class MlnMapImage : Grid
     }
 
     /// <summary>
+    /// Keeps a source's tiles out of the ambient cache on disk (or lets them back in), for data
+    /// that is stale by the next visit, such as live radar or traffic. Applies to tiles requested
+    /// from then on, so call it right after adding the source. No-op for an unknown source.
+    /// </summary>
+    public void SetSourceVolatile(string sourceId, bool isVolatile)
+    {
+        if (_style?.GetSource(sourceId) is { } source) source.IsVolatile = isVolatile;
+    }
+
+    /// <summary>
     /// Returns GeoJSON of rendered features in a box around (<paramref name="cx"/>, <paramref name="cy"/>)
     /// within <paramref name="thresholdPx"/> physical pixels, optionally filtered to <paramref name="layerIds"/>.
     /// </summary>
@@ -994,10 +1062,21 @@ public partial class MlnMapImage : Grid
         if (Math.Abs(pos.X - _downPos.X) <= ClickThresholdPx && Math.Abs(pos.Y - _downPos.Y) <= ClickThresholdPx)
         {
             var p = ToPhysical(pos);
-            var ll = _map.LatLngForPixel(p.X, p.Y);
+            var ll = _map.LatLngForPixelOnTerrain(p.X, p.Y);
             MapClicked?.Invoke(this, new MlnMapClickEventArgs((int)p.X, (int)p.Y, ll.Lat, ll.Lon));
         }
         e.Handled = true;
+    }
+
+    // A drag flags a gesture in progress natively; end it if capture goes elsewhere (alt-tab,
+    // a popup) rather than leaving it set until the next button-up. Button-up clears
+    // _isDragging before releasing capture, so this is a no-op on the normal path.
+    protected override void OnLostMouseCapture(MouseEventArgs e)
+    {
+        base.OnLostMouseCapture(e);
+        if (_map == null || !_isDragging) return;
+        _isDragging = false;
+        _map.OnPanEnd();
     }
 
     protected override void OnMouseWheel(MouseWheelEventArgs e)
@@ -1590,12 +1669,9 @@ public partial class MlnMapImage : Grid
         RefreshTerrainButton();
     }
 
-    /// <summary>Toggles terrain on the configured source (enable if off, disable if on), then refreshes the button.</summary>
+    /// <summary>Toggles terrain on the configured source (enable if off, disable if on); ToggleTerrain refreshes the button.</summary>
     private void ToggleTerrainControl()
-    {
-        ToggleTerrain(TerrainControlSourceId, TerrainControlExaggeration);
-        RefreshTerrainButton();
-    }
+        => ToggleTerrain(TerrainControlSourceId, TerrainControlExaggeration);
 
     /// <summary>Colours the terrain button to reflect whether terrain is currently enabled.</summary>
     private void RefreshTerrainButton()

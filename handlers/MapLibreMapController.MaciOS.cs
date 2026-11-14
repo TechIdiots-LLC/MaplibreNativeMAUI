@@ -215,10 +215,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     /// <summary>Toggles terrain on the configured source (enable if off, disable if on), then refreshes the button.</summary>
     private void ToggleTerrainControl()
-    {
-        ToggleTerrain(_terrainControlSourceId, _terrainControlExaggeration);
-        RefreshTerrainButton();
-    }
+        => ToggleTerrain(_terrainControlSourceId, _terrainControlExaggeration);
 
     /// <summary>Colours the terrain button to reflect whether terrain is currently enabled.</summary>
     private void RefreshTerrainButton()
@@ -473,6 +470,7 @@ public class MapLibreMapController : IMapLibreMapController
             var metalView = ObjCRuntime.Runtime.GetNSObject<UIView>(nativeViewPtr)!;
             metalView.Frame = View.Bounds;
             View.InsertSubview(metalView, 0);
+            SetupGestures(metalView);
         }
         // Keep the attribution overlays on top of the metal view.
         View.BringSubviewToFront(_attrView);
@@ -489,6 +487,8 @@ public class MapLibreMapController : IMapLibreMapController
                            observer: OnMapObserverEvent);
         _map.SetSize(w, h);
         _map.TerrainLoadMode = _terrainLoadMode;   // may have been set before the map existed
+        _map.TerrainSkirtLength = _terrainSkirtLength;
+        _map.CenterClampedToGround = _centerClampedToGround;
 
         if (!string.IsNullOrEmpty(_styleString))
         {
@@ -583,11 +583,11 @@ public class MapLibreMapController : IMapLibreMapController
                         minZoom, maxZoom, minPitch, maxPitch);
     }
     public void SetCompassEnabled(bool v)                     { }
-    public void SetRotateGesturesEnabled(bool v)              { }
-    public void SetScrollGesturesEnabled(bool v)              { }
-    public void SetTiltGesturesEnabled(bool v)                { }
+    public void SetRotateGesturesEnabled(bool v)  { _rotateGesturesEnabled = v; ApplyGestureFlags(); }
+    public void SetScrollGesturesEnabled(bool v)  { _scrollGesturesEnabled = v; ApplyGestureFlags(); }
+    public void SetTiltGesturesEnabled(bool v)    { _tiltGesturesEnabled   = v; ApplyGestureFlags(); }
     public void SetTrackCameraPosition(bool v)                { }
-    public void SetZoomGesturesEnabled(bool v)                { }
+    public void SetZoomGesturesEnabled(bool v)    { _zoomGesturesEnabled   = v; ApplyGestureFlags(); }
     public void SetMyLocationEnabled(bool v)                  { }
     public void SetMyLocationTrackingMode(int v)              { }
     public void SetMyLocationRenderMode(int v)                { }
@@ -800,7 +800,16 @@ public class MapLibreMapController : IMapLibreMapController
         _                         => _map?.Bearing ?? 0,
     };
 
-    /// <summary>A manual rotation (d-pad) took over the bearing: drop back to Free.</summary>
+    /// <summary>A pan took the camera off the location: Follow drops back to Show.</summary>
+    private void OnUserPannedMap()
+    {
+        if (_gpsMode != GpsTrackingMode.Follow) return;
+        _gpsMode = GpsTrackingMode.Show;
+        OnCameraTrackingDismissedReceived?.Invoke();
+        RefreshGpsIcons();
+    }
+
+    /// <summary>A manual rotation (gesture or d-pad) took over the bearing: drop back to Free.</summary>
     private void OnUserRotatedMap()
     {
         if (_gpsBearingMode == GpsBearingMode.Free) return;
@@ -1117,16 +1126,24 @@ public class MapLibreMapController : IMapLibreMapController
         _style.RemoveSource(sourceId);
     }
 
+    public void SetSourceVolatile(string sourceId, bool isVolatile)
+    {
+        if (!_styleReady || _style == null) return;
+        if (_style.GetSource(sourceId) is { } source) source.IsVolatile = isVolatile;
+    }
+
     public void SetTerrain(string sourceId, float exaggeration)
     {
         if (!_styleReady || _style == null) return;
         _style.SetTerrain(sourceId, exaggeration);
+        RefreshTerrainButton();   // the on-map control follows terrain set from code too
     }
 
     public void RemoveTerrain()
     {
         if (!_styleReady || _style == null) return;
         _style.RemoveTerrain();
+        RefreshTerrainButton();
     }
 
     public void ToggleTerrain(string sourceId, float exaggeration)
@@ -1134,9 +1151,19 @@ public class MapLibreMapController : IMapLibreMapController
         if (!_styleReady || _style == null) return;
         if (_style.IsTerrainEnabled) _style.RemoveTerrain();
         else _style.SetTerrain(sourceId, exaggeration);
+        RefreshTerrainButton();
     }
 
     public bool IsTerrainEnabled => _styleReady && _style != null && _style.IsTerrainEnabled;
+
+    public void SetGlobalStateProperty(string name, object? value)
+    {
+        // _styleReady stays set while a new style URL loads; core refuses until that is done.
+        if (!_styleReady || _style == null || !_style.IsLoaded) return;
+        _style.SetGlobalStateProperty(name, value);
+    }
+
+    public string GetGlobalState() => _styleReady && _style != null ? _style.GetGlobalState() : "{}";
 
 
     // -- Layers ----------------------------------------------------------------
@@ -1313,14 +1340,29 @@ public class MapLibreMapController : IMapLibreMapController
     }
 
     public (double X, double Y) LatLngToScreenPoint(double latitude, double longitude)
-        => _map?.PixelForLatLng(latitude, longitude) ?? (0, 0);
+        => _map?.PixelForLatLngOnTerrain(latitude, longitude) ?? (0, 0);
 
     public LatLng ScreenPointToLatLng(double x, double y)
     {
         if (_map == null) return new LatLng(0, 0);
-        var (lat, lon) = _map.LatLngForPixel(x, y);
+        var (lat, lon) = _map.LatLngForPixelOnTerrain(x, y);
         return new LatLng(lat, lon);
     }
+
+    public LatLng ScreenPointToLatLngAtCenterAltitude(double x, double y)
+    {
+        if (_map == null) return new LatLng(0, 0);
+        var (lat, lon) = _map.LatLngForPixelAtCenterAltitude(x, y);
+        return new LatLng(lat, lon);
+    }
+
+    public double? GetTerrainElevation(double latitude, double longitude)
+        => _map?.GetTerrainElevation(latitude, longitude);
+
+    public double GetCenterAltitude() => _map?.CenterAltitude ?? 0;
+
+    public bool SetCenterAltitudeKeepingView(double altitudeMeters)
+        => _map?.SetCenterAltitudeKeepingView(altitudeMeters) ?? false;
 
     public string? QueryRenderedFeaturesAtPoint(double x, double y, string? layerIds = null)
         => _map?.QueryRenderedFeaturesAtPoint(x, y, layerIds);
@@ -1410,6 +1452,36 @@ public class MapLibreMapController : IMapLibreMapController
 
     public void SetTerrainLoadMode(TerrainLoadMode mode) => TerrainLoadMode = mode;
 
+    // Cached for the same reason as _terrainLoadMode.
+    private TerrainSkirtLength _terrainSkirtLength = TerrainSkirtLength.Auto;
+
+    public TerrainSkirtLength TerrainSkirtLength
+    {
+        get => _map?.TerrainSkirtLength ?? _terrainSkirtLength;
+        set
+        {
+            _terrainSkirtLength = value;
+            if (_map != null) _map.TerrainSkirtLength = value;
+        }
+    }
+
+    public void SetTerrainSkirtLength(TerrainSkirtLength length) => TerrainSkirtLength = length;
+
+    // Cached for the same reason as _terrainLoadMode.
+    private bool _centerClampedToGround;
+
+    public bool CenterClampedToGround
+    {
+        get => _map?.CenterClampedToGround ?? _centerClampedToGround;
+        set
+        {
+            _centerClampedToGround = value;
+            if (_map != null) _map.CenterClampedToGround = value;
+        }
+    }
+
+    public void SetCenterClampedToGround(bool clamped) => CenterClampedToGround = clamped;
+
     // -- Tier 2 – camera / batch projection ───────────────────────────────────
     public CameraResult CameraForLatLngs(
         IReadOnlyList<(double Lat, double Lon)> points,
@@ -1417,10 +1489,10 @@ public class MapLibreMapController : IMapLibreMapController
         => _map?.CameraForLatLngs(points, padTop, padLeft, padBottom, padRight) ?? default;
 
     public (double X, double Y)[] PixelsForLatLngs(IReadOnlyList<(double Lat, double Lon)> points)
-        => _map?.PixelsForLatLngs(points) ?? [];
+        => _map?.PixelsForLatLngsOnTerrain(points) ?? [];
 
     public (double Lat, double Lon)[] LatLngsForPixels(IReadOnlyList<(double X, double Y)> pixels)
-        => _map?.LatLngsForPixels(pixels) ?? [];
+        => _map?.LatLngsForPixelsOnTerrain(pixels) ?? [];
 
     // ── Debug overlays ────────────────────────────────────────────────────────────
 
@@ -1454,6 +1526,272 @@ public class MapLibreMapController : IMapLibreMapController
     public void ClearLocationIndicator() => ClearLocationIndicatorInternal();
 
     // -- Cleanup ---------------------------------------------------------------
+
+    // -- Touch gestures ---------------------------------------------------------
+    //
+    // UIKit recognizers on the Metal view, one per gesture as MLNMapView has them, driving the
+    // same native helpers as Android's touch listener, with its constants. The overlay panels
+    // are siblings above the Metal view, so a touch on one of their buttons never reaches
+    // these. Screen coordinates go to the map in device pixels, as Map::setSize() is (see
+    // MapContainerView); UIKit reports points, hence the screen scale — not _pixelRatio, which
+    // carries UiScale and only scales style units.
+
+    private bool _scrollGesturesEnabled = true;
+    private bool _zoomGesturesEnabled   = true;
+    private bool _rotateGesturesEnabled = true;
+    private bool _tiltGesturesEnabled   = true;
+
+    private UIPanGestureRecognizer?      _panRecognizer;
+    private UIPinchGestureRecognizer?    _pinchRecognizer;
+    private UIRotationGestureRecognizer? _rotateRecognizer;
+    private UIPanGestureRecognizer?      _tiltRecognizer;
+    private UITapGestureRecognizer?      _twoFingerTapRecognizer;
+    private UIPanGestureRecognizer?      _wheelRecognizer;
+
+    private int _activeGestures;      // recognizers between Began and their end
+    private int _twoFingerGestures;   // of those, pinch/rotate/tilt — they own the camera
+
+    private const double TiltDegreesPerPoint = -0.5;   // Android's TpDegreesPerPixelMoved, per dp
+
+    // Scroll distance per wheel notch. macOS scrolls a notch as one line; taking a line as ~10
+    // points makes a notch one Windows wheel tick (0.5 zoom levels in mln_map_on_scroll).
+    // Unmeasured — tune on a device.
+    private const double WheelPointsPerTick = 10.0;
+
+    private static double ScreenScale => UIScreen.MainScreen.Scale;
+
+    private static (double X, double Y) Px(CGPoint p) => (p.X * ScreenScale, p.Y * ScreenScale);
+
+    private void SetupGestures(UIView surface)
+    {
+        surface.UserInteractionEnabled = true;
+        surface.MultipleTouchEnabled   = true;   // off by default; pinch, rotate and tilt need it
+        _activeGestures = _twoFingerGestures = 0;   // a map rebuilt mid-gesture starts clean
+
+        _panRecognizer    = new UIPanGestureRecognizer(OnPanGesture) { MaximumNumberOfTouches = 1 };
+        _pinchRecognizer  = new UIPinchGestureRecognizer(OnPinchGesture);
+        _rotateRecognizer = new UIRotationGestureRecognizer(OnRotateGesture);
+        _tiltRecognizer   = new UIPanGestureRecognizer(OnTiltGesture)
+        {
+            MinimumNumberOfTouches = 2,
+            MaximumNumberOfTouches = 2,
+        };
+        var doubleTap = new UITapGestureRecognizer(OnDoubleTapGesture) { NumberOfTapsRequired = 2 };
+        var tap       = new UITapGestureRecognizer(OnTapGesture);
+        tap.RequireGestureRecognizerToFail(doubleTap);
+        var longPress = new UILongPressGestureRecognizer(OnLongPressGesture);
+
+        // Android works zoom, rotate and tilt out of the same two-finger stream, and a second
+        // finger joins a pan already under way; let the continuous recognizers run together the
+        // same way. Each one's own threshold keeps the others from acting on a stray twitch.
+        UIGestureRecognizer[] continuous = [_panRecognizer, _pinchRecognizer, _rotateRecognizer, _tiltRecognizer];
+        foreach (var r in continuous)
+            r.ShouldRecognizeSimultaneously = (_, other) => Array.IndexOf(continuous, other) >= 0;
+
+        // Tilt is two fingers side by side dragged vertically — one above the other is a pinch.
+        _tiltRecognizer.ShouldBegin = r =>
+        {
+            if (r.NumberOfTouches < 2) return false;
+            var v = ((UIPanGestureRecognizer)r).VelocityInView(surface);
+            var a = r.LocationOfTouch(0, surface);
+            var b = r.LocationOfTouch(1, surface);
+            return Math.Abs(v.Y) > Math.Abs(v.X) && Math.Abs(a.Y - b.Y) < Math.Abs(a.X - b.X);
+        };
+
+        // Two-finger tap zooms out, as MLNMapView's does — once none of the two-finger
+        // gestures turned out to be what the fingers were doing.
+        _twoFingerTapRecognizer = new UITapGestureRecognizer(OnTwoFingerTapGesture) { NumberOfTouchesRequired = 2 };
+        _twoFingerTapRecognizer.RequireGestureRecognizerToFail(_pinchRecognizer);
+        _twoFingerTapRecognizer.RequireGestureRecognizerToFail(_rotateRecognizer);
+        _twoFingerTapRecognizer.RequireGestureRecognizerToFail(_tiltRecognizer);
+
+        foreach (var r in continuous) surface.AddGestureRecognizer(r);
+        surface.AddGestureRecognizer(doubleTap);
+        surface.AddGestureRecognizer(tap);
+        surface.AddGestureRecognizer(longPress);
+        surface.AddGestureRecognizer(_twoFingerTapRecognizer);
+
+        // A mouse wheel — on macCatalyst, or an iPad with a mouse — zooms about the pointer, as
+        // on WinUI and WPF (MLNMapView has no wheel zoom of its own). Discrete scrolls only: a
+        // trackpad or Magic Mouse scrolls continuously, and pinches to zoom instead.
+        if (OperatingSystem.IsIOSVersionAtLeast(13, 4) || OperatingSystem.IsMacCatalystVersionAtLeast(13, 4))
+        {
+            _wheelRecognizer = new UIPanGestureRecognizer(OnWheelGesture)
+            {
+                AllowedScrollTypesMask = UIScrollTypeMask.Discrete,
+                MaximumNumberOfTouches = 0,   // scroll events only, never a touch
+            };
+            surface.AddGestureRecognizer(_wheelRecognizer);
+        }
+        ApplyGestureFlags();
+    }
+
+    private void ApplyGestureFlags()
+    {
+        if (_panRecognizer    != null) _panRecognizer.Enabled    = _scrollGesturesEnabled;
+        if (_pinchRecognizer  != null) _pinchRecognizer.Enabled  = _zoomGesturesEnabled;
+        if (_rotateRecognizer != null) _rotateRecognizer.Enabled = _rotateGesturesEnabled;
+        if (_tiltRecognizer   != null) _tiltRecognizer.Enabled   = _tiltGesturesEnabled;
+        if (_twoFingerTapRecognizer != null) _twoFingerTapRecognizer.Enabled = _zoomGesturesEnabled;
+        if (_wheelRecognizer        != null) _wheelRecognizer.Enabled        = _zoomGesturesEnabled;
+    }
+
+    private void BeginGesture(bool twoFinger)
+    {
+        if (twoFinger) _twoFingerGestures++;
+        if (_activeGestures++ > 0 || _map == null) return;
+        // Cancel first: starting the gesture anchors the centre on the terrain, and a
+        // transition still running would re-apply the altitude it started with.
+        _map.CancelTransitions();
+        _map.SetGestureInProgress(true);
+    }
+
+    private void EndGesture(bool twoFinger)
+    {
+        if (twoFinger && _twoFingerGestures > 0) _twoFingerGestures--;
+        if (_activeGestures == 0 || --_activeGestures > 0) return;
+        _map?.SetGestureInProgress(false);
+    }
+
+    private static bool IsEnd(UIGestureRecognizerState s)
+        => s == UIGestureRecognizerState.Ended || s == UIGestureRecognizerState.Cancelled;
+
+    private void OnPanGesture(UIPanGestureRecognizer pan)
+    {
+        if (_map == null) return;
+        if (pan.State == UIGestureRecognizerState.Began)
+        {
+            BeginGesture(twoFinger: false);
+            OnUserPannedMap();
+        }
+        if (pan.State == UIGestureRecognizerState.Began || pan.State == UIGestureRecognizerState.Changed)
+        {
+            var t = pan.TranslationInView(pan.View);
+            pan.SetTranslation(CGPoint.Empty, pan.View);
+            // While two fingers are down they zoom, rotate and tilt; they do not also pan.
+            if (_twoFingerGestures == 0) _map.MoveBy(t.X * ScreenScale, t.Y * ScreenScale);
+        }
+        else if (IsEnd(pan.State))
+        {
+            if (pan.State == UIGestureRecognizerState.Ended && _twoFingerGestures == 0)
+                Fling(pan.VelocityInView(pan.View));
+            EndGesture(twoFinger: false);
+        }
+    }
+
+    // Same curve as Android's OnFling, on velocity in device pixels per second.
+    private void Fling(CGPoint velocity)
+    {
+        double vx = velocity.X * ScreenScale, vy = velocity.Y * ScreenScale;
+        double v = Math.Sqrt(vx * vx + vy * vy);
+        if (v < 200) return;   // too slow to fling
+        long ms = (long)Math.Min(v / 7.0 + 400, 1500);
+        _map?.MoveBy(vx * ms * 0.00028, vy * ms * 0.00028, ms);
+    }
+
+    private void OnPinchGesture(UIPinchGestureRecognizer pinch)
+    {
+        if (_map == null) return;
+        if (pinch.State == UIGestureRecognizerState.Began) BeginGesture(twoFinger: true);
+        if (pinch.State == UIGestureRecognizerState.Began || pinch.State == UIGestureRecognizerState.Changed)
+        {
+            double factor = pinch.Scale;
+            pinch.Scale = 1;   // report each step relative to the last, as OnPinch expects
+            if (factor > 0)
+            {
+                var (x, y) = Px(pinch.LocationInView(pinch.View));
+                _map.OnPinch(factor, x, y);
+            }
+        }
+        else if (IsEnd(pinch.State)) EndGesture(twoFinger: true);
+    }
+
+    private void OnRotateGesture(UIRotationGestureRecognizer rotate)
+    {
+        if (_map == null) return;
+        if (rotate.State == UIGestureRecognizerState.Began)
+        {
+            BeginGesture(twoFinger: true);
+            OnUserRotatedMap();
+        }
+        if (rotate.State == UIGestureRecognizerState.Began || rotate.State == UIGestureRecognizerState.Changed)
+        {
+            // Clockwise-positive in y-down screen space, as Android's twist angle is once it
+            // negates TpAngleDeg. Turn round the view centre with the same synthetic points.
+            double rad = rotate.Rotation;
+            rotate.Rotation = 0;
+            var size = View.Bounds.Size;   // the Metal view fills the container
+            double cx = size.Width * ScreenScale / 2.0, cy = size.Height * ScreenScale / 2.0;
+            const double r = 100.0;
+            _map.RotateBy(cx + r, cy, cx + r * Math.Cos(rad), cy + r * Math.Sin(rad));
+        }
+        else if (IsEnd(rotate.State)) EndGesture(twoFinger: true);
+    }
+
+    private void OnTiltGesture(UIPanGestureRecognizer tilt)
+    {
+        if (_map == null) return;
+        if (tilt.State == UIGestureRecognizerState.Began)
+        {
+            BeginGesture(twoFinger: true);
+            tilt.SetTranslation(CGPoint.Empty, tilt.View);   // the slop before it began is not a tilt
+        }
+        else if (tilt.State == UIGestureRecognizerState.Changed)
+        {
+            // A two-touch pan translates by the fingers' average, which is what Android pitches by.
+            var t = tilt.TranslationInView(tilt.View);
+            tilt.SetTranslation(CGPoint.Empty, tilt.View);
+            _map.PitchBy(t.Y * TiltDegreesPerPoint);
+        }
+        else if (IsEnd(tilt.State)) EndGesture(twoFinger: true);
+    }
+
+    private void OnTapGesture(UITapGestureRecognizer tap)
+    {
+        if (_map == null || tap.State != UIGestureRecognizerState.Ended) return;
+        var (x, y) = Px(tap.LocationInView(tap.View));
+        var (lat, lon) = _map.LatLngForPixelOnTerrain(x, y);
+        OnMapClickReceived?.Invoke(new LatLng(lat, lon), x, y);
+    }
+
+    private void OnDoubleTapGesture(UITapGestureRecognizer tap)
+    {
+        if (_map == null || tap.State != UIGestureRecognizerState.Ended || !_zoomGesturesEnabled) return;
+        var (x, y) = Px(tap.LocationInView(tap.View));
+        _map.OnDoubleTap(x, y);
+    }
+
+    private void OnTwoFingerTapGesture(UITapGestureRecognizer tap)
+    {
+        if (_map == null || tap.State != UIGestureRecognizerState.Ended || !_zoomGesturesEnabled) return;
+        _map.CancelTransitions();
+        // To the next whole zoom level out, about the fingers, over MLNMapView's 0.3 s.
+        // scaleBy clamps to the minimum zoom, so there is no need to check it first.
+        double zoom = _map.Zoom;
+        var (x, y) = Px(tap.LocationInView(tap.View));
+        _map.ScaleBy(Math.Pow(2, Math.Round(zoom) - 1.0 - zoom), x, y, durationMs: 300);
+    }
+
+    private void OnWheelGesture(UIPanGestureRecognizer wheel)
+    {
+        if (_map == null) return;
+        if (wheel.State != UIGestureRecognizerState.Began && wheel.State != UIGestureRecognizerState.Changed) return;
+        var t = wheel.TranslationInView(wheel.View);
+        wheel.SetTranslation(CGPoint.Empty, wheel.View);
+        if (t.Y == 0) return;
+        var (x, y) = Px(wheel.LocationInView(wheel.View));
+        // Content scrolled down zooms in, as a negative wheel deltaY does in maplibre-gl-js;
+        // macOS's natural-scrolling setting flips both alike.
+        _map.OnScroll(t.Y / WheelPointsPerTick, x, y);
+    }
+
+    private void OnLongPressGesture(UILongPressGestureRecognizer press)
+    {
+        if (_map == null || press.State != UIGestureRecognizerState.Began || _twoFingerGestures > 0) return;
+        var (x, y) = Px(press.LocationInView(press.View));
+        var (lat, lon) = _map.LatLngForPixelOnTerrain(x, y);
+        OnMapLongClickReceived?.Invoke(new LatLng(lat, lon), x, y);
+    }
 
     private void DisposeNative()
     {

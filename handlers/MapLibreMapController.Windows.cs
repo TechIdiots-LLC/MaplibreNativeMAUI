@@ -163,6 +163,8 @@ public class MapLibreMapController : IMapLibreMapController
             if (_mapView == null) return;
             _map = _mapView.Map;
             if (_map != null) _map.TerrainLoadMode = _terrainLoadMode;  // set before the map existed
+            if (_map != null) _map.TerrainSkirtLength = _terrainSkirtLength;
+            if (_map != null) _map.CenterClampedToGround = _centerClampedToGround;
             // Rebuild after a tab switch: restore the camera saved at teardown
             // before the app's MapReady handlers run (so they can still override).
             if (_savedCamera is { } cam)
@@ -538,12 +540,9 @@ public class MapLibreMapController : IMapLibreMapController
         _gpsBottomBtn.Background = new WUXM.SolidColorBrush(bBg);
     }
 
-    /// <summary>Toggles terrain on the configured source (enable if off, disable if on), then refreshes the button.</summary>
+    /// <summary>Toggles terrain on the configured source (enable if off, disable if on); ToggleTerrain refreshes the button.</summary>
     private void ToggleTerrainControl()
-    {
-        ToggleTerrain(_terrainControlSourceId, _terrainControlExaggeration);
-        RefreshTerrainControl();
-    }
+        => ToggleTerrain(_terrainControlSourceId, _terrainControlExaggeration);
 
     /// <summary>Updates the terrain button's active/idle colours from the current terrain state.</summary>
     private void RefreshTerrainControl()
@@ -721,16 +720,24 @@ public class MapLibreMapController : IMapLibreMapController
         _style.RemoveSource(sourceId);
     }
 
+    public void SetSourceVolatile(string sourceId, bool isVolatile)
+    {
+        if (!_styleReady || _style == null) return;
+        if (_style.GetSource(sourceId) is { } source) source.IsVolatile = isVolatile;
+    }
+
     public void SetTerrain(string sourceId, float exaggeration)
     {
         if (!_styleReady || _style == null) return;
         _style.SetTerrain(sourceId, exaggeration);
+        RefreshTerrainControl();   // the on-map control follows terrain set from code too
     }
 
     public void RemoveTerrain()
     {
         if (!_styleReady || _style == null) return;
         _style.RemoveTerrain();
+        RefreshTerrainControl();
     }
 
     public void ToggleTerrain(string sourceId, float exaggeration)
@@ -738,9 +745,19 @@ public class MapLibreMapController : IMapLibreMapController
         if (!_styleReady || _style == null) return;
         if (_style.IsTerrainEnabled) _style.RemoveTerrain();
         else _style.SetTerrain(sourceId, exaggeration);
+        RefreshTerrainControl();
     }
 
     public bool IsTerrainEnabled => _styleReady && _style != null && _style.IsTerrainEnabled;
+
+    public void SetGlobalStateProperty(string name, object? value)
+    {
+        // _styleReady stays set while a new style URL loads; core refuses until that is done.
+        if (!_styleReady || _style == null || !_style.IsLoaded) return;
+        _style.SetGlobalStateProperty(name, value);
+    }
+
+    public string GetGlobalState() => _styleReady && _style != null ? _style.GetGlobalState() : "{}";
 
 
     // ── Layers ────────────────────────────────────────────────────────────────
@@ -1223,6 +1240,10 @@ public class MapLibreMapController : IMapLibreMapController
     {
         if (_mapView?.Map is { } m)
         {
+            // Gestures over terrain raise the centre onto the ground, and a centre and zoom
+            // mean that view only at that altitude. The rebuilt map starts at sea level, so
+            // save the sea-level equivalent; this map is about to go, so moving it is harmless.
+            m.SetCenterAltitudeKeepingView(0);
             var (lat, lon) = m.Center;
             _savedCamera = (lat, lon, m.Zoom, m.Bearing, m.Pitch);
         }
@@ -1285,14 +1306,29 @@ public class MapLibreMapController : IMapLibreMapController
     }
 
     public (double X, double Y) LatLngToScreenPoint(double latitude, double longitude)
-        => _map?.PixelForLatLng(latitude, longitude) ?? (0, 0);
+        => _map?.PixelForLatLngOnTerrain(latitude, longitude) ?? (0, 0);
 
     public LatLng ScreenPointToLatLng(double x, double y)
     {
         if (_map == null) return new LatLng(0, 0);
-        var (lat, lon) = _map.LatLngForPixel(x, y);
+        var (lat, lon) = _map.LatLngForPixelOnTerrain(x, y);
         return new LatLng(lat, lon);
     }
+
+    public LatLng ScreenPointToLatLngAtCenterAltitude(double x, double y)
+    {
+        if (_map == null) return new LatLng(0, 0);
+        var (lat, lon) = _map.LatLngForPixelAtCenterAltitude(x, y);
+        return new LatLng(lat, lon);
+    }
+
+    public double? GetTerrainElevation(double latitude, double longitude)
+        => _map?.GetTerrainElevation(latitude, longitude);
+
+    public double GetCenterAltitude() => _map?.CenterAltitude ?? 0;
+
+    public bool SetCenterAltitudeKeepingView(double altitudeMeters)
+        => _map?.SetCenterAltitudeKeepingView(altitudeMeters) ?? false;
 
     public string? QueryRenderedFeaturesAtPoint(double x, double y, string? layerIds = null)
         => _map?.QueryRenderedFeaturesAtPoint(x, y, layerIds);
@@ -1382,6 +1418,36 @@ public class MapLibreMapController : IMapLibreMapController
 
     public void SetTerrainLoadMode(TerrainLoadMode mode) => TerrainLoadMode = mode;
 
+    // Cached for the same reason as _terrainLoadMode.
+    private TerrainSkirtLength _terrainSkirtLength = TerrainSkirtLength.Auto;
+
+    public TerrainSkirtLength TerrainSkirtLength
+    {
+        get => _map?.TerrainSkirtLength ?? _terrainSkirtLength;
+        set
+        {
+            _terrainSkirtLength = value;
+            if (_map != null) _map.TerrainSkirtLength = value;
+        }
+    }
+
+    public void SetTerrainSkirtLength(TerrainSkirtLength length) => TerrainSkirtLength = length;
+
+    // Cached for the same reason as _terrainLoadMode.
+    private bool _centerClampedToGround;
+
+    public bool CenterClampedToGround
+    {
+        get => _map?.CenterClampedToGround ?? _centerClampedToGround;
+        set
+        {
+            _centerClampedToGround = value;
+            if (_map != null) _map.CenterClampedToGround = value;
+        }
+    }
+
+    public void SetCenterClampedToGround(bool clamped) => CenterClampedToGround = clamped;
+
     // ── Tier 2 – camera / batch projection ───────────────────────────────────
     public CameraResult CameraForLatLngs(
         IReadOnlyList<(double Lat, double Lon)> points,
@@ -1389,10 +1455,10 @@ public class MapLibreMapController : IMapLibreMapController
         => _map?.CameraForLatLngs(points, padTop, padLeft, padBottom, padRight) ?? default;
 
     public (double X, double Y)[] PixelsForLatLngs(IReadOnlyList<(double Lat, double Lon)> points)
-        => _map?.PixelsForLatLngs(points) ?? [];
+        => _map?.PixelsForLatLngsOnTerrain(points) ?? [];
 
     public (double Lat, double Lon)[] LatLngsForPixels(IReadOnlyList<(double X, double Y)> pixels)
-        => _map?.LatLngsForPixels(pixels) ?? [];
+        => _map?.LatLngsForPixelsOnTerrain(pixels) ?? [];
 
     // ── Debug overlays ────────────────────────────────────────────────────────────
 

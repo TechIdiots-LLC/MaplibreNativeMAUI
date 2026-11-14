@@ -63,6 +63,15 @@ public partial class MapLibreMap : StackLayout
     /// </summary>
     public static readonly BindableProperty TerrainLoadModeProperty =
         BindableProperty.Create(nameof(TerrainLoadMode), typeof(TerrainLoadMode), typeof(MapLibreMap), defaultValue: TerrainLoadMode.Quality);
+    /// <summary>
+    /// Whether terrain tiles carry vertical skirts along their edges.
+    /// Default <see cref="MapLibreNative.Maui.TerrainSkirtLength.Auto"/>.
+    /// </summary>
+    public static readonly BindableProperty TerrainSkirtLengthProperty =
+        BindableProperty.Create(nameof(TerrainSkirtLength), typeof(TerrainSkirtLength), typeof(MapLibreMap), defaultValue: TerrainSkirtLength.Auto);
+    /// <summary>Whether the map centre rides the terrain surface. Default <c>false</c>.</summary>
+    public static readonly BindableProperty CenterClampedToGroundProperty =
+        BindableProperty.Create(nameof(CenterClampedToGround), typeof(bool), typeof(MapLibreMap), defaultValue: false);
     /// <summary>Corner the terrain control is anchored to. Default <see cref="MapControlCorner.TopRight"/>.</summary>
     public static readonly BindableProperty TerrainControlPositionProperty =
         BindableProperty.Create(nameof(TerrainControlPosition), typeof(MapControlCorner), typeof(MapLibreMap), defaultValue: MapControlCorner.TopRight);
@@ -344,6 +353,31 @@ public partial class MapLibreMap : StackLayout
         set => SetValue(TerrainLoadModeProperty, value);
     }
 
+    /// <summary>
+    /// Whether terrain tiles carry vertical skirts along their edges. The skirts hide the
+    /// hairline gaps between tiles at different zoom levels, but show as vertical artifacts
+    /// over a transparent background — use <see cref="MapLibreNative.Maui.TerrainSkirtLength.None"/>
+    /// there. Changing it rebuilds the terrain mesh; it does nothing while terrain is off.
+    /// </summary>
+    public TerrainSkirtLength TerrainSkirtLength
+    {
+        get => (TerrainSkirtLength)GetValue(TerrainSkirtLengthProperty);
+        set => SetValue(TerrainSkirtLengthProperty, value);
+    }
+
+    /// <summary>
+    /// Whether the map centre rides the terrain surface rather than sea level, as in
+    /// maplibre-gl-js. With it on, pitching over tall ground keeps the camera above it
+    /// instead of sinking in, and the camera's eye is kept clear of the ground under it.
+    /// During a gesture the centre holds the height it started at, so the camera does not
+    /// rise and fall with every ridge a drag passes. Off by default; inert while terrain is off.
+    /// </summary>
+    public bool CenterClampedToGround
+    {
+        get => (bool)GetValue(CenterClampedToGroundProperty);
+        set => SetValue(CenterClampedToGroundProperty, value);
+    }
+
     public string? CustomAttribution
     {
         get => (string?)GetValue(CustomAttributionProperty);
@@ -432,6 +466,20 @@ public partial class MapLibreMap : StackLayout
     {
         if (Handler is not MapLibreMapHandler handler) return;
         handler.Controller.RemoveSource(sourceName);
+    }
+
+    /// <summary>
+    /// Keeps a source's tiles out of the ambient cache on disk (or lets them back in), as
+    /// <c>Source.setVolatile</c> on MapLibre Android — for data that is stale by the next visit,
+    /// such as live radar or traffic, or that should not fill the offline database. Works for
+    /// any source by ID, including those defined in the style JSON. Applies to tiles requested
+    /// from then on, so call it right after adding the source (or from <c>StyleLoaded</c> for a
+    /// style's own). No-op for an unknown source.
+    /// </summary>
+    public void SetSourceVolatile(string sourceName, bool isVolatile)
+    {
+        if (Handler is not MapLibreMapHandler handler) return;
+        handler.Controller.SetSourceVolatile(sourceName, isVolatile);
     }
 
     /// <summary>Removes a layer previously added to the style. No-op if it does not exist.</summary>
@@ -528,6 +576,28 @@ public partial class MapLibreMap : StackLayout
     /// <summary>Whether 3D terrain is currently enabled.</summary>
     public bool IsTerrainEnabled
         => Handler is MapLibreMapHandler handler && handler.Controller.IsTerrainEnabled;
+
+    /// <summary>
+    /// Sets a property read by the style's <c>["global-state", name]</c> expressions, as
+    /// maplibre-gl-js's <c>map.setGlobalStateProperty</c> does — a way to restyle the map (switch
+    /// units, a theme, which categories show) by changing one value instead of re-setting layer
+    /// properties. Every expression and layer visibility that reads it is re-evaluated. A style
+    /// declares its properties and their defaults in its root <c>state</c>; <c>null</c> resets
+    /// one to that default. Has no effect until the style has loaded, so call it from
+    /// <c>StyleLoaded</c> or later.
+    /// </summary>
+    public void SetGlobalStateProperty(string name, object? value)
+    {
+        if (Handler is not MapLibreMapHandler handler) return;
+        handler.Controller.SetGlobalStateProperty(name, value);
+    }
+
+    /// <summary>
+    /// The global state as a JSON object: the style's root <c>state</c> defaults with any values
+    /// set over them. <c>"{}"</c> before the style has loaded.
+    /// </summary>
+    public string GetGlobalState()
+        => Handler is MapLibreMapHandler handler ? handler.Controller.GetGlobalState() : "{}";
 
     /// <summary>
     /// Adds a vector source, from either a TileJSON <paramref name="tileUrl"/> or explicit
@@ -693,11 +763,34 @@ public partial class MapLibreMap : StackLayout
         return handler.Controller.QueryRenderedFeaturesInBox(x1, y1, x2, y2, layerIds);
     }
 
-    /// <summary>Converts a geographic coordinate to a screen point (physical pixels).</summary>
+    /// <summary>
+    /// Converts a geographic coordinate to a screen point (physical pixels). With 3D terrain
+    /// the point is where the location is drawn on the terrain surface.
+    /// </summary>
     public (double X, double Y) LatLngToScreenPoint(double latitude, double longitude)
     {
         if (Handler is not MapLibreMapHandler handler) return (0, 0);
         return handler.Controller.LatLngToScreenPoint(latitude, longitude);
+    }
+
+    /// <summary>
+    /// Converts a screen point (physical pixels) to a geographic coordinate. With 3D terrain
+    /// it is the nearest ground along the point's line of sight, as a tap reports it.
+    /// </summary>
+    public LatLng ScreenPointToLatLng(double x, double y)
+    {
+        if (Handler is not MapLibreMapHandler handler) return new LatLng(0, 0);
+        return handler.Controller.ScreenPointToLatLng(x, y);
+    }
+
+    /// <summary>
+    /// Terrain height in metres above sea level at a location, exaggeration applied as the
+    /// terrain is drawn; <see langword="null"/> without terrain or before a DEM tile covers it.
+    /// </summary>
+    public double? GetTerrainElevation(double latitude, double longitude)
+    {
+        if (Handler is not MapLibreMapHandler handler) return null;
+        return handler.Controller.GetTerrainElevation(latitude, longitude);
     }
 
     // ── Visible region ───────────────────────────────────────────────────

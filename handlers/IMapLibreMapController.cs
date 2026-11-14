@@ -83,12 +83,18 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
     public void SetGeoJsonSource(string sourceName, string source);
     public void SetGeoJsonFeature(string sourceName, string geojsonFeature);
     public void RemoveSource(string sourceId);
+    /// <summary>Keep a source's tiles out of the ambient disk cache (or let them back in).</summary>
+    public void SetSourceVolatile(string sourceId, bool isVolatile);
 
     // 3D terrain (drapes the map over an existing raster-dem source)
     public void SetTerrain(string sourceId, float exaggeration);
     public void RemoveTerrain();
     public void ToggleTerrain(string sourceId, float exaggeration);
     public bool IsTerrainEnabled { get; }
+
+    // Style global state (the values ["global-state", name] expressions read)
+    public void SetGlobalStateProperty(string name, object? value);
+    public string GetGlobalState();
 
     // Layers
     public void AddSymbolLayer(
@@ -224,9 +230,42 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
     public double GetPitch();
     public LatLng GetCenter();
 
-    // Projection
+    // Projection. With 3D terrain both answer on the terrain surface, as MapLibre's iOS and
+    // Android SDKs do: a point lands where its location is drawn on the ground, and a screen
+    // point gives the nearest ground along its line of sight. Without terrain, or before a DEM
+    // tile covers the spot, they answer at sea level. The batch versions below do the same.
     public (double X, double Y) LatLngToScreenPoint(double latitude, double longitude);
     public LatLng ScreenPointToLatLng(double x, double y);
+
+    /// <summary>
+    /// The location under a screen point on the plane the camera's centre sits on
+    /// (<see cref="GetCenterAltitude"/>), for code that turns a screen point into a camera
+    /// centre. <see cref="ScreenPointToLatLng"/> answers on the terrain in front of that plane,
+    /// and a centre taken from it moves the view.
+    /// </summary>
+    public LatLng ScreenPointToLatLngAtCenterAltitude(double x, double y);
+
+    /// <summary>
+    /// Terrain height in metres above sea level at a location, exaggeration applied as the
+    /// terrain is drawn; <see langword="null"/> without terrain or before a DEM tile covers it.
+    /// </summary>
+    public double? GetTerrainElevation(double latitude, double longitude);
+
+    /// <summary>
+    /// The camera centre's altitude in metres above sea level: 0 unless a gesture over terrain,
+    /// <see cref="CenterClampedToGround"/> or <see cref="SetCenterAltitudeKeepingView"/> raised it.
+    /// A centre and zoom describe the same view only at the same centre altitude, so save this
+    /// with a camera and restore it with <see cref="SetCenterAltitudeKeepingView"/> first.
+    /// </summary>
+    public double GetCenterAltitude();
+
+    /// <summary>
+    /// Moves the centre along the line of sight to <paramref name="altitudeMeters"/> without
+    /// moving the camera (0 is sea level). Returns <see langword="false"/>, changing nothing,
+    /// when it is already there, at a near-grazing pitch, where the zoom limits or bounds would
+    /// cut the move short, or before the map exists.
+    /// </summary>
+    public bool SetCenterAltitudeKeepingView(double altitudeMeters);
 
     // Feature queries
     public string? QueryRenderedFeaturesAtPoint(double x, double y, string? layerIds = null);
@@ -288,7 +327,7 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
     void SetTileLodScale(double scale);
     void SetTileLodPitchThreshold(double thresholdRadians);
     void SetTileLodZoomShift(double shift);
-    /// <param name="mode">0=Default 1=Distance</param>
+    /// <param name="mode">0=Default 1=Distance 2=Adaptive (maplibre-gl-js's tile selection)</param>
     void SetTileLodMode(int mode);
 
     /// <summary>
@@ -296,6 +335,18 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
     /// <see cref="TerrainLoadMode.Quality"/>; no effect while terrain is off.
     /// </summary>
     TerrainLoadMode TerrainLoadMode { get; set; }
+
+    /// <summary>
+    /// Whether terrain tiles carry vertical skirts along their edges. Defaults to
+    /// <see cref="TerrainSkirtLength.Auto"/>; no effect while terrain is off.
+    /// </summary>
+    TerrainSkirtLength TerrainSkirtLength { get; set; }
+
+    /// <summary>
+    /// Whether the map centre rides the terrain surface rather than sea level. Off by
+    /// default; inert while terrain is off.
+    /// </summary>
+    bool CenterClampedToGround { get; set; }
 
     // ── Tier 2 – camera / projection ─────────────────────────────────────────
     CameraResult CameraForLatLngs(

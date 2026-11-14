@@ -80,5 +80,15 @@ public interface IMapLibreMapOptionsSink
     /// </summary>
     void SetTerrainLoadMode(TerrainLoadMode mode);
 
+    /// <summary>
+    /// Choose whether terrain tiles carry vertical skirts along their edges.
+    /// </summary>
+    void SetTerrainSkirtLength(TerrainSkirtLength length);
+
+    /// <summary>
+    /// Choose whether the map centre rides the terrain surface rather than sea level.
+    /// </summary>
+    void SetCenterClampedToGround(bool clamped);
+
     //void SetLocationEngineProperties(LocationEngineRequest? locationEngineRequest);
 }

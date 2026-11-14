@@ -486,6 +486,17 @@ public static partial class NativeMethods
         StringMarshalling = StringMarshalling.Utf8)]
     public static partial MlnStatus StyleSetLightProperty(IntPtr style, string name, string valueJson);
 
+    [LibraryImport(Lib, EntryPoint = "mln_style_is_loaded")]
+    public static partial int StyleIsLoaded(IntPtr style);
+
+    // ── Style – global state ────────────────────────────────────────────
+    [LibraryImport(Lib, EntryPoint = "mln_style_set_global_state_property",
+        StringMarshalling = StringMarshalling.Utf8)]
+    public static partial MlnStatus StyleSetGlobalStateProperty(IntPtr style, string name, string valueJson);
+
+    [LibraryImport(Lib, EntryPoint = "mln_style_get_global_state")]
+    public static partial IntPtr StyleGetGlobalState(IntPtr style);
+
     [LibraryImport(Lib, EntryPoint = "mln_style_remove_layer",
         StringMarshalling = StringMarshalling.Utf8)]
     public static partial MlnStatus StyleRemoveLayer(IntPtr style, string layerId);
@@ -591,6 +602,62 @@ public static partial class NativeMethods
     [LibraryImport(Lib, EntryPoint = "mln_map_get_terrain_load_mode")]
     public static partial int MapGetTerrainLoadMode(IntPtr map);
 
+    // ── Map – 3D terrain tile skirts ────────────────────────────────────
+    [LibraryImport(Lib, EntryPoint = "mln_map_set_terrain_skirt_length")]
+    public static partial MlnStatus MapSetTerrainSkirtLength(IntPtr map, int length);
+
+    [LibraryImport(Lib, EntryPoint = "mln_map_get_terrain_skirt_length")]
+    public static partial int MapGetTerrainSkirtLength(IntPtr map);
+
+    // ── Map – centre on the terrain ─────────────────────────────────────
+    [LibraryImport(Lib, EntryPoint = "mln_map_set_center_clamped_to_ground")]
+    public static partial MlnStatus MapSetCenterClampedToGround(IntPtr map, int clamped);
+
+    [LibraryImport(Lib, EntryPoint = "mln_map_get_center_clamped_to_ground")]
+    public static partial int MapGetCenterClampedToGround(IntPtr map);
+
+    [LibraryImport(Lib, EntryPoint = "mln_map_get_center_altitude")]
+    public static partial double MapGetCenterAltitude(IntPtr map);
+
+    [LibraryImport(Lib, EntryPoint = "mln_map_set_center_altitude_keeping_view")]
+    public static partial int MapSetCenterAltitudeKeepingView(IntPtr map, double altitudeMeters);
+
+    [LibraryImport(Lib, EntryPoint = "mln_map_anchor_center_on_terrain")]
+    public static partial MlnStatus MapAnchorCenterOnTerrain(IntPtr map);
+
+    // ── Map – projection onto 3D terrain ────────────────────────────────
+    [LibraryImport(Lib, EntryPoint = "mln_map_get_terrain_elevation")]
+    public static partial int MapGetTerrainElevation(IntPtr map, double lat, double lon,
+        out double outElevationMeters);
+
+    [LibraryImport(Lib, EntryPoint = "mln_map_pixel_for_latlng_on_terrain")]
+    public static partial void MapPixelForLatLngOnTerrain(IntPtr map, double lat, double lon,
+        out double outX, out double outY);
+
+    [LibraryImport(Lib, EntryPoint = "mln_map_latlng_for_pixel_on_terrain")]
+    public static partial void MapLatLngForPixelOnTerrain(IntPtr map, double x, double y,
+        out double outLat, out double outLon);
+
+    [LibraryImport(Lib, EntryPoint = "mln_map_pixels_for_latlngs_on_terrain")]
+    public static unsafe partial MlnStatus MapPixelsForLatLngsOnTerrain(IntPtr map,
+        double* latLngs, int count, double* outXy);
+
+    [LibraryImport(Lib, EntryPoint = "mln_map_latlngs_for_pixels_on_terrain")]
+    public static unsafe partial MlnStatus MapLatLngsForPixelsOnTerrain(IntPtr map,
+        double* xy, int count, double* outLatLngs);
+
+    [LibraryImport(Lib, EntryPoint = "mln_map_pixel_for_latlng_at_elevation")]
+    public static partial void MapPixelForLatLngAtElevation(IntPtr map, double lat, double lon,
+        double elevationMeters, out double outX, out double outY);
+
+    [LibraryImport(Lib, EntryPoint = "mln_map_latlng_for_pixel_at_elevation")]
+    public static partial void MapLatLngForPixelAtElevation(IntPtr map, double x, double y,
+        double elevationMeters, out double outLat, out double outLon);
+
+    [LibraryImport(Lib, EntryPoint = "mln_map_latlng_for_pixel_at_center_altitude")]
+    public static partial void MapLatLngForPixelAtCenterAltitude(IntPtr map, double x, double y,
+        out double outLat, out double outLon);
+
     // ── Map – camera for point set (Tier 2) ───────────────────────────────────
     [LibraryImport(Lib, EntryPoint = "mln_map_camera_for_latlngs")]
     public static unsafe partial MlnStatus MapCameraForLatLngs(IntPtr map,
@@ -632,6 +699,12 @@ public static partial class NativeMethods
     /// <summary>Returns the attribution text of a source (may be NULL). Caller frees with FreeString.</summary>
     [LibraryImport(Lib, EntryPoint = "mln_source_get_attribution")]
     public static partial IntPtr SourceGetAttribution(IntPtr source);
+
+    [LibraryImport(Lib, EntryPoint = "mln_source_set_volatile")]
+    public static partial MlnStatus SourceSetVolatile(IntPtr source, int isVolatile);
+
+    [LibraryImport(Lib, EntryPoint = "mln_source_is_volatile")]
+    public static partial int SourceIsVolatile(IntPtr source);
 
     // ── Layer – read-back (Tier 1) ────────────────────────────────────────────
     [LibraryImport(Lib, EntryPoint = "mln_layer_get_paint_property",
@@ -700,6 +773,10 @@ public static partial class NativeMethods
 
     [DllImport(Lib, EntryPoint = "mln_android_release_window")]
     public static extern void AndroidReleaseWindow(IntPtr window);
+
+    // ── Android APK assets for asset:// ────────────────────────────────────────
+    [DllImport(Lib, EntryPoint = "mln_android_set_asset_manager")]
+    public static extern MlnStatus AndroidSetAssetManager(IntPtr jniEnv, IntPtr assetManager);
 
     // ── Android HTTP provider ──────────────────────────────────────────────────
 

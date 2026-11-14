@@ -120,6 +120,9 @@ public sealed class MapImageView : IDisposable
         View.PointerMoved         += OnPointerMoved;
         View.PointerReleased      += OnPointerReleased;
         View.PointerCanceled      += OnPointerCanceled;
+        // A drag flags a gesture in progress natively; end it if capture goes elsewhere
+        // (alt-tab, a popup) rather than leaving it set until the next release.
+        View.PointerCaptureLost   += OnPointerCanceled;
         View.PointerWheelChanged  += OnPointerWheel;
         View.Tapped               += OnTapped;
         View.DoubleTapped         += OnDoubleTapped;
@@ -315,7 +318,7 @@ public sealed class MapImageView : IDisposable
     {
         if (_map == null || !IsOnMapSurface(e.OriginalSource)) return;
         var p = Phys(e.GetPosition(View));
-        var ll = _map.LatLngForPixel(p.X, p.Y);
+        var ll = _map.LatLngForPixelOnTerrain(p.X, p.Y);
         MapClicked?.Invoke(this, (ll.Lat, ll.Lon, p.X, p.Y));
     }
 

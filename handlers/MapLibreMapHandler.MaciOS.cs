@@ -25,6 +25,7 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, UIView>
         _controller.OnCameraMoveReceived            += VirtualView.OnCameraMove;
         _controller.OnCameraIdleReceived            += VirtualView.OnCameraIdle;
         _controller.OnCameraTrackingChangedReceived += VirtualView.OnCameraTrackingChanged;
+        _controller.OnCameraTrackingDismissedReceived += VirtualView.OnCameraTrackingDismissed;
         _controller.OnMapClickReceived              += (ll, sx, sy) => VirtualView.OnMapClick(ll, sx, sy);
         _controller.OnMapLongClickReceived          += (ll, sx, sy) => VirtualView.OnMapLongClick(ll, sx, sy);
         _controller.OnUserLocationUpdateReceived    += VirtualView.OnUserLocationUpdate;
@@ -57,4 +58,6 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, UIView>
     public void UpdateShowTerrainControl(bool show, string sourceId, float exaggeration) => _controller.SetShowTerrainControl(show, sourceId, exaggeration);
     public void UpdateTerrainControlPosition(MapControlCorner corner)     => _controller.SetTerrainControlPosition(corner);
     public void UpdateTerrainLoadMode(TerrainLoadMode mode)               => _controller.SetTerrainLoadMode(mode);
+    public void UpdateTerrainSkirtLength(TerrainSkirtLength length)       => _controller.SetTerrainSkirtLength(length);
+    public void UpdateCenterClampedToGround(bool clamped)                 => _controller.SetCenterClampedToGround(clamped);
 }

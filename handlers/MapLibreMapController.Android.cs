@@ -393,6 +393,15 @@ public class MapLibreMapController : IMapLibreMapController
     private bool?  _tpPitchValid;
     private long?  _tpFirstMoveTime;
 
+    // Two-finger tap (zoom out), as the MapLibre Android SDK's MultiFingerTapGestureDetector
+    // (maplibre-gestures-android): judged when the last finger lifts.
+    private const long   MftTimeThresholdMs     = 150;   // first down to last up
+    private const double MftMovementThresholdDp = 5;     // change in finger separation per move
+    private int    _mftPointers;              // pointers down at the last ACTION_POINTER_DOWN
+    private bool   _mftLifted, _mftInvalid;
+    private double _mftDiffX, _mftDiffY;      // finger0 - finger1 at the previous event
+    private double _mftFocusX, _mftFocusY;    // between the two fingers
+
     public FrameLayout View { get; private set; } = null!;
 
     // -- Events ----------------------------------------------------------------
@@ -662,12 +671,9 @@ public class MapLibreMapController : IMapLibreMapController
         RefreshTerrainIcon();
     }
 
-    /// <summary>Toggles terrain on the configured source (enable if off, disable if on), then refreshes the button.</summary>
+    /// <summary>Toggles terrain on the configured source (enable if off, disable if on); ToggleTerrain refreshes the button.</summary>
     private void ToggleTerrainControl()
-    {
-        ToggleTerrain(_terrainControlSourceId, _terrainControlExaggeration);
-        RefreshTerrainIcon();
-    }
+        => ToggleTerrain(_terrainControlSourceId, _terrainControlExaggeration);
 
     /// <summary>Colours the terrain button to reflect whether terrain is currently enabled.</summary>
     private void RefreshTerrainIcon()
@@ -858,6 +864,8 @@ public class MapLibreMapController : IMapLibreMapController
                                 observer: OnMapObserverEvent);
         _map.SetSize(w, h);
         _map.TerrainLoadMode = _terrainLoadMode;   // may have been set before the map existed
+        _map.TerrainSkirtLength = _terrainSkirtLength;
+        _map.CenterClampedToGround = _centerClampedToGround;
 
         if (!string.IsNullOrEmpty(_styleString))
         {
@@ -1503,16 +1511,24 @@ public class MapLibreMapController : IMapLibreMapController
         _style.RemoveSource(sourceId);
     }
 
+    public void SetSourceVolatile(string sourceId, bool isVolatile)
+    {
+        if (!_styleReady || _style == null) return;
+        if (_style.GetSource(sourceId) is { } source) source.IsVolatile = isVolatile;
+    }
+
     public void SetTerrain(string sourceId, float exaggeration)
     {
         if (!_styleReady || _style == null) return;
         _style.SetTerrain(sourceId, exaggeration);
+        RefreshTerrainIcon();   // the on-map control follows terrain set from code too
     }
 
     public void RemoveTerrain()
     {
         if (!_styleReady || _style == null) return;
         _style.RemoveTerrain();
+        RefreshTerrainIcon();
     }
 
     public void ToggleTerrain(string sourceId, float exaggeration)
@@ -1520,9 +1536,19 @@ public class MapLibreMapController : IMapLibreMapController
         if (!_styleReady || _style == null) return;
         if (_style.IsTerrainEnabled) _style.RemoveTerrain();
         else _style.SetTerrain(sourceId, exaggeration);
+        RefreshTerrainIcon();
     }
 
     public bool IsTerrainEnabled => _styleReady && _style != null && _style.IsTerrainEnabled;
+
+    public void SetGlobalStateProperty(string name, object? value)
+    {
+        // _styleReady stays set while a new style URL loads; core refuses until that is done.
+        if (!_styleReady || _style == null || !_style.IsLoaded) return;
+        _style.SetGlobalStateProperty(name, value);
+    }
+
+    public string GetGlobalState() => _styleReady && _style != null ? _style.GetGlobalState() : "{}";
 
 
     // -- Layers ----------------------------------------------------------------
@@ -1699,14 +1725,29 @@ public class MapLibreMapController : IMapLibreMapController
     }
 
     public (double X, double Y) LatLngToScreenPoint(double latitude, double longitude)
-        => _map?.PixelForLatLng(latitude, longitude) ?? (0, 0);
+        => _map?.PixelForLatLngOnTerrain(latitude, longitude) ?? (0, 0);
 
     public LatLng ScreenPointToLatLng(double x, double y)
     {
         if (_map == null) return new LatLng(0, 0);
-        var (lat, lon) = _map.LatLngForPixel(x, y);
+        var (lat, lon) = _map.LatLngForPixelOnTerrain(x, y);
         return new LatLng(lat, lon);
     }
+
+    public LatLng ScreenPointToLatLngAtCenterAltitude(double x, double y)
+    {
+        if (_map == null) return new LatLng(0, 0);
+        var (lat, lon) = _map.LatLngForPixelAtCenterAltitude(x, y);
+        return new LatLng(lat, lon);
+    }
+
+    public double? GetTerrainElevation(double latitude, double longitude)
+        => _map?.GetTerrainElevation(latitude, longitude);
+
+    public double GetCenterAltitude() => _map?.CenterAltitude ?? 0;
+
+    public bool SetCenterAltitudeKeepingView(double altitudeMeters)
+        => _map?.SetCenterAltitudeKeepingView(altitudeMeters) ?? false;
 
     public string? QueryRenderedFeaturesAtPoint(double x, double y, string? layerIds = null)
         => _map?.QueryRenderedFeaturesAtPoint(x, y, layerIds);
@@ -1771,6 +1812,36 @@ public class MapLibreMapController : IMapLibreMapController
 
     public void SetTerrainLoadMode(TerrainLoadMode mode) => TerrainLoadMode = mode;
 
+    // Cached for the same reason as _terrainLoadMode.
+    private TerrainSkirtLength _terrainSkirtLength = TerrainSkirtLength.Auto;
+
+    public TerrainSkirtLength TerrainSkirtLength
+    {
+        get => _map?.TerrainSkirtLength ?? _terrainSkirtLength;
+        set
+        {
+            _terrainSkirtLength = value;
+            if (_map != null) _map.TerrainSkirtLength = value;
+        }
+    }
+
+    public void SetTerrainSkirtLength(TerrainSkirtLength length) => TerrainSkirtLength = length;
+
+    // Cached for the same reason as _terrainLoadMode.
+    private bool _centerClampedToGround;
+
+    public bool CenterClampedToGround
+    {
+        get => _map?.CenterClampedToGround ?? _centerClampedToGround;
+        set
+        {
+            _centerClampedToGround = value;
+            if (_map != null) _map.CenterClampedToGround = value;
+        }
+    }
+
+    public void SetCenterClampedToGround(bool clamped) => CenterClampedToGround = clamped;
+
     // -- Tier 2 – camera / batch projection ───────────────────────────────────
     public CameraResult CameraForLatLngs(
         IReadOnlyList<(double Lat, double Lon)> points,
@@ -1778,10 +1849,10 @@ public class MapLibreMapController : IMapLibreMapController
         => _map?.CameraForLatLngs(points, padTop, padLeft, padBottom, padRight) ?? default;
 
     public (double X, double Y)[] PixelsForLatLngs(IReadOnlyList<(double Lat, double Lon)> points)
-        => _map?.PixelsForLatLngs(points) ?? [];
+        => _map?.PixelsForLatLngsOnTerrain(points) ?? [];
 
     public (double Lat, double Lon)[] LatLngsForPixels(IReadOnlyList<(double X, double Y)> pixels)
-        => _map?.LatLngsForPixels(pixels) ?? [];
+        => _map?.LatLngsForPixelsOnTerrain(pixels) ?? [];
 
     // ── Debug overlays ────────────────────────────────────────────────────────────
 
@@ -1868,16 +1939,28 @@ public class MapLibreMapController : IMapLibreMapController
             switch (e.ActionMasked)
             {
                 case MotionEventActions.Down:
-                    c._map?.SetGestureInProgress(true);
+                    // Cancel first: starting the gesture anchors the centre on the terrain, and
+                    // a transition still running would re-apply the altitude it started with.
                     c._map?.CancelTransitions();
+                    c._map?.SetGestureInProgress(true);
                     c._tpActive = false;
+                    c._mftPointers = 1;
+                    c._mftLifted = c._mftInvalid = false;
                     break;
 
                 case MotionEventActions.PointerDown:
+                    // A finger put back down after one lifted is not a tap.
+                    if (c._mftLifted) c._mftInvalid = true;
+                    c._mftPointers = e.PointerCount;
                     if (e.PointerCount == 2)
                     {
                         double p0x = e.GetX(0), p0y = e.GetY(0);
                         double p1x = e.GetX(1), p1y = e.GetY(1);
+
+                        c._mftDiffX  = p0x - p1x;
+                        c._mftDiffY  = p0y - p1y;
+                        c._mftFocusX = (p0x + p1x) * 0.5;
+                        c._mftFocusY = (p0y + p1y) * 0.5;
 
                         c._tpActive       = true;
                         c._tpStartDistance = c._tpDistance = TpDist(p0x, p0y, p1x, p1y);
@@ -1894,11 +1977,13 @@ public class MapLibreMapController : IMapLibreMapController
                     break;
 
                 case MotionEventActions.Move:
+                    if (e.PointerCount >= 2) TrackTwoFingerTap(c, e);
                     if (c._tpActive && e.PointerCount >= 2)
                         HandleTwoFingerMove(c, e);
                     break;
 
                 case MotionEventActions.PointerUp:
+                    c._mftLifted = true;
                     if (e.PointerCount <= 2)
                         c._tpActive = false;
                     break;
@@ -1906,14 +1991,42 @@ public class MapLibreMapController : IMapLibreMapController
                 case MotionEventActions.Up:
                     c._map?.SetGestureInProgress(false);
                     c._tpActive = false;
+                    if (c._mftPointers == 2 && !c._mftInvalid && c._zoomGesturesEnabled
+                        && e.EventTime - e.DownTime < MftTimeThresholdMs)
+                    {
+                        // One zoom level out about the fingers over the SDK's 300 ms.
+                        c._map?.CancelTransitions();
+                        c._map?.ScaleBy(0.5, c._mftFocusX, c._mftFocusY, durationMs: 300);
+                    }
                     break;
 
                 case MotionEventActions.Cancel:
                     c._map?.SetGestureInProgress(false);
                     c._tpActive = false;
+                    c._mftInvalid = true;
                     break;
             }
             return true;
+        }
+
+        // The SDK detector rejects the tap when the fingers' separation changes by more than
+        // 5 dp between moves — a pinch or a twist — not when they travel together. It also
+        // skips fingers closer than 6 mm, which this leaves out.
+        private static void TrackTwoFingerTap(MapLibreMapController c, MotionEvent e)
+        {
+            if (c._mftInvalid) return;
+            double dx = e.GetX(0) - e.GetX(1), dy = e.GetY(0) - e.GetY(1);
+            double threshold = MftMovementThresholdDp
+                * (Android.App.Application.Context.Resources?.DisplayMetrics?.Density ?? 1f);
+            if (System.Math.Abs(dx - c._mftDiffX) > threshold || System.Math.Abs(dy - c._mftDiffY) > threshold)
+            {
+                c._mftInvalid = true;
+                return;
+            }
+            c._mftDiffX  = dx;
+            c._mftDiffY  = dy;
+            c._mftFocusX = (e.GetX(0) + e.GetX(1)) * 0.5;
+            c._mftFocusY = (e.GetY(0) + e.GetY(1)) * 0.5;
         }
 
         private static void HandleTwoFingerMove(MapLibreMapController c, MotionEvent e)
@@ -2060,7 +2173,7 @@ public class MapLibreMapController : IMapLibreMapController
             if (_ctrl._tpActive || _ctrl._map == null) return;
             double sx      = e.GetX();
             double sy      = e.GetY();
-            var (lat, lon) = _ctrl._map.LatLngForPixel(sx, sy);
+            var (lat, lon) = _ctrl._map.LatLngForPixelOnTerrain(sx, sy);
             _ctrl.OnMapLongClickReceived?.Invoke(new LatLng(lat, lon), sx, sy);
         }
 
@@ -2069,7 +2182,7 @@ public class MapLibreMapController : IMapLibreMapController
             if (_ctrl._map == null) return false;
             double sx      = e.GetX();
             double sy      = e.GetY();
-            var (lat, lon) = _ctrl._map.LatLngForPixel(sx, sy);
+            var (lat, lon) = _ctrl._map.LatLngForPixelOnTerrain(sx, sy);
             _ctrl.OnMapClickReceived?.Invoke(new LatLng(lat, lon), sx, sy);
             return true;
         }

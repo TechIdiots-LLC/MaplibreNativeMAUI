@@ -55,7 +55,11 @@ target_sources(mln-cabi PRIVATE
 # ── Platform-specific frontend ────────────────────────────────────────────────
 if(WIN32)
     target_sources(mln-cabi PRIVATE src/platform_frontend_windows.cpp)
-    target_compile_options(mln-cabi PRIVATE /wd4267)
+    # /EHsc: mln-cabi catches exceptions from mbgl-core at every C entry point. maplibre-native
+    # gives its own targets /EHsc through mbgl-compiler-options, which this target does not
+    # link, and CI's -DCMAKE_CXX_FLAGS=/wd4267 replaces CMake's default flags, /EHsc with them:
+    # without it MSVC warns C4530 and skips destroying locals on the way to those catches.
+    target_compile_options(mln-cabi PRIVATE /EHsc /wd4267)
     target_include_directories(mln-cabi PRIVATE "${MAPLIBRE_NATIVE_DIR}/src")
     # Vulkan build: the offscreen frontend reuses mln::vulkan::HeadlessBackend,
     # whose header lives in platform/default/include (added to mbgl-core by
@@ -65,8 +69,14 @@ if(WIN32)
     endif()
 elseif(ANDROID)
     target_sources(mln-cabi PRIVATE src/platform_frontend_android.cpp)
+    # asset:// from the APK's assets/ folder (the SDK's AssetManagerFileSource is not in
+    # mbgl-core). Needs file_source_request.hpp from platform/default/include, which
+    # android.cmake adds to mbgl-core privately.
+    target_sources(mln-cabi PRIVATE src/android_asset_file_source.cpp)
     target_link_libraries(mln-cabi PRIVATE EGL android log)
-    target_include_directories(mln-cabi PRIVATE "${MAPLIBRE_NATIVE_DIR}/src")
+    target_include_directories(mln-cabi PRIVATE
+        "${MAPLIBRE_NATIVE_DIR}/src"
+        "${MAPLIBRE_NATIVE_DIR}/platform/default/include")
     # Platform stub sources — symbols normally provided by MapLibreAndroid JNI SDK
     # that are absent in a standalone NDK build.
     target_sources(mln-cabi PRIVATE

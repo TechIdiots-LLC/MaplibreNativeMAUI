@@ -9,7 +9,8 @@ env:
 jobs:
   build:
     name: ${{ matrix.name }}
-    runs-on: macos-14
+    # As maplibre-native's iOS builds, with the Xcode the .NET iOS and Mac Catalyst builds use
+    runs-on: macos-26
     strategy:
       fail-fast: false
       matrix:
@@ -39,19 +40,12 @@ jobs:
       - name: Enable Git long paths
         run: git config --global core.longpaths true
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
-      - name: Patch darwin.cmake for macCatalyst
-        if: ${{ matrix.artifact == 'native-maccatalyst' }}
-        run: |
-          # ios.cmake (only included when CMAKE_SYSTEM_NAME=iOS) links
-          # mbgl-vendor-filesystem to mbgl-core, which provides the include
-          # path for <ghc/filesystem.hpp> used by action_journal_impl.cpp.
-          # Darwin builds omit ios.cmake, so add the link manually.
-          echo 'target_link_libraries(mbgl-core PRIVATE mbgl-vendor-filesystem)' \
-            >> dependencies/maplibre-native/platform/darwin/darwin.cmake
+      - name: Select Xcode 26.5
+        run: sudo xcode-select -s /Applications/Xcode_26.5.app
 
       - name: Configure CMake
         if: ${{ matrix.artifact != 'native-maccatalyst' }}
@@ -78,10 +72,11 @@ jobs:
           CLANGXX=$(xcrun -f clang++)
           for ARCH in x86_64 arm64; do
             TRIPLE="${ARCH}-apple-ios15.0-macabi"
-            # -iframework/-I add the iOSSupport headers; -Wno-overriding-t-option
-            # suppresses the conflict when maplibre-native's macos.cmake injects
-            # -mmacosx-version-min (the -target triple always takes precedence).
-            EXTRA_FLAGS="-iframework $IOSUPPORT_FWKS -I$IOSUPPORT_INC -Wno-overriding-t-option"
+            # -iframework/-I add the iOSSupport headers. -Wno-overriding-option
+            # (-Wno-overriding-t-option on older clang) silences the conflict with the
+            # -mmacosx-version-min=14.3 maplibre-native adds when no deployment target
+            # is set (#4661): the -target triple wins, but -Werror fails on the warning.
+            EXTRA_FLAGS="-iframework $IOSUPPORT_FWKS -I$IOSUPPORT_INC -Wno-overriding-option -Wno-overriding-t-option"
             # CMAKE_<LANG>_COMPILER_TARGET is the canonical CMake way to set the
             # clang -target triple; it is inserted first in every compile command
             # and cannot be overridden by subdirectory flag manipulation, which
@@ -166,7 +161,7 @@ jobs:
           echo "Found: $LIB"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: ${{ steps.find-lib.outputs.path }}

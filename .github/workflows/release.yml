@@ -18,13 +18,13 @@ env:
 jobs:
   version-check:
     name: Check version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     outputs:
       version:   ${{ steps.check.outputs.version }}
       published: ${{ steps.check.outputs.published }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Read VERSION and check GitHub releases
         id: check
@@ -85,15 +85,18 @@ jobs:
   # ── NuGet packaging ───────────────────────────────────────────────────────
   pack:
     name: Pack NuGet
-    runs-on: macos-latest
+    runs-on: macos-26
     needs: [version-check, build-windows, build-android, build-apple]
     if: needs.version-check.outputs.published == 'false'
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Select Xcode 26.5
+        run: sudo xcode-select -s /Applications/Xcode_26.5.app
+
+      - uses: actions/checkout@v7
 
       - name: Set up .NET 8 and 9 SDKs
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
@@ -101,7 +104,7 @@ jobs:
             10.0.x
 
       - name: Download all native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: native-*
           path: native-artifacts
@@ -173,7 +176,7 @@ jobs:
           done
 
       - name: Upload NuGet artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nuget-packages
           path: artifacts/*.nupkg
@@ -197,15 +200,18 @@ jobs:
   # Windows-less one.
   pack-mobile:
     name: Pack NuGet (mobile feed)
-    runs-on: macos-latest
+    runs-on: macos-26
     needs: [version-check, build-android, build-apple]
     if: needs.version-check.outputs.published == 'false'
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Select Xcode 26.5
+        run: sudo xcode-select -s /Applications/Xcode_26.5.app
+
+      - uses: actions/checkout@v7
 
       - name: Set up .NET 8 and 9 SDKs
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
@@ -213,19 +219,19 @@ jobs:
             10.0.x
 
       - name: Download Android native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: native-android-*
           path: native-artifacts
 
       - name: Download Apple native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: native-ios*
           path: native-artifacts
 
       - name: Download macCatalyst native artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: native-maccatalyst
           path: native-artifacts/native-maccatalyst
@@ -283,7 +289,7 @@ jobs:
             -o artifacts/
 
       - name: Upload mobile feed
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mobile-local-feed
           path: artifacts/*.nupkg
@@ -297,10 +303,10 @@ jobs:
     if: needs.version-check.outputs.published == 'false'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up .NET 8 and 9 SDKs
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
@@ -308,13 +314,13 @@ jobs:
             10.0.x
 
       - name: Download Windows native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: native-windows-*
           path: native-artifacts
 
       - name: Download Windows Vulkan native
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: native-mln-windows-x64-vulkan
           path: vulkan-native
@@ -340,7 +346,7 @@ jobs:
             -o artifacts/
 
       - name: Download MAUI NuGet packages (for local feed)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nuget-packages
           path: local-feed
@@ -410,11 +416,14 @@ jobs:
         shell: bash
         run: |
           DLL=$(find vulkan-native -name mln-cabi.dll | head -1)
+          PDB=$(find vulkan-native -name mln-cabi.pdb | head -1)
           if [ -z "$DLL" ]; then echo "Vulkan mln-cabi.dll not found"; exit 1; fi
           echo "Overlaying Vulkan native: $DLL"
           for app in ConsoleExample WpfExample MauiSample; do
             cp -r "publish/${app}-win-x64" "publish/${app}-vulkan-win-x64"
             cp "$DLL" "publish/${app}-vulkan-win-x64/mln-cabi.dll"
+            # Otherwise the OpenGL build's .pdb stays beside the Vulkan DLL
+            [ -n "$PDB" ] && cp "$PDB" "publish/${app}-vulkan-win-x64/mln-cabi.pdb"
             find "publish/${app}-vulkan-win-x64" -path "*runtimes/win-x64/native/mln-cabi.dll" \
               -exec cp "$DLL" {} \;
           done
@@ -444,14 +453,14 @@ jobs:
           }
 
       - name: Upload WPF NuGet artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nuget-packages-wpf
           path: artifacts/*.nupkg
           retention-days: 7
 
       - name: Upload Windows samples
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-samples
           path: samples/*.zip
@@ -470,10 +479,10 @@ jobs:
     if: needs.version-check.outputs.published == 'false'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up .NET 8 and 9 SDKs
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
@@ -481,7 +490,7 @@ jobs:
             10.0.x
 
       - name: Download MAUI NuGet packages (for local feed)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: mobile-local-feed
           path: local-feed
@@ -501,7 +510,7 @@ jobs:
             -p:UseLocalPackages=true
 
       - name: Upload Android APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mobile-samples
           path: sample/bin/Release/net9.0-android/*Signed.apk
@@ -519,11 +528,21 @@ jobs:
             -p:EnableWindowsTargeting=true \
             -p:UseLocalPackages=true
 
+      # Zipped here with ditto, which keeps the executable bit and symlinks that
+      # upload-artifact drops from a bare .app, and named per platform: both
+      # builds make a MauiSample.app.
+      - name: Zip iOS simulator app
+        run: |
+          APP=$(find sample/bin/Release/net9.0-ios/iossimulator-arm64 -name '*.app' -type d -prune | head -1)
+          [ -n "$APP" ] || { echo "::error::No .app under sample/bin/Release/net9.0-ios/iossimulator-arm64"; exit 1; }
+          mkdir -p sample-zips
+          ditto -c -k --keepParent "$APP" sample-zips/MauiSample-ios-simulator-arm64.zip
+
       - name: Upload iOS simulator app
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sample-ios-simulator
-          path: sample/bin/Release/net9.0-ios/iossimulator-arm64/**/*.app
+          path: sample-zips/MauiSample-ios-simulator-*.zip
           retention-days: 7
 
       - name: Build MauiSample (macCatalyst)
@@ -535,25 +554,42 @@ jobs:
             -p:EnableWindowsTargeting=true \
             -p:UseLocalPackages=true
 
+      # One app per architecture, under maccatalyst-arm64/ and maccatalyst-x64/
+      - name: Zip macCatalyst apps
+        run: |
+          found=0
+          mkdir -p sample-zips
+          for dir in sample/bin/Release/net9.0-maccatalyst/maccatalyst-*; do
+            APP=$(find "$dir" -name '*.app' -type d -prune | head -1)
+            [ -n "$APP" ] || continue
+            ditto -c -k --keepParent "$APP" "sample-zips/MauiSample-$(basename "$dir").zip"
+            found=1
+          done
+          [ "$found" = 1 ] || { echo "::error::No .app under sample/bin/Release/net9.0-maccatalyst"; exit 1; }
+          ls -l sample-zips
+
       - name: Upload macCatalyst app
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sample-maccatalyst
-          path: sample/bin/Release/net9.0-maccatalyst/**/*.app
+          path: sample-zips/MauiSample-maccatalyst-*.zip
           retention-days: 7
 
   # ── Vulkan NuGet packaging ────────────────────────────────────────────────
   pack-vulkan:
     name: Pack Vulkan NuGet
-    runs-on: macos-latest
+    runs-on: macos-26
     needs: [version-check, build-windows-vulkan, build-android-vulkan, build-apple-vulkan]
     if: needs.version-check.outputs.published == 'false'
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Select Xcode 26.5
+        run: sudo xcode-select -s /Applications/Xcode_26.5.app
+
+      - uses: actions/checkout@v7
 
       - name: Set up .NET 8 and 9 SDKs
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.0.x
@@ -563,7 +599,7 @@ jobs:
       # Vulkan native artifacts for every platform share the native-mln-*-vulkan
       # naming (Windows/Android/Apple), so one pattern collects them all.
       - name: Download MLN Vulkan native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: native-mln-*
           path: mln-artifacts
@@ -614,6 +650,28 @@ jobs:
             -p:_MlnNativeDir=$(pwd)/bindings/native-vulkan/ \
             -o artifacts/
 
+      # As ci.yml does: the arrange step above tolerates missing natives, so check
+      # the Apple ones made it in before the package is published.
+      - name: Verify Vulkan package ships Apple native (parity with base)
+        run: |
+          PKG=$(ls artifacts/MapLibreNative.Maui.Vulkan.*.nupkg | head -1)
+          echo "Inspecting $PKG"
+          CONTENTS=$(unzip -Z1 "$PKG")
+          echo "$CONTENTS"
+          fail=0
+          for entry in \
+            "buildTransitive/MapLibreNative.Maui.Vulkan.targets" \
+            "buildTransitive/native/maccatalyst/libmln-cabi.a" \
+            "buildTransitive/native/ios/libmln-cabi.xcframework/Info.plist"; do
+            if echo "$CONTENTS" | grep -q "$entry"; then
+              echo "OK  $entry"
+            else
+              echo "MISSING  $entry"
+              fail=1
+            fi
+          done
+          exit $fail
+
       # nuget.org rejects any package over 250 MB with a bare 413, so the size
       # is worth seeing in the log before the push step is reached.
       - name: Report package sizes
@@ -630,7 +688,7 @@ jobs:
           done
 
       - name: Upload Vulkan NuGet artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nuget-packages-vulkan
           path: artifacts/*.nupkg
@@ -639,59 +697,47 @@ jobs:
   # ── GitHub Release ────────────────────────────────────────────────────────
   release:
     name: Publish GitHub Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs: [version-check, pack, pack-wpf, pack-vulkan, samples-mobile]
     if: needs.version-check.outputs.published == 'false'
     environment: release
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up .NET SDK (for nuget push)
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             9.0.x
             10.0.x
 
       - name: Download NuGet packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: nuget-packages*
           merge-multiple: true
           path: artifacts/
 
       - name: Download Windows sample zips
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: windows-samples
           path: artifacts/
 
       - name: Download mobile samples (Android APK)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: mobile-samples
           path: artifacts/
 
-      - name: Download iOS simulator app
-        uses: actions/download-artifact@v4
+      # Already zipped by samples-mobile
+      - name: Download iOS simulator and macCatalyst apps
+        uses: actions/download-artifact@v8
         with:
-          name: sample-ios-simulator
-          path: artifacts/ios-simulator/
-
-      - name: Download macCatalyst app
-        uses: actions/download-artifact@v4
-        with:
-          name: sample-maccatalyst
-          path: artifacts/maccatalyst/
-
-      - name: Zip iOS simulator and macCatalyst apps
-        run: |
-          for app in artifacts/ios-simulator/**/*.app artifacts/maccatalyst/**/*.app; do
-            [ -d "$app" ] || continue
-            name=$(basename "$app" .app)
-            zip -r "artifacts/${name}.zip" "$app"
-          done
+          pattern: sample-*
+          merge-multiple: true
+          path: artifacts/
 
       - name: Extract changelog for version
         run: |
