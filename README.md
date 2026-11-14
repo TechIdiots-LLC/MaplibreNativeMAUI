@@ -39,6 +39,7 @@ The `mln-cabi` native library is compiled per-platform:
 | Android | OpenGL ES (EGL + ANativeWindow) | `native-android.yml` |
 | Android | Vulkan | `native-android-vulkan.yml` |
 | iOS / macCatalyst | Metal (MTKView) | `native-apple.yml` |
+| iOS / macCatalyst | Vulkan (MoltenVK) | `native-apple-vulkan.yml` |
 | Windows | OpenGL (WGL) | `native-windows.yml` |
 | Windows | Vulkan | `native-windows-vulkan.yml` |
 
@@ -136,7 +137,14 @@ public static class MauiProgram
 | `ShowGpsControl` | `bool` | Show the GPS tracking control overlay (default `true`) |
 | `ShowAttributionControl` | `bool` | Show the attribution overlay (default `true`) |
 | `CustomAttribution` | `string` | Extra attribution text appended after source-derived attributions |
-| `NavigationControlPosition` / `GpsControlPosition` / `AttributionControlPosition` | `MapControlCorner` | Corner each control is anchored to |
+| `ShowTerrainControl` | `bool` | Show the 3D-terrain toggle button (default `false`), see [3D Terrain](#3d-terrain) |
+| `TerrainControlSourceId` / `TerrainControlExaggeration` | `string` / `float` | The raster-dem source the terrain button toggles, and the exaggeration it applies |
+| `TerrainLoadMode` | `TerrainLoadMode` | Terrain loading budget and mesh depth: `Quality` (default), `Balanced`, `Performance` |
+| `TerrainSkirtLength` | `TerrainSkirtLength` | `Auto` (default) or `None`, to drop the tile-edge skirts over a transparent background |
+| `CenterClampedToGround` | `bool` | Let the map centre ride the terrain, as maplibre-gl-js does (default `false`) |
+| `NavigationControlPosition` / `GpsControlPosition` / `TerrainControlPosition` / `AttributionControlPosition` | `MapControlCorner` | Corner each control is anchored to |
+| `GpsFollowZoomMode` / `GpsFollowZoom` | `GpsFollowZoomMode` / `double` | How the GPS control picks the zoom when it starts following (default: keep the current zoom) |
+| `UiScale` | `double` | Extra multiplier on the display density, e.g. to honour the OS font scale (default `1.0`; read once when the map is created) |
 | `ItemsSource` / `ItemTemplate` | — | Data-bound overlay elements, see [Data binding](#data-binding-itemssource) |
 | `VisibleRegion` | `MapSpan?` | Read-only visible region, refreshed on camera idle |
 
@@ -151,8 +159,8 @@ public static class MauiProgram
 | `CameraMoveCommand` | Camera is moving |
 | `CameraIdleCommand` | Camera has stopped |
 | `CameraTrackingChangedCommand` / `CameraTrackingDismissedCommand` | Location-tracking mode changed / was dismissed |
-| `MapClickCommand` | User taps the map (`LatLng`) |
-| `MapLongClickCommand` | User long-presses the map (`LatLng`) |
+| `MapClickCommand` | User taps the map (`LatLng`; on the terrain surface when terrain is on) |
+| `MapLongClickCommand` | User long-presses the map (`LatLng`; on the terrain surface when terrain is on) |
 | `UserLocationUpdateCommand` | Device location has changed |
 
 ---
@@ -316,7 +324,7 @@ controller.SetCameraTargetBounds(new LatLngBounds(
 controller.EaseTo(MapSpan.FromCenterAndRadius(
     new MapCoordinate(51.5, -0.1), Distance.FromKilometers(5)));
 
-// Coordinate conversion
+// Coordinate conversion (on the terrain surface when 3D terrain is on)
 var (x, y) = controller.LatLngToScreenPoint(51.5, -0.1);
 LatLng ll  = controller.ScreenPointToLatLng(x, y);
 
@@ -343,6 +351,71 @@ if (map.VisibleRegion is { } region)
     var span = (region.LatitudeDegrees, region.LongitudeDegrees);
 }
 ```
+
+---
+
+## 3D Terrain
+
+Terrain needs a `raster-dem` source in the style, added in the style JSON or from code.
+Adding a hillshade layer from the same source makes the relief easier to see:
+
+```csharp
+controller.AddSourceJson("dem",
+    "{\"type\":\"raster-dem\",\"url\":\"https://tiles.mapterhorn.com/tilejson.json\"}");
+controller.AddLayerJson("{\"id\":\"dem-hillshade\",\"type\":\"hillshade\",\"source\":\"dem\"}");
+
+map.SetTerrain("dem", exaggeration: 1.5f);   // or ToggleTerrain / RemoveTerrain
+bool on = map.IsTerrainEnabled;
+```
+
+For an on-map toggle button like maplibre-gl-js's TerrainControl, set `ShowTerrainControl="True"`
+and `TerrainControlSourceId` to the raster-dem source's ID. The button doesn't add the source;
+it must already be in the style. The button also shows terrain turned on or off from code.
+
+With terrain on, taps, long-presses, `ScreenPointToLatLng`, `LatLngToScreenPoint` and the batch
+`PixelsForLatLngs` / `LatLngsForPixels` report the point on the terrain surface. Without terrain,
+or before an elevation tile covers the spot, they report it at sea level.
+
+```csharp
+double? metres = controller.GetTerrainElevation(47.26, 11.40);   // null where no DEM is loaded
+```
+
+Gestures that start over terrain move the map's centre up onto the ground, so the camera turns
+round what you are looking at. A saved camera therefore needs the centre's altitude as well as
+its centre and zoom. To restore it, set the altitude first:
+
+```csharp
+double altitude = controller.GetCenterAltitude();
+// ... later ...
+controller.SetCenterAltitudeKeepingView(altitude);
+controller.JumpTo(lat, lon, zoom);
+```
+
+| Setting | What it does |
+|---|---|
+| `TerrainLoadMode` | `Quality` (default) builds every terrain tile at once and meshes deepest; `Balanced` and `Performance` cap each frame's work, for weaker GPUs, and mesh less deep |
+| `TerrainSkirtLength` | `None` removes the walls along tile edges, which show over a transparent background, at the cost of seams between zoom levels |
+| `CenterClampedToGround` | The centre follows the terrain height, and the camera stays 10 m above the ground under it |
+| `controller.SetTileLodMode(2)` | Adaptive tile selection: finer tiles near the camera and coarser toward the horizon, as maplibre-gl-js does with terrain |
+
+`MlnMapImage` (WPF) has the same terrain methods, terrain button and settings except
+`SetTileLodMode`, and its clicks land on the terrain too. `GetTerrainElevation` and the
+centre-altitude calls are on the MAUI controller and on `MlnMap` only.
+
+---
+
+## Style Global State
+
+A style can declare named values in its root `state` property, and read them anywhere with the
+[`global-state`](https://maplibre.org/maplibre-style-spec/expressions/#global-state) expression.
+Changing one restyles every property that reads it, without reloading the style:
+
+```csharp
+map.SetGlobalStateProperty("units", "imperial");   // null resets it to the style's default
+string state = map.GetGlobalState();               // JSON object
+```
+
+Call it from `StyleLoaded` or later: a value set while the style is still loading is ignored.
 
 ---
 
@@ -420,6 +493,15 @@ controller.DumpDebugLogs();
 Every map surface uses a persistent tile/resource cache database by default
 (`MlnCache.DefaultPath` — `{LocalApplicationData}/MapLibreNative.Maui/{processName}/cache.db`),
 so tiles survive app restarts.
+
+Live data such as radar or traffic is stale by the next visit, so keep it out of the cache:
+
+```csharp
+map.SetSourceVolatile("radar", true);   // its tiles are never written to disk
+```
+
+It applies to tiles requested from then on, so call it right after adding the source, or from
+`StyleLoaded` for a source defined in the style.
 
 ### Bundled files (`asset://`)
 
@@ -597,10 +679,11 @@ MAUI handler. See `sample/WpfExample` for a full working example, and
 ### Prerequisites
 
 - .NET 10 SDK (LTS) — projects multi-target .NET 9 and .NET 10
-- CMake ≥ 3.21
-- **Android**: Android NDK r26+, `ANDROID_NDK` env var set
-- **Apple**: Xcode 15+, macOS host
-- **Windows**: Visual Studio 2022 with C++ workload
+- CMake ≥ 3.25 and Ninja
+- **Android**: Android NDK r28c (28.2.13676358, the version maplibre-native uses)
+- **Apple**: macOS with Xcode 26 (CI builds with 26.5)
+- **Windows**: Visual Studio 2022 with the C++ workload (MSVC 14.44). MSVC 14.52 from
+  Visual Studio 2026 crashes on maplibre-native's code when building for arm64.
 
 ### Clone with submodules
 
@@ -616,13 +699,25 @@ git submodule update --init --recursive
 
 ### Build native library
 
-Each platform's CI workflow documents the exact CMake invocation. The native build output (`libmln-cabi.so` / `libmln-cabi.a` / `mln-cabi.dll`) must be placed under `bindings/` before packing.
+The scripts in `.gitlab/scripts/` run the same builds as CI and work locally. Run them from the
+repository root with the submodules checked out. Each copies its library to `native-out/`:
 
 ```sh
-# Example: Windows
-cmake -B build/windows -DCMAKE_BUILD_TYPE=Release
-cmake --build build/windows --config Release
+# Windows (PowerShell): -Arch x64|arm64, -Renderer opengl|vulkan
+.\.gitlab\scripts\Build-NativeWindows.ps1 -Arch x64 -Renderer opengl
+
+# Android: <arm64-v8a|armeabi-v7a|x86_64> <opengl|vulkan>
+.gitlab/scripts/build-native-android.sh arm64-v8a opengl
+
+# Apple (Metal): <ios|iossimulator|maccatalyst>
+.gitlab/scripts/build-native-apple.sh maccatalyst
 ```
+
+To pack, copy the libraries into `bindings/native/` (`bindings/native-vulkan/` for the Vulkan
+package), one folder per platform: `win-x64/` and `win-arm64/` (`mln-cabi.dll`), `android-arm64/`,
+`android-arm/` and `android-x64/` (`libmln-cabi.so`), `maccatalyst/` (`libmln-cabi.a`) and
+`ios/libmln-cabi.xcframework`. The iOS XCFramework is made from the `ios` and `iossimulator`
+builds with `xcodebuild -create-xcframework`.
 
 ### Build and run the sample
 
@@ -640,5 +735,5 @@ This project is **BSD 2-Clause** licensed — see [LICENSE](/LICENSE).
 |---|---|---|
 | [MapLibre Native](https://github.com/maplibre/maplibre-native) | BSD 2-Clause | Linked natively via `mln-cabi` |
 | [maplibre-native-ffi](https://github.com/maplibre/maplibre-native-ffi) | BSD 2-Clause | Reference only — no code included; project structure and C ABI conventions (typed handles, status codes, log callback) informed the design of `mln-cabi` |
-| Original [maplibre-maui](https://github.com/btrounson/maplibre-maui) by Benjamin Trounson | MIT | Portions adapted |
+| Original [maplibre-maui](https://github.com/bjtrounson/maplibre-maui) by Benjamin Trounson | MIT | Portions adapted |
 | [.NET MAUI](https://github.com/dotnet/maui) (`src/Core/maps`) | MIT | Map primitives in `bindings/Geometry` (`MapSpan`, `Distance`, `GeographyUtils`, `MapType`) adapted from the official MAUI maps source; its handler + property/command mapper pattern also informed the design of `MapLibreNative.Maui.Handlers` |
