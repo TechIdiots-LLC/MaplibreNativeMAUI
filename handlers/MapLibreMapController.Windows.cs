@@ -57,6 +57,8 @@ public class MapLibreMapController : IMapLibreMapController
     private bool   _showAttrControl = true;
     private string? _customAttribution;
     private string  _attrText = string.Empty;   // cached, rebuilt on StyleLoaded / idle
+    private IReadOnlyList<MlnAttributionSegment> _attrSegments = Array.Empty<MlnAttributionSegment>();
+    private bool    _attrLinksEnabled = true;   // false: plain text, a click opens no browser
     private string? _appliedAttribution;        // content currently shown — banner re-expands only when this changes
     private bool   _showGpsControl = true;
     // Terrain toggle control — a single on-map button (like nav/gps) that toggles terrain
@@ -561,8 +563,41 @@ public class MapLibreMapController : IMapLibreMapController
         _attrTextBlock.DispatcherQueue.TryEnqueue(() =>
         {
             if (_attrTextBlock == null || _attrBorder == null) return;
-            _attrTextBlock.Text = _attrCollapsed || _attrText.Length == 0 ? "ⓘ" : _attrText;
+            var inlines = _attrTextBlock.Inlines;
+            inlines.Clear();
+            if (_attrCollapsed || _attrText.Length == 0) { _attrTextBlock.Text = "ⓘ"; return; }
+            foreach (var seg in _attrSegments)
+            {
+                var run = new Microsoft.UI.Xaml.Documents.Run { Text = seg.Text };
+                if (_attrLinksEnabled && seg.Link is { } uri)
+                {
+                    var link = new Microsoft.UI.Xaml.Documents.Hyperlink();
+                    link.Inlines.Add(run);
+                    link.Click += (_, _) => OpenInBrowser(uri);
+                    inlines.Add(link);
+                }
+                else
+                {
+                    inlines.Add(run);
+                }
+            }
         });
+    }
+
+    /// <summary>Opens an attribution link in the default browser.</summary>
+    private static void OpenInBrowser(Uri uri)
+    {
+        // Only http(s) links reach here (MlnAttribution.Parse drops the rest). The shell
+        // opens them in packaged and unpackaged apps alike.
+        try
+        {
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MapLibre] could not open {uri}: {ex.Message}");
+        }
     }
 
     private static Windows.UI.Color Rgb(int r, int g, int b) => Windows.UI.Color.FromArgb(255, (byte)r, (byte)g, (byte)b);
@@ -1105,7 +1140,8 @@ public class MapLibreMapController : IMapLibreMapController
             parts.Add(_customAttribution!);
         var attributions = MlnStyle.EnsureMapLibreAttribution(parts);
         // Attribution strings are HTML, like "&copy; <a href='...'>OpenStreetMap</a> contributors".
-        _attrText = MlnAttribution.ToPlainText(attributions);
+        _attrSegments = MlnAttribution.Parse(attributions);
+        _attrText     = string.Concat(_attrSegments.Select(s => s.Text));
         if (_attrText.Length > 0)
         {
             // Only re-expand the banner when the attribution content actually changed —
@@ -1162,8 +1198,12 @@ public class MapLibreMapController : IMapLibreMapController
         RefreshAttributionText();
     }
 
-    // The WinUI banner shows plain text, so there are no links to turn off yet.
-    public void SetAttributionLinksEnabled(bool enabled) { }
+    public void SetAttributionLinksEnabled(bool enabled)
+    {
+        if (_attrLinksEnabled == enabled) return;
+        _attrLinksEnabled = enabled;
+        RefreshAttributionControl();   // rebuild the banner with or without its links
+    }
 
     private void ExpandAttribution(bool pinned = false)
     {
