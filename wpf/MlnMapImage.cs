@@ -704,6 +704,7 @@ public partial class MlnMapImage : Grid
         if (_style == null) return;
         _style.SetTerrain(sourceId, exaggeration);
         _renderNeedsUpdate = true;
+        RefreshTerrainButton();   // the on-map control follows terrain set from code too
     }
 
     /// <summary>Disables 3D terrain; the map renders flat again.</summary>
@@ -712,6 +713,7 @@ public partial class MlnMapImage : Grid
         if (_style == null) return;
         _style.RemoveTerrain();
         _renderNeedsUpdate = true;
+        RefreshTerrainButton();
     }
 
     /// <summary>Turns 3D terrain on if it is off, or off if it is on.</summary>
@@ -721,6 +723,7 @@ public partial class MlnMapImage : Grid
         if (_style.IsTerrainEnabled) _style.RemoveTerrain();
         else _style.SetTerrain(sourceId, exaggeration);
         _renderNeedsUpdate = true;
+        RefreshTerrainButton();
     }
 
     /// <summary>Whether 3D terrain is currently enabled.</summary>
@@ -1666,12 +1669,9 @@ public partial class MlnMapImage : Grid
         RefreshTerrainButton();
     }
 
-    /// <summary>Toggles terrain on the configured source (enable if off, disable if on), then refreshes the button.</summary>
+    /// <summary>Toggles terrain on the configured source (enable if off, disable if on); ToggleTerrain refreshes the button.</summary>
     private void ToggleTerrainControl()
-    {
-        ToggleTerrain(TerrainControlSourceId, TerrainControlExaggeration);
-        RefreshTerrainButton();
-    }
+        => ToggleTerrain(TerrainControlSourceId, TerrainControlExaggeration);
 
     /// <summary>Colours the terrain button to reflect whether terrain is currently enabled.</summary>
     private void RefreshTerrainButton()

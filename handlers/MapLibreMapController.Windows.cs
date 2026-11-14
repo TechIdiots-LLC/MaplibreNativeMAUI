@@ -540,12 +540,9 @@ public class MapLibreMapController : IMapLibreMapController
         _gpsBottomBtn.Background = new WUXM.SolidColorBrush(bBg);
     }
 
-    /// <summary>Toggles terrain on the configured source (enable if off, disable if on), then refreshes the button.</summary>
+    /// <summary>Toggles terrain on the configured source (enable if off, disable if on); ToggleTerrain refreshes the button.</summary>
     private void ToggleTerrainControl()
-    {
-        ToggleTerrain(_terrainControlSourceId, _terrainControlExaggeration);
-        RefreshTerrainControl();
-    }
+        => ToggleTerrain(_terrainControlSourceId, _terrainControlExaggeration);
 
     /// <summary>Updates the terrain button's active/idle colours from the current terrain state.</summary>
     private void RefreshTerrainControl()
@@ -733,12 +730,14 @@ public class MapLibreMapController : IMapLibreMapController
     {
         if (!_styleReady || _style == null) return;
         _style.SetTerrain(sourceId, exaggeration);
+        RefreshTerrainControl();   // the on-map control follows terrain set from code too
     }
 
     public void RemoveTerrain()
     {
         if (!_styleReady || _style == null) return;
         _style.RemoveTerrain();
+        RefreshTerrainControl();
     }
 
     public void ToggleTerrain(string sourceId, float exaggeration)
@@ -746,6 +745,7 @@ public class MapLibreMapController : IMapLibreMapController
         if (!_styleReady || _style == null) return;
         if (_style.IsTerrainEnabled) _style.RemoveTerrain();
         else _style.SetTerrain(sourceId, exaggeration);
+        RefreshTerrainControl();
     }
 
     public bool IsTerrainEnabled => _styleReady && _style != null && _style.IsTerrainEnabled;

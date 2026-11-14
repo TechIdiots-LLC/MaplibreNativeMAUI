@@ -671,12 +671,9 @@ public class MapLibreMapController : IMapLibreMapController
         RefreshTerrainIcon();
     }
 
-    /// <summary>Toggles terrain on the configured source (enable if off, disable if on), then refreshes the button.</summary>
+    /// <summary>Toggles terrain on the configured source (enable if off, disable if on); ToggleTerrain refreshes the button.</summary>
     private void ToggleTerrainControl()
-    {
-        ToggleTerrain(_terrainControlSourceId, _terrainControlExaggeration);
-        RefreshTerrainIcon();
-    }
+        => ToggleTerrain(_terrainControlSourceId, _terrainControlExaggeration);
 
     /// <summary>Colours the terrain button to reflect whether terrain is currently enabled.</summary>
     private void RefreshTerrainIcon()
@@ -1524,12 +1521,14 @@ public class MapLibreMapController : IMapLibreMapController
     {
         if (!_styleReady || _style == null) return;
         _style.SetTerrain(sourceId, exaggeration);
+        RefreshTerrainIcon();   // the on-map control follows terrain set from code too
     }
 
     public void RemoveTerrain()
     {
         if (!_styleReady || _style == null) return;
         _style.RemoveTerrain();
+        RefreshTerrainIcon();
     }
 
     public void ToggleTerrain(string sourceId, float exaggeration)
@@ -1537,6 +1536,7 @@ public class MapLibreMapController : IMapLibreMapController
         if (!_styleReady || _style == null) return;
         if (_style.IsTerrainEnabled) _style.RemoveTerrain();
         else _style.SetTerrain(sourceId, exaggeration);
+        RefreshTerrainIcon();
     }
 
     public bool IsTerrainEnabled => _styleReady && _style != null && _style.IsTerrainEnabled;
