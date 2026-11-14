@@ -1198,6 +1198,9 @@ public class MapLibreMapController : IMapLibreMapController
         RefreshAttributionText();
     }
 
+    // The WinUI banner shows plain text, so there are no links to turn off yet.
+    public void SetAttributionLinksEnabled(bool enabled) { }
+
     private void ExpandAttribution(bool pinned = false)
     {
         // A deliberate tap on the collapsed chip gets a longer read window than the

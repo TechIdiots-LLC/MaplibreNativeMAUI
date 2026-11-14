@@ -24,6 +24,7 @@ public partial class MapLibreMapHandler
             [nameof(MapLibreMap.ShowNavigationControls)]   = MapShowNavigationControls,
             [nameof(MapLibreMap.ShowAttributionControl)]   = MapShowAttributionControl,
             [nameof(MapLibreMap.CustomAttribution)]        = MapCustomAttribution,
+            [nameof(MapLibreMap.AttributionLinksEnabled)]  = MapAttributionLinksEnabled,
             [nameof(MapLibreMap.ShowGpsControl)]           = MapShowGpsControl,
             [nameof(MapLibreMap.GpsFollowZoomMode)]        = MapGpsFollowZoom,
             [nameof(MapLibreMap.GpsFollowZoom)]            = MapGpsFollowZoom,
@@ -106,6 +107,9 @@ public partial class MapLibreMapHandler
 
     public static void MapCustomAttribution(MapLibreMapHandler handler, MapLibreMap view)
         => handler.UpdateShowAttributionControl(view.ShowAttributionControl, view.CustomAttribution);
+
+    public static void MapAttributionLinksEnabled(MapLibreMapHandler handler, MapLibreMap view)
+        => handler.UpdateAttributionLinksEnabled(view.AttributionLinksEnabled);
 
     public static void MapShowGpsControl(MapLibreMapHandler handler, MapLibreMap view)
         => handler.UpdateShowGpsControl(view.ShowGpsControl);

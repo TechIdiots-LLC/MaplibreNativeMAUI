@@ -79,6 +79,7 @@ public class MapLibreMapController : IMapLibreMapController
     private UITextView    _attrView    = null!;  // expanded full text
     private UIButton      _attrButton  = null!;  // collapsed ⓘ button
     private bool          _showAttrControl  = true;
+    private bool          _attrLinksEnabled = true;   // false: plain text, a tap opens no browser
     private string?       _customAttribution;
     private int           _attrCollapseGen;       // generation counter for auto-collapse timer
     private bool          _attrLoaded;            // true once attribution content has been fetched
@@ -166,7 +167,9 @@ public class MapLibreMapController : IMapLibreMapController
             BackgroundColor  = UIColor.FromRGBA(255, 255, 255, 180),
             Editable         = false,
             ScrollEnabled    = false,
-            Selectable       = true,
+            // A UITextView's links only take taps while it is selectable. With links off it
+            // is not, which also drops the selection menu and its "Search Web" item.
+            Selectable       = _attrLinksEnabled,
             Hidden           = true,
             TranslatesAutoresizingMaskIntoConstraints = false,
         };
@@ -885,6 +888,15 @@ public class MapLibreMapController : IMapLibreMapController
         RefreshAttribution();
     }
 
+    public void SetAttributionLinksEnabled(bool enabled)
+    {
+        if (_attrLinksEnabled == enabled) return;
+        _attrLinksEnabled    = enabled;
+        _attrView.Selectable = enabled;
+        _appliedAttribution  = null;   // rebuild the text with or without its link attributes
+        RefreshAttribution();
+    }
+
     // -- Attribution -----------------------------------------------------------
 
     private void RefreshAttribution()
@@ -920,7 +932,7 @@ public class MapLibreMapController : IMapLibreMapController
         if (content == _appliedAttribution) return;
         _appliedAttribution = content;
 
-        _attrView.AttributedText = BuildAttributionAttributedString(attributions);
+        _attrView.AttributedText = BuildAttributionAttributedString(attributions, _attrLinksEnabled);
         ExpandAttribution();
     }
 
@@ -960,7 +972,7 @@ public class MapLibreMapController : IMapLibreMapController
     }
 
     private static NSAttributedString BuildAttributionAttributedString(
-        System.Collections.Generic.IReadOnlyList<string> parts)
+        System.Collections.Generic.IReadOnlyList<string> parts, bool links)
     {
         var result = new NSMutableAttributedString();
         var hrefRe = new Regex(
@@ -990,7 +1002,7 @@ public class MapLibreMapController : IMapLibreMapController
 
                 string href     = m.Groups[1].Value;
                 string linkText = DecodeHtmlEntities(StripHtmlTags(m.Groups[2].Value));
-                if (Uri.TryCreate(href, UriKind.Absolute, out var uri))
+                if (links && Uri.TryCreate(href, UriKind.Absolute, out var uri))
                 {
                     var la = new UIStringAttributes(linkAttrs.Dictionary.MutableCopy() as Foundation.NSMutableDictionary);
                     la.Link = new NSUrl(uri.AbsoluteUri);
