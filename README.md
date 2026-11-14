@@ -137,6 +137,7 @@ public static class MauiProgram
 | `ShowGpsControl` | `bool` | Show the GPS tracking control overlay (default `true`) |
 | `ShowAttributionControl` | `bool` | Show the attribution overlay (default `true`) |
 | `CustomAttribution` | `string` | Extra attribution text appended after source-derived attributions |
+| `AttributionLinksEnabled` | `bool` | Whether the attribution's links open the browser (default `true`); `false` shows them as plain text, e.g. for a kiosk |
 | `ShowTerrainControl` | `bool` | Show the 3D-terrain toggle button (default `false`), see [3D Terrain](#3d-terrain) |
 | `TerrainControlSourceId` / `TerrainControlExaggeration` | `string` / `float` | The raster-dem source the terrain button toggles, and the exaggeration it applies |
 | `TerrainLoadMode` | `TerrainLoadMode` | Terrain loading budget and mesh depth: `Quality` (default), `Balanced`, `Performance` |
