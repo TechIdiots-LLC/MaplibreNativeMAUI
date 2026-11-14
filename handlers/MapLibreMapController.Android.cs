@@ -8,7 +8,6 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using MapLibreNative.Maui;
 using MapLibreNative.Maui.Handlers.Geometry;
 using Map    = MapLibreNative.Maui.Handlers.Maps.Map;
@@ -315,6 +314,7 @@ public class MapLibreMapController : IMapLibreMapController
     private TextView        _attrView         = null!;  // expanded full text
     private TextView        _attrButton       = null!;  // collapsed ⓘ button
     private bool            _showAttrControl  = true;
+    private bool            _attrLinksEnabled = true;   // false: plain text, a tap opens no browser
     private string?         _customAttribution;
     private int             _attrCollapseGen;            // generation counter for auto-collapse timer
     private bool            _attrLoaded;                 // true once attribution content has been fetched
@@ -463,7 +463,7 @@ public class MapLibreMapController : IMapLibreMapController
         _attrView.SetTextColor(Android.Graphics.Color.Argb(220, 50, 50, 50));
         _attrView.SetBackgroundColor(Android.Graphics.Color.Argb(180, 255, 255, 255));
         _attrView.SetPadding(8, 4, 8, 4);
-        _attrView.MovementMethod = LinkMovementMethod.Instance;
+        _attrView.MovementMethod = _attrLinksEnabled ? LinkMovementMethod.Instance : null;
         _attrView.Visibility = ViewStates.Gone;
 
         var container = new FrameLayout(ctx);
@@ -1278,6 +1278,16 @@ public class MapLibreMapController : IMapLibreMapController
         RefreshAttribution();
     }
 
+    public void SetAttributionLinksEnabled(bool enabled)
+    {
+        if (_attrLinksEnabled == enabled) return;
+        _attrLinksEnabled = enabled;
+        // LinkMovementMethod is what turns a tap on a URLSpan into a browser launch.
+        _attrView.MovementMethod = enabled ? LinkMovementMethod.Instance : null;
+        _appliedAttribution = null;   // rebuild the text with or without its link spans
+        RefreshAttribution();
+    }
+
     // -- Attribution -----------------------------------------------------------
 
     private void RefreshAttribution()
@@ -1313,7 +1323,7 @@ public class MapLibreMapController : IMapLibreMapController
         if (content == _appliedAttribution) return;
         _appliedAttribution = content;
 
-        _attrView.TextFormatted = BuildAttributionSpanned(attributions);
+        _attrView.TextFormatted = BuildAttributionSpanned(attributions, _attrLinksEnabled);
         ExpandAttribution();
     }
 
@@ -1354,73 +1364,20 @@ public class MapLibreMapController : IMapLibreMapController
     }
 
     private static ISpanned BuildAttributionSpanned(
-        System.Collections.Generic.IReadOnlyList<string> parts)
+        System.Collections.Generic.IReadOnlyList<string> parts, bool links)
     {
-        // Parse each part's HTML <a href> tags into URLSpans so links are clickable.
-        var sb  = new SpannableStringBuilder();
-        var hrefRe = new Regex(
-            @"<a\b[^>]*?href=[""']?([^""'\s>]+)[""']?[^>]*>(.*?)</a>",
-            RegexOptions.IgnoreCase | RegexOptions.Singleline);
-
-        bool first = true;
-        foreach (var part in parts)
+        // Each link becomes a URLSpan, which LinkMovementMethod opens on a tap; with links
+        // off only its text is kept.
+        var sb = new SpannableStringBuilder();
+        foreach (var seg in MlnAttribution.Parse(parts))
         {
-            if (!first) sb.Append(" | ");
-            first = false;
-
-            int pos = 0;
-            foreach (Match m in hrefRe.Matches(part))
-            {
-                // Plain text before this <a>
-                if (m.Index > pos)
-                    sb.Append(DecodeHtmlEntities(StripHtmlTags(part[pos..m.Index])));
-
-                // Link text with URLSpan
-                string href     = m.Groups[1].Value;
-                string linkText = DecodeHtmlEntities(StripHtmlTags(m.Groups[2].Value));
-                int start = sb.Length();
-                sb.Append(linkText);
-                if (Uri.TryCreate(href, UriKind.Absolute, out _))
-                    sb.SetSpan(new Android.Text.Style.URLSpan(href),
-                               start, sb.Length(),
-                               SpanTypes.InclusiveInclusive);
-
-                pos = m.Index + m.Length;
-            }
-            // Remaining text
-            if (pos < part.Length)
-                sb.Append(DecodeHtmlEntities(StripHtmlTags(part[pos..])));
+            int start = sb.Length();
+            sb.Append(seg.Text);
+            if (links && seg.Link != null)
+                sb.SetSpan(new Android.Text.Style.URLSpan(seg.Link.AbsoluteUri),
+                           start, sb.Length(), SpanTypes.ExclusiveExclusive);
         }
         return sb;
-    }
-
-    private static string StripHtmlTags(string html)
-    {
-        if (string.IsNullOrEmpty(html)) return html;
-        var sb2   = new System.Text.StringBuilder(html.Length);
-        bool inTag = false;
-        foreach (char c in html)
-        {
-            if      (c == '<') inTag = true;
-            else if (c == '>') inTag = false;
-            else if (!inTag)   sb2.Append(c);
-        }
-        return sb2.ToString().Trim();
-    }
-
-    private static string DecodeHtmlEntities(string text)
-    {
-        if (string.IsNullOrEmpty(text) || !text.Contains('&')) return text;
-        return text
-            .Replace("&amp;",   "&")
-            .Replace("&lt;",    "<")
-            .Replace("&gt;",    ">")
-            .Replace("&quot;",  "\"")
-            .Replace("&#39;",   "'")
-            .Replace("&nbsp;",  "\u00A0")
-            .Replace("&copy;",  "\u00A9")
-            .Replace("&reg;",   "\u00AE")
-            .Replace("&trade;", "\u2122");
     }
 
     // -- Sources ---------------------------------------------------------------

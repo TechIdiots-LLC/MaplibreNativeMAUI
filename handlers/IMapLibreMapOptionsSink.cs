@@ -47,6 +47,12 @@ public interface IMapLibreMapOptionsSink
     /// </summary>
     void SetShowAttributionControl(bool show, string? customAttribution);
 
+    /// <summary>
+    /// Whether the attribution's links can be tapped to open the browser; when false the
+    /// attribution is plain text that opens nothing.
+    /// </summary>
+    void SetAttributionLinksEnabled(bool enabled);
+
     /// <summary>Show or hide the GPS tracking control overlay.</summary>
     void SetShowGpsControl(bool show);
 

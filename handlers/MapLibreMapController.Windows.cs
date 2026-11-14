@@ -57,6 +57,8 @@ public class MapLibreMapController : IMapLibreMapController
     private bool   _showAttrControl = true;
     private string? _customAttribution;
     private string  _attrText = string.Empty;   // cached, rebuilt on StyleLoaded / idle
+    private IReadOnlyList<MlnAttributionSegment> _attrSegments = Array.Empty<MlnAttributionSegment>();
+    private bool    _attrLinksEnabled = true;   // false: plain text, a click opens no browser
     private string? _appliedAttribution;        // content currently shown — banner re-expands only when this changes
     private bool   _showGpsControl = true;
     // Terrain toggle control — a single on-map button (like nav/gps) that toggles terrain
@@ -561,8 +563,41 @@ public class MapLibreMapController : IMapLibreMapController
         _attrTextBlock.DispatcherQueue.TryEnqueue(() =>
         {
             if (_attrTextBlock == null || _attrBorder == null) return;
-            _attrTextBlock.Text = _attrCollapsed || _attrText.Length == 0 ? "ⓘ" : _attrText;
+            var inlines = _attrTextBlock.Inlines;
+            inlines.Clear();
+            if (_attrCollapsed || _attrText.Length == 0) { _attrTextBlock.Text = "ⓘ"; return; }
+            foreach (var seg in _attrSegments)
+            {
+                var run = new Microsoft.UI.Xaml.Documents.Run { Text = seg.Text };
+                if (_attrLinksEnabled && seg.Link is { } uri)
+                {
+                    var link = new Microsoft.UI.Xaml.Documents.Hyperlink();
+                    link.Inlines.Add(run);
+                    link.Click += (_, _) => OpenInBrowser(uri);
+                    inlines.Add(link);
+                }
+                else
+                {
+                    inlines.Add(run);
+                }
+            }
         });
+    }
+
+    /// <summary>Opens an attribution link in the default browser.</summary>
+    private static void OpenInBrowser(Uri uri)
+    {
+        // Only http(s) links reach here (MlnAttribution.Parse drops the rest). The shell
+        // opens them in packaged and unpackaged apps alike.
+        try
+        {
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MapLibre] could not open {uri}: {ex.Message}");
+        }
     }
 
     private static Windows.UI.Color Rgb(int r, int g, int b) => Windows.UI.Color.FromArgb(255, (byte)r, (byte)g, (byte)b);
@@ -1104,15 +1139,9 @@ public class MapLibreMapController : IMapLibreMapController
         if (!string.IsNullOrWhiteSpace(_customAttribution))
             parts.Add(_customAttribution!);
         var attributions = MlnStyle.EnsureMapLibreAttribution(parts);
-        // Strip HTML tags to plain text (attribution strings from OSM are like
-        // "© <a href='...'>OpenStreetMap</a> contributors" — we strip the links for now).
-        var sb = new System.Text.StringBuilder();
-        foreach (var part in attributions)
-        {
-            if (sb.Length > 0) sb.Append(" | ");
-            sb.Append(StripHtmlTags(part));
-        }
-        _attrText = sb.ToString();
+        // Attribution strings are HTML, like "&copy; <a href='...'>OpenStreetMap</a> contributors".
+        _attrSegments = MlnAttribution.Parse(attributions);
+        _attrText     = string.Concat(_attrSegments.Select(s => s.Text));
         if (_attrText.Length > 0)
         {
             // Only re-expand the banner when the attribution content actually changed —
@@ -1127,35 +1156,6 @@ public class MapLibreMapController : IMapLibreMapController
             _appliedAttribution = null;
             RefreshAttributionControl();
         }
-    }
-
-    private static string StripHtmlTags(string html)
-    {
-        if (string.IsNullOrEmpty(html)) return html;
-        var sb = new System.Text.StringBuilder(html.Length);
-        bool inTag = false;
-        foreach (char c in html)
-        {
-            if      (c == '<') inTag = true;
-            else if (c == '>') inTag = false;
-            else if (!inTag)   sb.Append(c);
-        }
-        return DecodeHtmlEntities(sb.ToString().Trim());
-    }
-
-    private static string DecodeHtmlEntities(string text)
-    {
-        if (string.IsNullOrEmpty(text) || !text.Contains('&')) return text;
-        return text
-            .Replace("&amp;",   "&")
-            .Replace("&copy;",  "\u00A9")
-            .Replace("&reg;",   "\u00AE")
-            .Replace("&trade;", "\u2122")
-            .Replace("&mdash;", "\u2014")
-            .Replace("&ndash;", "\u2013")
-            .Replace("&nbsp;",  "\u00A0")
-            .Replace("&lt;",    "<")
-            .Replace("&gt;",    ">");
     }
 
     public void SetShowNavigationControls(bool show)
@@ -1196,6 +1196,13 @@ public class MapLibreMapController : IMapLibreMapController
         if (_attrBorder != null)
             _attrBorder.Visibility = show ? WUX.Visibility.Visible : WUX.Visibility.Collapsed;
         RefreshAttributionText();
+    }
+
+    public void SetAttributionLinksEnabled(bool enabled)
+    {
+        if (_attrLinksEnabled == enabled) return;
+        _attrLinksEnabled = enabled;
+        RefreshAttributionControl();   // rebuild the banner with or without its links
     }
 
     private void ExpandAttribution(bool pinned = false)

@@ -4,7 +4,6 @@ using Foundation;
 using ObjCRuntime;
 using UIKit;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using MapLibreNative.Maui;
 using MapLibreNative.Maui.Handlers.Geometry;
 using Map    = MapLibreNative.Maui.Handlers.Maps.Map;
@@ -79,6 +78,7 @@ public class MapLibreMapController : IMapLibreMapController
     private UITextView    _attrView    = null!;  // expanded full text
     private UIButton      _attrButton  = null!;  // collapsed ⓘ button
     private bool          _showAttrControl  = true;
+    private bool          _attrLinksEnabled = true;   // false: plain text, a tap opens no browser
     private string?       _customAttribution;
     private int           _attrCollapseGen;       // generation counter for auto-collapse timer
     private bool          _attrLoaded;            // true once attribution content has been fetched
@@ -166,7 +166,9 @@ public class MapLibreMapController : IMapLibreMapController
             BackgroundColor  = UIColor.FromRGBA(255, 255, 255, 180),
             Editable         = false,
             ScrollEnabled    = false,
-            Selectable       = true,
+            // A UITextView's links only take taps while it is selectable. With links off it
+            // is not, which also drops the selection menu and its "Search Web" item.
+            Selectable       = _attrLinksEnabled,
             Hidden           = true,
             TranslatesAutoresizingMaskIntoConstraints = false,
         };
@@ -885,6 +887,15 @@ public class MapLibreMapController : IMapLibreMapController
         RefreshAttribution();
     }
 
+    public void SetAttributionLinksEnabled(bool enabled)
+    {
+        if (_attrLinksEnabled == enabled) return;
+        _attrLinksEnabled    = enabled;
+        _attrView.Selectable = enabled;
+        _appliedAttribution  = null;   // rebuild the text with or without its link attributes
+        RefreshAttribution();
+    }
+
     // -- Attribution -----------------------------------------------------------
 
     private void RefreshAttribution()
@@ -920,7 +931,7 @@ public class MapLibreMapController : IMapLibreMapController
         if (content == _appliedAttribution) return;
         _appliedAttribution = content;
 
-        _attrView.AttributedText = BuildAttributionAttributedString(attributions);
+        _attrView.AttributedText = BuildAttributionAttributedString(attributions, _attrLinksEnabled);
         ExpandAttribution();
     }
 
@@ -960,82 +971,30 @@ public class MapLibreMapController : IMapLibreMapController
     }
 
     private static NSAttributedString BuildAttributionAttributedString(
-        System.Collections.Generic.IReadOnlyList<string> parts)
+        System.Collections.Generic.IReadOnlyList<string> parts, bool links)
     {
         var result = new NSMutableAttributedString();
-        var hrefRe = new Regex(
-            @"<a\b[^>]*?href=[""']?([^""'\s>]+)[""']?[^>]*>(.*?)</a>",
-            RegexOptions.IgnoreCase | RegexOptions.Singleline);
         var baseAttrs = new UIStringAttributes
         {
             ForegroundColor = UIColor.FromRGBA(50, 50, 50, 220),
         };
-        var linkAttrs = new UIStringAttributes
+        foreach (var seg in MlnAttribution.Parse(parts))
         {
-            ForegroundColor = UIColor.SystemBlue,
-        };
-
-        bool first = true;
-        foreach (var part in parts)
-        {
-            if (!first) result.Append(new NSAttributedString(" | ", baseAttrs));
-            first = false;
-
-            int pos = 0;
-            foreach (Match m in hrefRe.Matches(part))
+            if (links && seg.Link != null)
             {
-                if (m.Index > pos)
-                    result.Append(new NSAttributedString(
-                        DecodeHtmlEntities(StripHtmlTags(part[pos..m.Index])), baseAttrs));
-
-                string href     = m.Groups[1].Value;
-                string linkText = DecodeHtmlEntities(StripHtmlTags(m.Groups[2].Value));
-                if (Uri.TryCreate(href, UriKind.Absolute, out var uri))
+                var la = new UIStringAttributes
                 {
-                    var la = new UIStringAttributes(linkAttrs.Dictionary.MutableCopy() as Foundation.NSMutableDictionary);
-                    la.Link = new NSUrl(uri.AbsoluteUri);
-                    result.Append(new NSAttributedString(linkText, la));
-                }
-                else
-                {
-                    result.Append(new NSAttributedString(linkText, baseAttrs));
-                }
-                pos = m.Index + m.Length;
+                    ForegroundColor = UIColor.SystemBlue,
+                    Link = new NSUrl(seg.Link.AbsoluteUri),
+                };
+                result.Append(new NSAttributedString(seg.Text, la));
             }
-            if (pos < part.Length)
-                result.Append(new NSAttributedString(
-                    DecodeHtmlEntities(StripHtmlTags(part[pos..])), baseAttrs));
+            else
+            {
+                result.Append(new NSAttributedString(seg.Text, baseAttrs));
+            }
         }
         return result;
-    }
-
-    private static string StripHtmlTags(string html)
-    {
-        if (string.IsNullOrEmpty(html)) return html;
-        var sb    = new System.Text.StringBuilder(html.Length);
-        bool inTag = false;
-        foreach (char c in html)
-        {
-            if      (c == '<') inTag = true;
-            else if (c == '>') inTag = false;
-            else if (!inTag)   sb.Append(c);
-        }
-        return sb.ToString().Trim();
-    }
-
-    private static string DecodeHtmlEntities(string text)
-    {
-        if (string.IsNullOrEmpty(text) || !text.Contains('&')) return text;
-        return text
-            .Replace("&amp;",   "&")
-            .Replace("&lt;",    "<")
-            .Replace("&gt;",    ">")
-            .Replace("&quot;",  "\"")
-            .Replace("&#39;",   "'")
-            .Replace("&nbsp;",  "\u00A0")
-            .Replace("&copy;",  "\u00A9")
-            .Replace("&reg;",   "\u00AE")
-            .Replace("&trade;", "\u2122");
     }
 
     // -- Sources ---------------------------------------------------------------

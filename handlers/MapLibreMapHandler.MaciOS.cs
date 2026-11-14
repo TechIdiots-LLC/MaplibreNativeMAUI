@@ -50,6 +50,7 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, UIView>
     public void UpdateAttributionButtonMargins(int?[]? margin) { if (margin?.Length >= 2 && margin[0] != null && margin[1] != null) _controller.SetAttributionButtonMargins(margin[0]!.Value, margin[1]!.Value); }
     public void UpdateShowNavigationControls(bool show) => _controller.SetShowNavigationControls(show);
     public void UpdateShowAttributionControl(bool show, string? customAttribution) => _controller.SetShowAttributionControl(show, customAttribution);
+    public void UpdateAttributionLinksEnabled(bool enabled) => _controller.SetAttributionLinksEnabled(enabled);
     public void UpdateShowGpsControl(bool show)         => _controller.SetShowGpsControl(show);
     public void UpdateGpsFollowZoom(GpsFollowZoomMode mode, double zoom) => _controller.SetGpsFollowZoom(mode, zoom);
     public void UpdateNavigationControlPosition(MapControlCorner corner)  => _controller.SetNavigationControlPosition(corner);
