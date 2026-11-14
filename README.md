@@ -673,6 +673,9 @@ input via normal WPF events. It supports the same camera, source, layer, and que
 MAUI handler. See `sample/WpfExample` for a full working example, and
 [docs/design/in-tree-map-surface.md](docs/design/in-tree-map-surface.md) for the design.
 
+The attribution's links open in the default browser when clicked. Set
+`AttributionLinksEnabled="False"` to show the attribution as plain text instead, e.g. on a kiosk.
+
 ---
 
 ## Building from Source
