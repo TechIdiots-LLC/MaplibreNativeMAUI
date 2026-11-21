@@ -58,8 +58,10 @@ jobs:
           # Release does not imply a stripped .so, and the symbol table is a
           # large share of the shipped size; the packages are close to
           # nuget.org's 250 MB ceiling. Runs before the alignment check so that
-          # check sees exactly what ships.
+          # check sees exactly what ships. The unstripped copy is the release's
+          # Android symbols zip, for apps' Google Play crash reports.
           SO=$(find build -name libmln-cabi.so | head -1)
+          mkdir -p symbols && cp "$SO" symbols/
           STRIP="$ANDROID_HOME/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
           BEFORE=$(stat -c%s "$SO")
           "$STRIP" --strip-unneeded "$SO"
@@ -95,4 +97,13 @@ jobs:
         with:
           name: native-android-${{ matrix.abi }}
           path: build/**/libmln-cabi.so
+          retention-days: 7
+
+      # Not native-*: the pack jobs download that pattern into the packages
+      - name: Upload symbols
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-symbols-opengl-${{ matrix.abi }}
+          path: symbols/libmln-cabi.so
+          if-no-files-found: error
           retention-days: 7

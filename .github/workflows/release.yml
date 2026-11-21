@@ -739,6 +739,28 @@ jobs:
           merge-multiple: true
           path: artifacts/
 
+      - name: Download Android symbols
+        uses: actions/download-artifact@v8
+        with:
+          pattern: android-symbols-*
+          path: symbols/
+
+      # The unstripped libmln-cabi.so per ABI, in the <abi>/lib.so layout Google Play takes as
+      # an app's native debug symbols
+      - name: Zip Android symbols
+        run: |
+          VERSION="${{ needs.version-check.outputs.version }}"
+          for pair in opengl:MapLibreNative.Maui vulkan:MapLibreNative.Maui.Vulkan; do
+            RENDERER=${pair%%:*}; PACKAGE=${pair#*:}
+            STAGE=symbols-stage/$RENDERER
+            for ABI in arm64-v8a armeabi-v7a x86_64; do
+              mkdir -p "$STAGE/$ABI"
+              cp "symbols/android-symbols-$RENDERER-$ABI/libmln-cabi.so" "$STAGE/$ABI/"
+            done
+            (cd "$STAGE" && zip -r -9 "$GITHUB_WORKSPACE/artifacts/$PACKAGE-$VERSION-android-symbols.zip" .)
+          done
+          ls -l artifacts/*-android-symbols.zip
+
       - name: Extract changelog for version
         run: |
           VERSION="${{ needs.version-check.outputs.version }}"

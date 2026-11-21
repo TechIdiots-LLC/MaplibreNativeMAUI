@@ -2,6 +2,7 @@
 
 ## master
 ### ✨ Features and improvements
+- **Android native debug symbols for Google Play** — the `libmln-cabi.so` in the packages is stripped, so Google Play warns that an app bundle using them has native code without debug symbols, and a crash inside MapLibre shows up in Android vitals as bare addresses. Each release now attaches `MapLibreNative.Maui-<version>-android-symbols.zip` and `MapLibreNative.Maui.Vulkan-<version>-android-symbols.zip`: the same builds before stripping, one folder per ABI, ready to upload as the app's native debug symbols. The GitLab check keeps them too, under `native-out/android-<abi>-<renderer>/symbols/`. The README's Google Play section says how to use them.
 - _...Add new stuff here..._
 
 ### 🐞 Bug fixes

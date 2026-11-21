@@ -56,7 +56,10 @@ SO=$(find "$BUILD_DIR" -name libmln-cabi.so | head -1)
 # ── Strip ────────────────────────────────────────────────────────────────────────────────────
 # Release does not imply a stripped .so, and the symbol table is a large share of the shipped
 # size; the packages are close to nuget.org's 250 MB ceiling. Before the alignment check, so
-# that check sees exactly what ships.
+# that check sees exactly what ships. The unstripped copy goes to $OUT/symbols/, as the GitHub
+# release's Android symbols zip does.
+mkdir -p "$OUT/symbols"
+cp "$SO" "$OUT/symbols/"
 BEFORE=$(stat -c%s "$SO")
 "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" --strip-unneeded "$SO"
 AFTER=$(stat -c%s "$SO")

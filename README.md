@@ -674,6 +674,17 @@ MAUI handler. See `sample/WpfExample` for a full working example, and
 
 ---
 
+## Google Play native debug symbols
+
+The Android `libmln-cabi.so` in the packages is stripped, so on its own a native crash inside
+MapLibre reaches Play's Android vitals as bare addresses. Each GitHub release attaches the same
+builds before stripping: `MapLibreNative.Maui-<version>-android-symbols.zip` (and
+`MapLibreNative.Maui.Vulkan-…` for the Vulkan package), one `<abi>/libmln-cabi.so` per ABI.
+Upload the zip matching your package version as your app version's native debug symbols: in
+Play Console under App bundle explorer → the version → Downloads → Native debug symbols, or
+through the Play Developer API's `edits.deobfuscationfiles.upload` with type `nativeCode`. Play
+matches each library by its build ID. Releases up to 5.0.0-pre.4 have none.
+
 ## Building from Source
 
 ### Prerequisites
