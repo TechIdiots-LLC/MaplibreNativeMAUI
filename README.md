@@ -188,6 +188,14 @@ Map.RemoveControl(layers);
 A control takes the map's `BindingContext`, so bindings in it work as in the page. Adding a control again moves it
 to the end of its corner. `Controls` lists them.
 
+`ScaleControl` is a scale bar, like gl-js's: a bar of a round distance (1, 2 or 5 times a power of ten) no wider than
+`MaxBarWidth` (default 100), measured at the map's centre and updated as the camera moves. `Unit` is `Metric`
+(default), `Imperial` or `Nautical`.
+
+```csharp
+Map.AddControl(new ScaleControl { Unit = ScaleUnit.Imperial }, MapControlCorner.BottomLeft);
+```
+
 For views of your own laid over the map that aren't controls (a banner, a panel), `ControlInsets` gives the room
 the controls take in each corner, margins included, and `ControlInsetsChanged` tells when a control is added,
 removed, shown, hidden or resized:

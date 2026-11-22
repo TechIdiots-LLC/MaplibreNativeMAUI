@@ -5,9 +5,10 @@ namespace MauiSample;
 
 /// <summary>
 /// Controls of the app's own on the map, stacked in the corners with the built-in ones as maplibre-gl-js's
-/// addControl does (MapLibreMap.AddControl): a star below GPS in the top right, a layers button top left, a note
-/// bottom right. "Move GPS" walks the GPS control round the corners, and "Built-ins" hides and shows the built-in
-/// controls; the rest of each stack closes up or makes room.
+/// addControl does (MapLibreMap.AddControl): a scale bar and a layers button top left, a star below GPS in the top
+/// right, a note bottom right. "Units" cycles the scale bar's units, "Move GPS" walks the GPS control round the
+/// corners, and "Built-ins" hides and shows the built-in controls; the rest of each stack closes up or makes room.
+/// The label shows the insets and the GPS control's modes (MapLibreMap.GpsTrackingMode / GpsBearingMode).
 /// </summary>
 public partial class ControlsPage : ContentPage
 {
@@ -19,8 +20,12 @@ public partial class ControlsPage : ContentPage
     {
         InitializeComponent();
 
+        var scale = new ScaleControl();
+        Map.AddControl(scale, MapControlCorner.TopLeft);
         Map.AddControl(SmallButton("★", (_, _) => DisplayAlertAsync("Star", "A control of the app's own.", "OK")));
         Map.AddControl(SmallButton("Layers", (_, _) => DisplayAlertAsync("Layers", "Top left, first in its corner.", "OK")),
+            MapControlCorner.TopLeft);
+        Map.AddControl(SmallButton("Units", (_, _) => scale.Unit = (ScaleUnit)(((int)scale.Unit + 1) % 3)),
             MapControlCorner.TopLeft);
         Map.AddControl(SmallButton("Move GPS", (_, _) =>
         {
@@ -41,6 +46,10 @@ public partial class ControlsPage : ContentPage
         }, MapControlCorner.BottomRight);
 
         Map.ControlInsetsChanged += (_, _) => ShowInsets();
+        Map.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(Map.GpsTrackingMode) or nameof(Map.GpsBearingMode)) ShowInsets();
+        };
         ShowInsets();
     }
 
@@ -49,7 +58,8 @@ public partial class ControlsPage : ContentPage
         var i = Map.ControlInsets;
         static string S(Size s) => $"{s.Width:F0}×{s.Height:F0}";
         InsetsLabel.Text = $"Controls take: top left {S(i.TopLeft)}, top right {S(i.TopRight)}\n" +
-                           $"bottom left {S(i.BottomLeft)}, bottom right {S(i.BottomRight)}";
+                           $"bottom left {S(i.BottomLeft)}, bottom right {S(i.BottomRight)}\n" +
+                           $"GPS: {Map.GpsTrackingMode}, {Map.GpsBearingMode}";
     }
 
     private static Button SmallButton(string text, EventHandler clicked)
