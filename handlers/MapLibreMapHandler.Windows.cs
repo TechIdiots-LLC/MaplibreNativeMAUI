@@ -87,6 +87,7 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
         _controller.UiScale = (float)(VirtualView?.UiScale ?? 1.0);   // read before Init creates the view
 
         _controller.OnControlInsetsChanged          += insets => VirtualView?.OnControlInsetsChanged(insets);
+        _controller.OnAttributionsChanged           += list => VirtualView?.OnAttributionsChanged(list);
         _controller.OnMapReadyReceived               += VirtualView.OnMapReady;
         _controller.OnStyleLoadedReceived            += VirtualView.OnStyleLoaded;
         _controller.OnDidBecomeIdleReceived          += VirtualView.OnDidBecomeIdle;

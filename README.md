@@ -137,6 +137,7 @@ public static class MauiProgram
 | `ShowGpsControl` | `bool` | Show the GPS tracking control overlay (default `true`) |
 | `ShowAttributionControl` | `bool` | Show the attribution overlay (default `true`) |
 | `CustomAttribution` | `string` | Extra attribution text appended after source-derived attributions |
+| `Attributions` | `IReadOnlyList<string>` | Read-only attributions in force (sources', MapLibre's, `CustomAttribution`), HTML; `AttributionsChanged` when they change |
 | `ShowTerrainControl` | `bool` | Show the 3D-terrain toggle button (default `false`), see [3D Terrain](#3d-terrain) |
 | `TerrainControlSourceId` / `TerrainControlExaggeration` | `string` / `float` | The raster-dem source the terrain button toggles, and the exaggeration it applies |
 | `TerrainLoadMode` | `TerrainLoadMode` | Terrain loading budget and mesh depth: `Quality` (default), `Balanced`, `Performance` |
@@ -193,6 +194,13 @@ removed, shown, hidden or resized:
 ```csharp
 Map.ControlInsetsChanged += (_, _) =>
     Banner.Margin = new Thickness(Map.ControlInsets.TopLeft.Width, 8, Map.ControlInsets.TopRight.Width, 0);
+```
+
+To show attribution your own way, turn the built-in control off (`ShowAttributionControl="False"`) and show
+`Attributions` instead: OpenStreetMap's licence and most tile providers' terms require it on the map.
+
+```csharp
+Map.AttributionsChanged += (_, _) => Credits.Text = string.Join(" | ", Map.Attributions.Select(StripHtml));
 ```
 
 The sample's **Controls** page shows controls in three corners, a button that moves the GPS control round them, one

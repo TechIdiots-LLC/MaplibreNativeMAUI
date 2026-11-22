@@ -142,6 +142,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     public event Action<Map>?                OnMapReadyReceived;
     public event Action<MapControlInsets>?   OnControlInsetsChanged;
+    public event Action<IReadOnlyList<string>>? OnAttributionsChanged;
     public event Action?                     OnDidBecomeIdleReceived;
     public event Action<int>?                OnCameraMoveStartedReceived;
     public event Action?                     OnCameraMoveReceived;
@@ -458,6 +459,16 @@ public class MapLibreMapController : IMapLibreMapController
             if (top) stack.AddArrangedSubview(view); else stack.InsertArrangedSubview(view, 0);
         }
         ReportControlInsets();
+    }
+
+private IReadOnlyList<string> _reportedAttributions = [];
+
+    /// <summary>Tells the map the attributions in force (MapLibreMap.Attributions) when they change.</summary>
+    private void ReportAttributions(IReadOnlyList<string> attributions)
+    {
+        if (attributions.SequenceEqual(_reportedAttributions)) return;
+        _reportedAttributions = attributions.ToList();
+        OnAttributionsChanged?.Invoke(_reportedAttributions);
     }
 
     /// <summary>The room each corner's controls take, margins in (points), told when it changes.</summary>
@@ -969,6 +980,7 @@ public class MapLibreMapController : IMapLibreMapController
     {
         if (_style == null)
         {
+            ReportAttributions([]);
             _appliedAttribution = null;
             _attrView.Hidden   = true;
             _attrButton.Hidden = true;
@@ -979,6 +991,7 @@ public class MapLibreMapController : IMapLibreMapController
         if (!string.IsNullOrWhiteSpace(_customAttribution))
             parts.Add(_customAttribution!);
         var attributions = MlnStyle.EnsureMapLibreAttribution(parts);
+        ReportAttributions(attributions);
 
         if (attributions.Count == 0 || !_showAttrControl)
         {

@@ -23,6 +23,7 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, FrameLayout>
         _controller = MapLibreMapFactory.Create(dpi, VirtualView?.StyleUrl);
 
         _controller.OnControlInsetsChanged          += insets => VirtualView?.OnControlInsetsChanged(insets);
+        _controller.OnAttributionsChanged           += list => VirtualView?.OnAttributionsChanged(list);
         _controller.OnMapReadyReceived              += VirtualView.OnMapReady;
         _controller.OnStyleLoadedReceived           += VirtualView.OnStyleLoaded;
         _controller.OnDidBecomeIdleReceived         += VirtualView.OnDidBecomeIdle;

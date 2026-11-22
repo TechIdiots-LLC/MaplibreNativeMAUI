@@ -69,6 +69,25 @@ public partial class MapLibreMap
         ControlInsetsChanged?.Invoke(this, System.EventArgs.Empty);
     }
 
+    /// <summary>
+    /// The attributions the map's sources ask for, with MapLibre's own and <see cref="CustomAttribution"/>, as the
+    /// sources give them (HTML, often with links): what the built-in attribution control shows. An app that turns that
+    /// control off (<see cref="ShowAttributionControl"/>) to show its own must still show these: OpenStreetMap's data
+    /// licence and most tile providers' terms require it. <see cref="AttributionsChanged"/> tells when they change (a
+    /// style or source loaded).
+    /// </summary>
+    public IReadOnlyList<string> Attributions { get; private set; } = [];
+
+    /// <summary>The attributions in force changed.</summary>
+    public event EventHandler? AttributionsChanged;
+
+    internal void OnAttributionsChanged(IReadOnlyList<string> attributions)
+    {
+        Attributions = attributions;
+        OnPropertyChanged(nameof(Attributions));
+        AttributionsChanged?.Invoke(this, System.EventArgs.Empty);
+    }
+
     protected override void OnBindingContextChanged()
     {
         base.OnBindingContextChanged();

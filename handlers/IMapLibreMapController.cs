@@ -13,6 +13,9 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
     /// <summary>The room the controls take in a corner of the map changed (<see cref="MapLibreMap.ControlInsets"/>).</summary>
     public event Action<MapControlInsets>? OnControlInsetsChanged;
 
+    /// <summary>The attributions in force changed (<see cref="MapLibreMap.Attributions"/>).</summary>
+    public event Action<IReadOnlyList<string>>? OnAttributionsChanged;
+
     /// <summary>
     /// The app's own controls (<see cref="MapLibreMap.AddControl"/>) as platform views (a FrameworkElement, an Android
     /// View, a UIView), each with its corner, in order: stacked after the built-in controls in their corners.

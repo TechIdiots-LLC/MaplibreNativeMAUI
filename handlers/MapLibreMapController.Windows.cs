@@ -121,6 +121,7 @@ public class MapLibreMapController : IMapLibreMapController
     // ── Events ────────────────────────────────────────────────────────────────
     public event Action<Map>?                            OnMapReadyReceived;
     public event Action<MapControlInsets>?               OnControlInsetsChanged;
+    public event Action<IReadOnlyList<string>>? OnAttributionsChanged;
     public event Action?                                 OnDidBecomeIdleReceived;
     public event Action<int>?                            OnCameraMoveStartedReceived;
     public event Action?                                 OnCameraMoveReceived;
@@ -1106,11 +1107,12 @@ public class MapLibreMapController : IMapLibreMapController
     /// </summary>
     private void RefreshAttributionText()
     {
-        if (_style == null) { _attrText = string.Empty; return; }
+        if (_style == null) { _attrText = string.Empty; ReportAttributions([]); return; }
         var parts = new System.Collections.Generic.List<string>(_style.GetSourceAttributions());
         if (!string.IsNullOrWhiteSpace(_customAttribution))
             parts.Add(_customAttribution!);
         var attributions = MlnStyle.EnsureMapLibreAttribution(parts);
+        ReportAttributions(attributions);
         // Strip HTML tags to plain text (attribution strings from OSM are like
         // "© <a href='...'>OpenStreetMap</a> contributors" — we strip the links for now).
         var sb = new System.Text.StringBuilder();
@@ -1210,6 +1212,16 @@ public class MapLibreMapController : IMapLibreMapController
             if (top) panel.Children.Add(view); else panel.Children.Insert(0, view);
         }
         ReportControlInsets();
+    }
+
+private IReadOnlyList<string> _reportedAttributions = [];
+
+    /// <summary>Tells the map the attributions in force (MapLibreMap.Attributions) when they change.</summary>
+    private void ReportAttributions(IReadOnlyList<string> attributions)
+    {
+        if (attributions.SequenceEqual(_reportedAttributions)) return;
+        _reportedAttributions = attributions.ToList();
+        OnAttributionsChanged?.Invoke(_reportedAttributions);
     }
 
     /// <summary>The room each corner's controls take, margins in, told when it changes.</summary>
