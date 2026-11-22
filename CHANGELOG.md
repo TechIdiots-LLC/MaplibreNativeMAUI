@@ -8,6 +8,7 @@
 
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
+- **`CameraMove` on Windows** — the map raised `CameraMove` (and its command) while the camera moved on Android and iOS, but never on WinUI, where mbgl's `onCameraIsChanging` was dropped: anything following the camera as it moved only caught up when it stopped. It's raised for each frame of a gesture or an animation now.
 - **Control positions work on Windows** — `NavigationControlPosition`, `GpsControlPosition`, `TerrainControlPosition` and `AttributionControlPosition` were accepted and ignored on WinUI, where the controls sat at fixed places (top right, attribution bottom left). They now stack in the corner each names, as on Android and iOS.
 
 ## 5.0.0-pre.4

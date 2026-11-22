@@ -53,6 +53,8 @@ public sealed class MapImageView : IDisposable
     public event EventHandler? StyleLoaded;
     public event EventHandler? DidBecomeIdle;
     public event EventHandler? CameraIdle;
+    /// <summary>The camera is moving (each frame of a gesture or an animation).</summary>
+    public event EventHandler? CameraChanging;
     /// <summary>Raised on a tap without pan: (latitude, longitude, physicalX, physicalY).</summary>
     public event EventHandler<(double Lat, double Lon, double X, double Y)>? MapClicked;
     /// <summary>Raised when a user drag actually moves the map (never for programmatic moves).</summary>
@@ -346,6 +348,9 @@ public sealed class MapImageView : IDisposable
             case "onDidBecomeIdle":
                 MDiag("onDidBecomeIdle");
                 DidBecomeIdle?.Invoke(this, System.EventArgs.Empty);
+                break;
+            case "onCameraIsChanging":
+                CameraChanging?.Invoke(this, System.EventArgs.Empty);
                 break;
             case "onCameraDidChange":
                 CameraIdle?.Invoke(this, System.EventArgs.Empty);

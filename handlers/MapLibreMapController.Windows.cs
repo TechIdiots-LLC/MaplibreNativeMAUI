@@ -206,6 +206,7 @@ public class MapLibreMapController : IMapLibreMapController
             OnDidBecomeIdleReceived?.Invoke();
         };
         _mapView.CameraIdle    += (_, _) => { RefreshGpsControl(); OnCameraIdleReceived?.Invoke(); };
+        _mapView.CameraChanging += (_, _) => OnCameraMoveReceived?.Invoke();
         _mapView.UserPanned    += (_, _) => OnUserPannedMap();
         _mapView.MapClicked    += (_, e) => OnMapClickReceived?.Invoke(new LatLng(e.Lat, e.Lon), e.X, e.Y);
 
