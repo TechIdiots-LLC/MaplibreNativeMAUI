@@ -38,6 +38,8 @@ public partial class MapLibreMapHandler
             [nameof(MapLibreMap.TerrainSkirtLength)]         = MapTerrainSkirtLength,
             [nameof(MapLibreMap.CenterClampedToGround)]      = MapCenterClampedToGround,
             [nameof(MapLibreMap.Controls)]                   = MapControls,
+            [nameof(MapLibreMap.GpsTrackingMode)]            = MapGpsTrackingMode,
+            [nameof(MapLibreMap.GpsBearingMode)]             = MapGpsBearingMode,
         };
         
     public static void MapStyleUrl(MapLibreMapHandler handler, MapLibreMap view)
@@ -143,4 +145,10 @@ public partial class MapLibreMapHandler
 
     public static void MapControls(MapLibreMapHandler handler, MapLibreMap view)
         => handler.UpdateControls(view.Controls);
+
+    public static void MapGpsTrackingMode(MapLibreMapHandler handler, MapLibreMap view)
+        => handler.UpdateGpsTrackingMode(view.GpsTrackingMode);
+
+    public static void MapGpsBearingMode(MapLibreMapHandler handler, MapLibreMap view)
+        => handler.UpdateGpsBearingMode(view.GpsBearingMode);
 }

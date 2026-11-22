@@ -88,6 +88,7 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
 
         _controller.OnControlInsetsChanged          += insets => VirtualView?.OnControlInsetsChanged(insets);
         _controller.OnAttributionsChanged           += list => VirtualView?.OnAttributionsChanged(list);
+        _controller.OnGpsModesChanged               += (t, b) => VirtualView?.OnGpsModesChanged(t, b);
         _controller.OnMapReadyReceived               += VirtualView.OnMapReady;
         _controller.OnStyleLoadedReceived            += VirtualView.OnStyleLoaded;
         _controller.OnDidBecomeIdleReceived          += VirtualView.OnDidBecomeIdle;
@@ -213,6 +214,9 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
 
     private static float GetDpiForWindow(Microsoft.UI.Xaml.Window window)
         => (float)(window.Content?.XamlRoot?.RasterizationScale ?? 1.0);
+
+    public void UpdateGpsTrackingMode(GpsTrackingMode mode) => _controller.SetGpsTrackingMode(mode);
+    public void UpdateGpsBearingMode(GpsBearingMode mode)   => _controller.SetGpsBearingMode(mode);
 
     /// <summary>The app's controls as platform views, for the controller to stack in their corners.</summary>
     public void UpdateControls(IReadOnlyList<MapControl> controls)

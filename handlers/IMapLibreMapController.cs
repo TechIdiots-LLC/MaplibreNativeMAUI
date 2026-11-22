@@ -16,6 +16,15 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
     /// <summary>The attributions in force changed (<see cref="MapLibreMap.Attributions"/>).</summary>
     public event Action<IReadOnlyList<string>>? OnAttributionsChanged;
 
+    /// <summary>The GPS control's tracking or bearing mode changed: its buttons, a gesture, or the app.</summary>
+    public event Action<GpsTrackingMode, GpsBearingMode>? OnGpsModesChanged;
+
+    /// <summary>Sets what the GPS control does with the location (its top button's cycle).</summary>
+    public void SetGpsTrackingMode(GpsTrackingMode mode);
+
+    /// <summary>Sets which way the camera faces as the GPS control moves it (its bottom button's cycle).</summary>
+    public void SetGpsBearingMode(GpsBearingMode mode);
+
     /// <summary>
     /// The app's own controls (<see cref="MapLibreMap.AddControl"/>) as platform views (a FrameworkElement, an Android
     /// View, a UIView), each with its corner, in order: stacked after the built-in controls in their corners.

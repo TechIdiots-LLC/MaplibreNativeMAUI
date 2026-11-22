@@ -145,6 +145,7 @@ public static class MauiProgram
 | `CenterClampedToGround` | `bool` | Let the map centre ride the terrain, as maplibre-gl-js does (default `false`) |
 | `NavigationControlPosition` / `GpsControlPosition` / `TerrainControlPosition` / `AttributionControlPosition` | `MapControlCorner` | Corner each control stacks in, see [Map Controls](#map-controls) |
 | `ControlInsets` | `MapControlInsets` | Read-only room the controls take in each corner; `ControlInsetsChanged` when it changes |
+| `GpsTrackingMode` / `GpsBearingMode` | `GpsTrackingMode` / `GpsBearingMode` | The GPS control's modes (`Off`/`Show`/`Follow`, `Free`/`NorthUp`/`GpsBearing`), two-way: they follow its buttons and gestures, and setting them does what the buttons do |
 | `GpsFollowZoomMode` / `GpsFollowZoom` | `GpsFollowZoomMode` / `double` | How the GPS control picks the zoom when it starts following (default: keep the current zoom) |
 | `UiScale` | `double` | Extra multiplier on the display density, e.g. to honour the OS font scale (default `1.0`; read once when the map is created) |
 | `ItemsSource` / `ItemTemplate` | — | Data-bound overlay elements, see [Data binding](#data-binding-itemssource) |
@@ -201,6 +202,17 @@ To show attribution your own way, turn the built-in control off (`ShowAttributio
 
 ```csharp
 Map.AttributionsChanged += (_, _) => Credits.Text = string.Join(" | ", Map.Attributions.Select(StripHtml));
+```
+
+For GPS buttons of your own, hide the built-in control (`ShowGpsControl="False"`) and set `GpsTrackingMode` and
+`GpsBearingMode`: the map still shows the location fed to `UpdateGpsLocation` and moves the camera as the
+built-in buttons would. Both are two-way, so a pan dropping `Follow` to `Show`, or a rotation dropping the bearing
+mode to `Free`, shows in them (and in a binding), whichever buttons are on the map.
+
+```csharp
+FollowButton.Clicked += (_, _) => Map.GpsTrackingMode =
+    Map.GpsTrackingMode == GpsTrackingMode.Follow ? GpsTrackingMode.Show : GpsTrackingMode.Follow;
+HeadingButton.Clicked += (_, _) => Map.GpsBearingMode = GpsBearingMode.GpsBearing;
 ```
 
 The sample's **Controls** page shows controls in three corners, a button that moves the GPS control round them, one

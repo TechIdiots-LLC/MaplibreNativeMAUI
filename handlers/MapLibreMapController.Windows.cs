@@ -65,10 +65,6 @@ public class MapLibreMapController : IMapLibreMapController
     private bool   _showTerrainControl;
     private string _terrainControlSourceId = "mln-terrain-dem";
     private float  _terrainControlExaggeration = 1.0f;
-    /// <summary>GPS tracking mode — Off (no dot), Show (dot only), Follow (dot + camera).</summary>
-    private enum GpsTrackingMode { Off, Show, Follow }
-    /// <summary>Camera bearing mode — Free (untouched), NorthUp (locked to 0), GpsBearing (follows fix bearing).</summary>
-    private enum GpsBearingMode { Free, NorthUp, GpsBearing }
     private GpsTrackingMode _gpsMode = GpsTrackingMode.Off;
     private GpsBearingMode  _gpsBearingMode = GpsBearingMode.Free;
     private GpsFollowZoomMode _gpsFollowZoomMode = GpsFollowZoomMode.KeepCurrent;
@@ -122,6 +118,7 @@ public class MapLibreMapController : IMapLibreMapController
     public event Action<Map>?                            OnMapReadyReceived;
     public event Action<MapControlInsets>?               OnControlInsetsChanged;
     public event Action<IReadOnlyList<string>>? OnAttributionsChanged;
+    public event Action<GpsTrackingMode, GpsBearingMode>? OnGpsModesChanged;
     public event Action?                                 OnDidBecomeIdleReceived;
     public event Action<int>?                            OnCameraMoveStartedReceived;
     public event Action?                                 OnCameraMoveReceived;
@@ -894,28 +891,38 @@ public class MapLibreMapController : IMapLibreMapController
     }
 
     /// <summary>Cycle GPS tracking mode: Off → Show → Follow → Off.</summary>
-    private void CycleGpsMode()
+    private void CycleGpsMode() => SetGpsTrackingMode(_gpsMode switch
     {
-        _gpsMode = _gpsMode switch
-        {
-            GpsTrackingMode.Off  => GpsTrackingMode.Show,
-            GpsTrackingMode.Show => GpsTrackingMode.Follow,
-            _                    => GpsTrackingMode.Off,
-        };
+        GpsTrackingMode.Off  => GpsTrackingMode.Show,
+        GpsTrackingMode.Show => GpsTrackingMode.Follow,
+        _                    => GpsTrackingMode.Off,
+    });
+
+    /// <summary>The GPS control's tracking mode, from its button or the app (MapLibreMap.GpsTrackingMode).</summary>
+    public void SetGpsTrackingMode(GpsTrackingMode mode)
+    {
+        if (mode == _gpsMode) return;
+        _gpsMode = mode;
+        OnGpsModesChanged?.Invoke(_gpsMode, _gpsBearingMode);
 
         ApplyGpsMode();
         RefreshGpsControl();
     }
 
     /// <summary>Cycle camera bearing mode: Free → NorthUp → GpsBearing → Free.</summary>
-    private void CycleGpsBearingMode()
+    private void CycleGpsBearingMode() => SetGpsBearingMode(_gpsBearingMode switch
     {
-        _gpsBearingMode = _gpsBearingMode switch
-        {
-            GpsBearingMode.Free    => GpsBearingMode.NorthUp,
-            GpsBearingMode.NorthUp => GpsBearingMode.GpsBearing,
-            _                      => GpsBearingMode.Free,
-        };
+        GpsBearingMode.Free    => GpsBearingMode.NorthUp,
+        GpsBearingMode.NorthUp => GpsBearingMode.GpsBearing,
+        _                      => GpsBearingMode.Free,
+    });
+
+    /// <summary>The GPS control's bearing mode, from its button or the app (MapLibreMap.GpsBearingMode).</summary>
+    public void SetGpsBearingMode(GpsBearingMode mode)
+    {
+        if (mode == _gpsBearingMode) return;
+        _gpsBearingMode = mode;
+        OnGpsModesChanged?.Invoke(_gpsMode, _gpsBearingMode);
 
         // Rotate the camera to the newly selected reference immediately.
         if (_map != null && _gpsBearingMode != GpsBearingMode.Free
@@ -962,6 +969,7 @@ public class MapLibreMapController : IMapLibreMapController
     {
         if (_gpsMode != GpsTrackingMode.Follow) return;
         _gpsMode = GpsTrackingMode.Show;
+        OnGpsModesChanged?.Invoke(_gpsMode, _gpsBearingMode);
         OnCameraTrackingDismissedReceived?.Invoke();
         RefreshGpsControl();
     }
@@ -971,6 +979,7 @@ public class MapLibreMapController : IMapLibreMapController
     {
         if (_gpsBearingMode == GpsBearingMode.Free) return;
         _gpsBearingMode = GpsBearingMode.Free;
+        OnGpsModesChanged?.Invoke(_gpsMode, _gpsBearingMode);
         RefreshGpsControl();
     }
 

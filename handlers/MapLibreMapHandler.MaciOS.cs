@@ -22,6 +22,7 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, UIView>
 
         _controller.OnControlInsetsChanged          += insets => VirtualView?.OnControlInsetsChanged(insets);
         _controller.OnAttributionsChanged           += list => VirtualView?.OnAttributionsChanged(list);
+        _controller.OnGpsModesChanged               += (t, b) => VirtualView?.OnGpsModesChanged(t, b);
         _controller.OnMapReadyReceived              += VirtualView.OnMapReady;
         _controller.OnStyleLoadedReceived           += VirtualView.OnStyleLoaded;
         _controller.OnDidBecomeIdleReceived         += VirtualView.OnDidBecomeIdle;
@@ -64,6 +65,9 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, UIView>
     public void UpdateTerrainLoadMode(TerrainLoadMode mode)               => _controller.SetTerrainLoadMode(mode);
     public void UpdateTerrainSkirtLength(TerrainSkirtLength length)       => _controller.SetTerrainSkirtLength(length);
     public void UpdateCenterClampedToGround(bool clamped)                 => _controller.SetCenterClampedToGround(clamped);
+
+    public void UpdateGpsTrackingMode(GpsTrackingMode mode) => _controller.SetGpsTrackingMode(mode);
+    public void UpdateGpsBearingMode(GpsBearingMode mode)   => _controller.SetGpsBearingMode(mode);
 
     /// <summary>The app's controls as platform views, for the controller to stack in their corners.</summary>
     public void UpdateControls(IReadOnlyList<MapControl> controls)

@@ -88,6 +88,39 @@ public partial class MapLibreMap
         AttributionsChanged?.Invoke(this, System.EventArgs.Empty);
     }
 
+    public static readonly BindableProperty GpsTrackingModeProperty = BindableProperty.Create(
+        nameof(GpsTrackingMode), typeof(GpsTrackingMode), typeof(MapLibreMap), GpsTrackingMode.Off, BindingMode.TwoWay);
+
+    public static readonly BindableProperty GpsBearingModeProperty = BindableProperty.Create(
+        nameof(GpsBearingMode), typeof(GpsBearingMode), typeof(MapLibreMap), GpsBearingMode.Free, BindingMode.TwoWay);
+
+    /// <summary>
+    /// What the GPS control does with the location: nothing, show it, or follow it. Its top button cycles this, and a
+    /// pan drops Follow to Show; the property follows (two-way), and setting it does what the button would. With the
+    /// control hidden (<see cref="ShowGpsControl"/>), a button of the app's own can drive it.
+    /// </summary>
+    public GpsTrackingMode GpsTrackingMode
+    {
+        get => (GpsTrackingMode)GetValue(GpsTrackingModeProperty);
+        set => SetValue(GpsTrackingModeProperty, value);
+    }
+
+    /// <summary>
+    /// Which way the camera faces as the GPS control moves it: as it is, north up, or with the direction of travel.
+    /// Its bottom button cycles this, and rotating the map drops it to Free; two-way, like <see cref="GpsTrackingMode"/>.
+    /// </summary>
+    public GpsBearingMode GpsBearingMode
+    {
+        get => (GpsBearingMode)GetValue(GpsBearingModeProperty);
+        set => SetValue(GpsBearingModeProperty, value);
+    }
+
+    internal void OnGpsModesChanged(GpsTrackingMode tracking, GpsBearingMode bearing)
+    {
+        GpsTrackingMode = tracking;
+        GpsBearingMode = bearing;
+    }
+
     protected override void OnBindingContextChanged()
     {
         base.OnBindingContextChanged();
