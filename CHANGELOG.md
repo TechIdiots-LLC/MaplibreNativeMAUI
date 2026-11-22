@@ -2,15 +2,20 @@
 
 ## master
 ### ✨ Features and improvements
+- _...Add new stuff here..._
+
+### 🐞 Bug fixes
+- _...Add new stuff here..._
+
+## 5.0.0
+### ✨ Features and improvements
 - **`ScaleControl`: a scale bar** — as maplibre-gl-js's `ScaleControl`, added with `AddControl` to any corner: a bar of a round distance (1, 2 or 5 times a power of ten) no wider than `MaxBarWidth`, measured at the map's centre as the camera moves, in metric, imperial or nautical units (`Unit`). The sample's **Controls** page has one, with a button that changes its units.
 - **The GPS control's modes, for GPS buttons of your own** — `MapLibreMap.GpsTrackingMode` (`Off`, `Show`, `Follow`) and `GpsBearingMode` (`Free`, `NorthUp`, `GpsBearing`) are what the GPS control's two buttons cycle, and were private to it. They're two-way bindable properties now: they follow the buttons, and the drops a gesture makes (a pan from `Follow` to `Show`, a rotation to `Free`), and setting one does what its button does. With `ShowGpsControl` off, buttons of the app's own can drive the location and camera, and an app's own camera (a route's, say) can face the way the control says.
 - **`Attributions`: the attributions in force, for an attribution control of your own** — `MapLibreMap.Attributions` lists what the built-in attribution control shows (the sources' attributions, MapLibre's, and `CustomAttribution`), as the sources give them (HTML), and `AttributionsChanged` tells when a style or source changes them. An app that turns the built-in control off to show attribution its own way can now show what the data's licences require; before, the list was only inside the control.
 - **Controls of your own, stacked with the built-in ones** — `MapLibreMap.AddControl(view, corner)` puts any MAUI view on the map as a control, as maplibre-gl-js's `addControl` does: it stacks in its corner after the built-in controls (terrain, navigation, GPS, attribution), the first nearest the corner, later ones down from a top corner or up from a bottom one, each control its own measured size, a hidden one taking no room. `RemoveControl` takes it off and `Controls` lists them; a control takes the map's `BindingContext`. `ControlInsets` (with `ControlInsetsChanged`) gives the room the controls take in each corner, for overlays of the app's own to keep clear of. Every platform stacks the controls in a column per corner now, in place of each control's fixed offset (Android and iOS estimated the panels' heights; Windows placed them by hand-set margins). The sample has a **Controls** page.
 - **Android native debug symbols for Google Play** — the `libmln-cabi.so` in the packages is stripped, so Google Play warns that an app bundle using them has native code without debug symbols, and a crash inside MapLibre shows up in Android vitals as bare addresses. Each release now attaches `MapLibreNative.Maui-<version>-android-symbols.zip` and `MapLibreNative.Maui.Vulkan-<version>-android-symbols.zip`: the same builds before stripping, one folder per ABI, ready to upload as the app's native debug symbols. The GitLab check keeps them too, under `native-out/android-<abi>-<renderer>/symbols/`. The README's Google Play section says how to use them.
-- _...Add new stuff here..._
 
 ### 🐞 Bug fixes
-- _...Add new stuff here..._
 - **`CameraMove` on Windows** — the map raised `CameraMove` (and its command) while the camera moved on Android and iOS, but never on WinUI, where mbgl's `onCameraIsChanging` was dropped: anything following the camera as it moved only caught up when it stopped. It's raised for each frame of a gesture or an animation now.
 - **Control positions work on Windows** — `NavigationControlPosition`, `GpsControlPosition`, `TerrainControlPosition` and `AttributionControlPosition` were accepted and ignored on WinUI, where the controls sat at fixed places (top right, attribution bottom left). They now stack in the corner each names, as on Android and iOS.
 
