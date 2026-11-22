@@ -22,8 +22,8 @@ public partial class ControlsPage : ContentPage
 
         var scale = new ScaleControl();
         Map.AddControl(scale, MapControlCorner.TopLeft);
-        Map.AddControl(SmallButton("★", (_, _) => DisplayAlertAsync("Star", "A control of the app's own.", "OK")));
-        Map.AddControl(SmallButton("Layers", (_, _) => DisplayAlertAsync("Layers", "Top left, first in its corner.", "OK")),
+        Map.AddControl(SmallButton("★", (_, _) => Alert("Star", "A control of the app's own.")));
+        Map.AddControl(SmallButton("Layers", (_, _) => Alert("Layers", "Top left, first in its corner.")),
             MapControlCorner.TopLeft);
         Map.AddControl(SmallButton("Units", (_, _) => scale.Unit = (ScaleUnit)(((int)scale.Unit + 1) % 3)),
             MapControlCorner.TopLeft);
@@ -61,6 +61,13 @@ public partial class ControlsPage : ContentPage
                            $"bottom left {S(i.BottomLeft)}, bottom right {S(i.BottomRight)}\n" +
                            $"GPS: {Map.GpsTrackingMode}, {Map.GpsBearingMode}";
     }
+
+    // DisplayAlertAsync is new in MAUI 10; the sample still builds for net9.0 too.
+#if NET10_0_OR_GREATER
+    private Task Alert(string title, string message) => DisplayAlertAsync(title, message, "OK");
+#else
+    private Task Alert(string title, string message) => DisplayAlert(title, message, "OK");
+#endif
 
     private static Button SmallButton(string text, EventHandler clicked)
     {
