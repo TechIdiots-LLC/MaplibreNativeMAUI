@@ -99,7 +99,11 @@ public class MapLibreMapController : IMapLibreMapController
     private UIButton    _gpsTracking  = null!;   // reflects tracking mode
     private UIButton    _gpsBearing   = null!;
 
-    private readonly List<NSLayoutConstraint> _overlayConstraints = new();
+    // The controls stack in a column per corner, gl-js style: the built-in ones first, then the app's (AddControl)
+    private readonly Dictionary<MapControlCorner, CornerStack> _cornerStacks = new();
+    private IReadOnlyList<(UIView View, MapControlCorner Corner)> _customControls = [];
+    private readonly Dictionary<UIView, ControlHost> _controlHosts = new();
+    private MapControlInsets _controlInsets = MapControlInsets.None;
 
     private bool _showNavControls = true;
     private bool _showGpsControl  = true;
@@ -137,6 +141,7 @@ public class MapLibreMapController : IMapLibreMapController
     // -- Events ----------------------------------------------------------------
 
     public event Action<Map>?                OnMapReadyReceived;
+    public event Action<MapControlInsets>?   OnControlInsetsChanged;
     public event Action?                     OnDidBecomeIdleReceived;
     public event Action<int>?                OnCameraMoveStartedReceived;
     public event Action?                     OnCameraMoveReceived;
@@ -385,57 +390,130 @@ public class MapLibreMapController : IMapLibreMapController
         return b;
     }
 
-    /// <summary>Anchors nav / GPS / attribution overlays to their corners and
-    /// applies vertical stacking when several share a corner.</summary>
+    public void SetCustomControls(IReadOnlyList<(object PlatformView, MapControlCorner Corner)> controls)
+    {
+        _customControls = controls.Where(c => c.PlatformView is UIView)
+                                  .Select(c => ((UIView)c.PlatformView, c.Corner)).ToList();
+        foreach (var gone in _controlHosts.Keys.Except(_customControls.Select(c => c.View)).ToList())
+        {
+            _controlHosts[gone].RemoveFromSuperview();
+            _controlHosts.Remove(gone);
+        }
+        RepositionOverlays();
+    }
+
+    /// <summary>
+    /// Puts every control in its corner's column: the built-in ones (terrain, navigation, GPS, attribution), then the
+    /// app's in the order added. The first in a corner sits nearest it: a top corner's column runs downward, a bottom
+    /// corner's upward. A hidden control takes no room (UIStackView leaves out hidden arranged views).
+    /// </summary>
     private void RepositionOverlays()
     {
-        if (_overlayConstraints.Count > 0)
+        if (_cornerStacks.Count == 0)
         {
-            NSLayoutConstraint.DeactivateConstraints(_overlayConstraints.ToArray());
-            _overlayConstraints.Clear();
+            foreach (var corner in Enum.GetValues<MapControlCorner>())
+            {
+                bool l = corner is MapControlCorner.TopLeft or MapControlCorner.BottomLeft;
+                bool t = corner is MapControlCorner.TopLeft or MapControlCorner.TopRight;
+                var stack = new CornerStack
+                {
+                    Axis = UILayoutConstraintAxis.Vertical,
+                    Spacing = OverlayGap,
+                    Alignment = l ? UIStackViewAlignment.Leading : UIStackViewAlignment.Trailing,
+                    TranslatesAutoresizingMaskIntoConstraints = false,
+                    OnLayout = ReportControlInsets,
+                };
+                View.AddSubview(stack);
+                (l ? stack.LeadingAnchor.ConstraintEqualTo(View.LeadingAnchor, OverlayMargin)
+                   : stack.TrailingAnchor.ConstraintEqualTo(View.TrailingAnchor, -OverlayMargin)).Active = true;
+                (t ? stack.TopAnchor.ConstraintEqualTo(View.TopAnchor, OverlayMargin)
+                   : stack.BottomAnchor.ConstraintEqualTo(View.BottomAnchor, -OverlayMargin)).Active = true;
+                _cornerStacks[corner] = stack;
+            }
         }
 
-        float terrainH = OverlayBtn;
-        float navH = OverlayBtn * 3;
-        float gpsH = OverlayBtn * 2;
-        bool terrainVis = _showTerrainControl;
-        bool navVis = _showNavControls;
-        bool gpsVis = _showGpsControl;
+        foreach (var stack in _cornerStacks.Values)
+            foreach (var v in stack.ArrangedSubviews)
+            {
+                stack.RemoveArrangedSubview(v);
+                v.RemoveFromSuperview();
+            }
 
-        // Terrain sits at index 0 (top of the column), then navigation, then GPS, then
-        // attribution — each control offset by the visible controls stacked above it.
-        float StackOffset(MapControlCorner c, int idx)
+        var controls = new List<(UIView View, MapControlCorner Corner)>
         {
-            float off = 0;
-            if (idx > 0 && terrainVis && _terrainCorner == c) off += terrainH + OverlayGap;
-            if (idx > 1 && navVis && _navCorner == c) off += navH + OverlayGap;
-            if (idx > 2 && gpsVis && _gpsCorner == c) off += gpsH + OverlayGap;
-            return off;
+            (_terrainPanel, _terrainCorner), (_navPanel, _navCorner), (_gpsPanel, _gpsCorner),
+            (_attrView, _attrCorner), (_attrButton, _attrCorner),   // one or the other shows
+        };
+        foreach (var (view, corner) in _customControls)
+        {
+            if (!_controlHosts.TryGetValue(view, out var host)) _controlHosts[view] = host = new ControlHost(view);
+            controls.Add((host, corner));
+        }
+        foreach (var (view, corner) in controls)
+        {
+            if (view is null) continue;
+            view.RemoveFromSuperview();
+            var stack = _cornerStacks[corner];
+            bool top = corner is MapControlCorner.TopLeft or MapControlCorner.TopRight;
+            if (top) stack.AddArrangedSubview(view); else stack.InsertArrangedSubview(view, 0);
+        }
+        ReportControlInsets();
+    }
+
+    /// <summary>The room each corner's controls take, margins in (points), told when it changes.</summary>
+    private void ReportControlInsets()
+    {
+        Size Room(MapControlCorner c)
+        {
+            if (!_cornerStacks.TryGetValue(c, out var st)) return Size.Zero;
+            var b = st.Bounds;
+            return b.Width <= 0 || b.Height <= 0 ? Size.Zero
+                : new Size((double)b.Width + 2 * OverlayMargin, (double)b.Height + 2 * OverlayMargin);
+        }
+        var insets = new MapControlInsets(Room(MapControlCorner.TopLeft), Room(MapControlCorner.TopRight),
+                                          Room(MapControlCorner.BottomLeft), Room(MapControlCorner.BottomRight));
+        if (insets == _controlInsets) return;
+        _controlInsets = insets;
+        OnControlInsetsChanged?.Invoke(insets);
+    }
+
+    /// <summary>A corner's column, telling when it's laid out (its size may have changed).</summary>
+    private sealed class CornerStack : UIStackView
+    {
+        public Action? OnLayout;
+        public override void LayoutSubviews()
+        {
+            base.LayoutSubviews();
+            OnLayout?.Invoke();
+        }
+    }
+
+    /// <summary>
+    /// Holds an app control's view in a corner's column, sized as it measures itself: a MAUI layout's view gives
+    /// no intrinsic size of its own, which UIStackView needs. Hidden when the control is.
+    /// </summary>
+    private sealed class ControlHost : UIView
+    {
+        private static readonly CGSize Unbounded = new(System.Runtime.InteropServices.NFloat.PositiveInfinity,
+                                                       System.Runtime.InteropServices.NFloat.PositiveInfinity);
+        private readonly UIView _control;
+        private CGSize _size;
+
+        public ControlHost(UIView control)
+        {
+            _control = control;
+            AddSubview(control);
         }
 
-        void Anchor(UIView v, MapControlCorner c, float off)
+        public override CGSize IntrinsicContentSize => _size = _control.SizeThatFits(Unbounded);
+
+        public override void LayoutSubviews()
         {
-            bool left = c is MapControlCorner.TopLeft or MapControlCorner.BottomLeft;
-            bool top  = c is MapControlCorner.TopLeft or MapControlCorner.TopRight;
-
-            var hz = left
-                ? v.LeadingAnchor.ConstraintEqualTo(View.LeadingAnchor, OverlayMargin)
-                : v.TrailingAnchor.ConstraintEqualTo(View.TrailingAnchor, -OverlayMargin);
-            var vt = top
-                ? v.TopAnchor.ConstraintEqualTo(View.TopAnchor, OverlayMargin + off)
-                : v.BottomAnchor.ConstraintEqualTo(View.BottomAnchor, -(OverlayMargin + off));
-
-            hz.Active = true;
-            vt.Active = true;
-            _overlayConstraints.Add(hz);
-            _overlayConstraints.Add(vt);
+            base.LayoutSubviews();
+            _control.Frame = Bounds;
+            if (Hidden != _control.Hidden) Hidden = _control.Hidden;
+            if (_control.SizeThatFits(Unbounded) != _size) InvalidateIntrinsicContentSize();
         }
-
-        Anchor(_terrainPanel, _terrainCorner, StackOffset(_terrainCorner, 0));
-        Anchor(_navPanel,   _navCorner,  StackOffset(_navCorner, 1));
-        Anchor(_gpsPanel,   _gpsCorner,  StackOffset(_gpsCorner, 2));
-        Anchor(_attrView,   _attrCorner, StackOffset(_attrCorner, 3));
-        Anchor(_attrButton, _attrCorner, StackOffset(_attrCorner, 3));
     }
 
     // -- View size -------------------------------------------------------------

@@ -350,6 +350,12 @@ public class MapLibreMapController : IMapLibreMapController
     private MapControlCorner _terrainCorner = MapControlCorner.TopRight;
     private MapControlCorner _attrCorner    = MapControlCorner.BottomLeft;
 
+    // The controls stack in a column per corner, gl-js style: the built-in ones first, then the app's (AddControl)
+    private readonly Dictionary<MapControlCorner, LinearLayout> _cornerColumns = new();
+    private FrameLayout? _attrHost;   // the attribution's text and its ⓘ button, one control in the stack
+    private IReadOnlyList<(Android.Views.View View, MapControlCorner Corner)> _customControls = [];
+    private MapControlInsets _controlInsets = MapControlInsets.None;
+
     // GPS tracking state (fixes are fed externally via UpdateGpsLocation)
     private enum GpsTrackingMode { Off, Show, Follow }
     private enum GpsBearingMode  { Free, NorthUp, GpsBearing }
@@ -407,6 +413,7 @@ public class MapLibreMapController : IMapLibreMapController
     // -- Events ----------------------------------------------------------------
 
     public event Action<Map>?                OnMapReadyReceived;
+    public event Action<MapControlInsets>?   OnControlInsetsChanged;
     public event Action?                     OnDidBecomeIdleReceived;
     public event Action<int>?                OnCameraMoveStartedReceived;
     public event Action?                     OnCameraMoveReceived;
@@ -759,54 +766,93 @@ public class MapLibreMapController : IMapLibreMapController
         return v;
     }
 
-    /// <summary>Anchors nav / GPS / attribution overlays to their corners and
-    /// applies vertical stacking when several share a corner.</summary>
+    public void SetCustomControls(IReadOnlyList<(object PlatformView, MapControlCorner Corner)> controls)
+    {
+        _customControls = controls.Where(c => c.PlatformView is Android.Views.View)
+                                  .Select(c => ((Android.Views.View)c.PlatformView, c.Corner)).ToList();
+        RepositionOverlays();
+    }
+
+    /// <summary>
+    /// Puts every control in its corner's column: the built-in ones (terrain, navigation, GPS, attribution), then the
+    /// app's in the order added. The first in a corner sits nearest it: a top corner's column runs downward, a bottom
+    /// corner's upward. Each control is measured as it is, and a hidden one (Gone) takes no room.
+    /// </summary>
     private void RepositionOverlays()
+    {
+        if (View is not FrameLayout container || container.Context is not { } ctx) return;
+        float d = ctx.Resources!.DisplayMetrics!.Density;
+        int Px(double dp) => (int)Math.Round(dp * d);
+        int margin = Px(OverlayMarginDp), gap = Px(OverlayGapDp);
+
+        if (_cornerColumns.Count == 0)
+        {
+            foreach (var corner in Enum.GetValues<MapControlCorner>())
+            {
+                bool l = corner is MapControlCorner.TopLeft or MapControlCorner.BottomLeft;
+                bool t = corner is MapControlCorner.TopLeft or MapControlCorner.TopRight;
+                var column = new LinearLayout(ctx) { Orientation = Orientation.Vertical };
+                var lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent,
+                    (l ? GravityFlags.Left : GravityFlags.Right) | (t ? GravityFlags.Top : GravityFlags.Bottom));
+                lp.SetMargins(margin, margin, margin, margin);
+                column.LayoutChange += (_, _) => ReportControlInsets();
+                _cornerColumns[corner] = column;
+                container.AddView(column, lp);
+            }
+            // The attribution's text and ⓘ button take turns in one place
+            _attrHost = new FrameLayout(ctx);
+            foreach (var v in new Android.Views.View[] { _attrView, _attrButton })
+            {
+                (v.Parent as ViewGroup)?.RemoveView(v);
+                _attrHost.AddView(v, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent));
+            }
+        }
+
+        foreach (var column in _cornerColumns.Values) column.RemoveAllViews();
+        var controls = new List<(Android.Views.View? View, MapControlCorner Corner)>
+        {
+            (_terrainPanel, _terrainCorner), (_navPanel, _navCorner), (_gpsPanel, _gpsCorner), (_attrHost, _attrCorner),
+        };
+        controls.AddRange(_customControls.Select(c => ((Android.Views.View?)c.View, c.Corner)));
+        foreach (var (view, corner) in controls)
+        {
+            if (view is null) continue;
+            (view.Parent as ViewGroup)?.RemoveView(view);
+            bool left = corner is MapControlCorner.TopLeft or MapControlCorner.BottomLeft;
+            bool top  = corner is MapControlCorner.TopLeft or MapControlCorner.TopRight;
+            var lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent)
+            {
+                Gravity = left ? GravityFlags.Left : GravityFlags.Right,
+            };
+            lp.SetMargins(0, top ? 0 : gap, 0, top ? gap : 0);
+            if (view == _attrHost)
+                foreach (var v in new Android.Views.View[] { _attrView, _attrButton })
+                    if (v.LayoutParameters is FrameLayout.LayoutParams alp)
+                    {
+                        alp.Gravity = left ? GravityFlags.Left : GravityFlags.Right;
+                        v.LayoutParameters = alp;
+                    }
+            var column = _cornerColumns[corner];
+            if (top) column.AddView(view, lp); else column.AddView(view, 0, lp);
+        }
+        ReportControlInsets();
+    }
+
+    /// <summary>The room each corner's controls take, margins in (dp), told when it changes.</summary>
+    private void ReportControlInsets()
     {
         if (View?.Context is not { } ctx) return;
         float d = ctx.Resources!.DisplayMetrics!.Density;
-        int Px(double dp) => (int)Math.Round(dp * d);
-
-        int margin  = Px(OverlayMarginDp);
-        int gap     = Px(OverlayGapDp);
-        int terrainH = Px(OverlayBtnDp);
-        int navH    = Px(OverlayBtnDp * 3 + 2);
-        int gpsH    = Px(OverlayBtnDp * 2 + 1);
-
-        bool terrainVis = _showTerrainControl;
-        bool navVis = _showNavControls;
-        bool gpsVis = _showGpsControl;
-
-        // Terrain sits at index 0 (top of the column), then navigation, then GPS, then
-        // attribution — each control offset by the visible controls stacked above it.
-        int StackOffset(MapControlCorner c, int idx)
+        Size Room(MapControlCorner c)
         {
-            int off = 0;
-            if (idx > 0 && terrainVis && _terrainCorner == c) off += terrainH + gap;
-            if (idx > 1 && navVis && _navCorner == c) off += navH + gap;
-            if (idx > 2 && gpsVis && _gpsCorner == c) off += gpsH + gap;
-            return off;
+            if (!_cornerColumns.TryGetValue(c, out var col) || col.Width <= 0 || col.Height <= 0) return Size.Zero;
+            return new Size(col.Width / d + 2 * OverlayMarginDp, col.Height / d + 2 * OverlayMarginDp - OverlayGapDp);
         }
-
-        void Apply(Android.Views.View? v, MapControlCorner c, int off)
-        {
-            if (v?.LayoutParameters is not FrameLayout.LayoutParams lp) return;
-            bool left = c is MapControlCorner.TopLeft or MapControlCorner.BottomLeft;
-            bool top  = c is MapControlCorner.TopLeft or MapControlCorner.TopRight;
-            lp.Gravity = (left ? GravityFlags.Left : GravityFlags.Right)
-                       | (top  ? GravityFlags.Top  : GravityFlags.Bottom);
-            lp.LeftMargin   = left ? margin : 0;
-            lp.RightMargin  = left ? 0 : margin;
-            lp.TopMargin    = top  ? margin + off : 0;
-            lp.BottomMargin = top  ? 0 : margin + off;
-            v.LayoutParameters = lp;
-        }
-
-        Apply(_terrainPanel, _terrainCorner, StackOffset(_terrainCorner, 0));
-        Apply(_navPanel,   _navCorner,  StackOffset(_navCorner, 1));
-        Apply(_gpsPanel,   _gpsCorner,  StackOffset(_gpsCorner, 2));
-        Apply(_attrView,   _attrCorner, StackOffset(_attrCorner, 3));
-        Apply(_attrButton, _attrCorner, StackOffset(_attrCorner, 3));
+        var insets = new MapControlInsets(Room(MapControlCorner.TopLeft), Room(MapControlCorner.TopRight),
+                                          Room(MapControlCorner.BottomLeft), Room(MapControlCorner.BottomRight));
+        if (insets == _controlInsets) return;
+        _controlInsets = insets;
+        OnControlInsetsChanged?.Invoke(insets);
     }
 
     // -- Surface / texture lifecycle ------------------------------------------

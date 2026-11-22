@@ -2,11 +2,13 @@
 
 ## master
 ### ✨ Features and improvements
+- **Controls of your own, stacked with the built-in ones** — `MapLibreMap.AddControl(view, corner)` puts any MAUI view on the map as a control, as maplibre-gl-js's `addControl` does: it stacks in its corner after the built-in controls (terrain, navigation, GPS, attribution), the first nearest the corner, later ones down from a top corner or up from a bottom one, each control its own measured size, a hidden one taking no room. `RemoveControl` takes it off and `Controls` lists them; a control takes the map's `BindingContext`. `ControlInsets` (with `ControlInsetsChanged`) gives the room the controls take in each corner, for overlays of the app's own to keep clear of. Every platform stacks the controls in a column per corner now, in place of each control's fixed offset (Android and iOS estimated the panels' heights; Windows placed them by hand-set margins). The sample has a **Controls** page.
 - **Android native debug symbols for Google Play** — the `libmln-cabi.so` in the packages is stripped, so Google Play warns that an app bundle using them has native code without debug symbols, and a crash inside MapLibre shows up in Android vitals as bare addresses. Each release now attaches `MapLibreNative.Maui-<version>-android-symbols.zip` and `MapLibreNative.Maui.Vulkan-<version>-android-symbols.zip`: the same builds before stripping, one folder per ABI, ready to upload as the app's native debug symbols. The GitLab check keeps them too, under `native-out/android-<abi>-<renderer>/symbols/`. The README's Google Play section says how to use them.
 - _...Add new stuff here..._
 
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
+- **Control positions work on Windows** — `NavigationControlPosition`, `GpsControlPosition`, `TerrainControlPosition` and `AttributionControlPosition` were accepted and ignored on WinUI, where the controls sat at fixed places (top right, attribution bottom left). They now stack in the corner each names, as on Android and iOS.
 
 ## 5.0.0-pre.4
 ### ✨ Features and improvements

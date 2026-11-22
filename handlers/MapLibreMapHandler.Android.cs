@@ -4,6 +4,8 @@ using Android.Views;
 using Android.Widget;
 using Microsoft.Maui.Handlers;
 
+using Microsoft.Maui.Platform;
+
 namespace MapLibreNative.Maui.Handlers;
 
 public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, FrameLayout>
@@ -20,6 +22,7 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, FrameLayout>
         dpi *= (float)(VirtualView?.UiScale ?? 1.0);   // app-requested extra scaling (e.g. OS font scale)
         _controller = MapLibreMapFactory.Create(dpi, VirtualView?.StyleUrl);
 
+        _controller.OnControlInsetsChanged          += insets => VirtualView?.OnControlInsetsChanged(insets);
         _controller.OnMapReadyReceived              += VirtualView.OnMapReady;
         _controller.OnStyleLoadedReceived           += VirtualView.OnStyleLoaded;
         _controller.OnDidBecomeIdleReceived         += VirtualView.OnDidBecomeIdle;
@@ -74,4 +77,11 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, FrameLayout>
     public void UpdateTerrainLoadMode(TerrainLoadMode mode)               => _controller.SetTerrainLoadMode(mode);
     public void UpdateTerrainSkirtLength(TerrainSkirtLength length)       => _controller.SetTerrainSkirtLength(length);
     public void UpdateCenterClampedToGround(bool clamped)                 => _controller.SetCenterClampedToGround(clamped);
+
+    /// <summary>The app's controls as platform views, for the controller to stack in their corners.</summary>
+    public void UpdateControls(IReadOnlyList<MapControl> controls)
+    {
+        if (MauiContext is not { } context) return;
+        _controller.SetCustomControls(controls.Select(c => ((object)c.View.ToPlatform(context), c.Corner)).ToList());
+    }
 }

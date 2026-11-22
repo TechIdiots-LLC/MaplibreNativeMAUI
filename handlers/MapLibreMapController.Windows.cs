@@ -87,6 +87,17 @@ public class MapLibreMapController : IMapLibreMapController
     private WinUI.MapImageView? _mapView;
 
     // XAML overlay controls (real in-tree children of View).
+    // The controls stack in a panel per corner, gl-js style: the built-in ones first, then the app's (AddControl)
+    private const double ControlMargin = 10;   // from the map's edges
+    private const double ControlGap    = 4;    // between controls in a corner
+    private readonly Dictionary<MapControlCorner, WUXC.StackPanel> _cornerPanels = new();
+    private IReadOnlyList<(WUX.FrameworkElement View, MapControlCorner Corner)> _customControls = [];
+    private MapControlCorner _navCorner     = MapControlCorner.TopRight;
+    private MapControlCorner _gpsCorner     = MapControlCorner.TopRight;
+    private MapControlCorner _terrainCorner = MapControlCorner.TopRight;
+    private MapControlCorner _attrCorner    = MapControlCorner.BottomLeft;
+    private MapControlInsets _controlInsets = MapControlInsets.None;
+
     private WUXC.StackPanel? _navPanel;
     private WUXM.RotateTransform? _compassRotate;   // north tick on the nav d-pad
     private WUXC.StackPanel? _gpsPanel;
@@ -109,6 +120,7 @@ public class MapLibreMapController : IMapLibreMapController
 
     // ── Events ────────────────────────────────────────────────────────────────
     public event Action<Map>?                            OnMapReadyReceived;
+    public event Action<MapControlInsets>?               OnControlInsetsChanged;
     public event Action?                                 OnDidBecomeIdleReceived;
     public event Action<int>?                            OnCameraMoveStartedReceived;
     public event Action?                                 OnCameraMoveReceived;
@@ -203,49 +215,32 @@ public class MapLibreMapController : IMapLibreMapController
 
     // ── XAML overlays (nav / GPS / attribution) ────────────────────────────────
 
-    // Vertical space (px) the terrain control occupies at the top of the top-right
-    // column when shown: 30px button + 4px gap. The nav/GPS panels shift down by this.
-    private const int TerrainSlotPx = 34;
-
     private void CreateOverlays()
     {
-        int terrainSlot = _showTerrainControl ? TerrainSlotPx : 0;
-
-        // Terrain toggle — top-right, above the navigation panel (matching the common
-        // web-map convention of stacking the terrain button above navigation).
+        // Terrain toggle: above the navigation panel by default (the web-map convention)
         _terrainPanel = new WUXC.StackPanel
         {
-            HorizontalAlignment = WUX.HorizontalAlignment.Right,
-            VerticalAlignment = WUX.VerticalAlignment.Top,
-            Margin = new WUX.Thickness(0, 10, 10, 0),
             Width = 30,
             Visibility = _showTerrainControl ? WUX.Visibility.Visible : WUX.Visibility.Collapsed,
         };
         (_terrainBtn, _terrainIcon) = MakeTerrainButton(ToggleTerrainControl);
         _terrainPanel.Children.Add(_terrainBtn);
-        View.Children.Add(_terrainPanel);
 
-        // Navigation — top-right corner: rotate/pitch/compass d-pad, then zoom in/out.
+        // Navigation: rotate/pitch/compass d-pad, then zoom in/out.
         _navPanel = new WUXC.StackPanel
         {
-            HorizontalAlignment = WUX.HorizontalAlignment.Right,
-            VerticalAlignment = WUX.VerticalAlignment.Top,
-            Margin = new WUX.Thickness(0, 10 + terrainSlot, 10, 0),
             Width = 30,
+            Visibility = _showNavControls ? WUX.Visibility.Visible : WUX.Visibility.Collapsed,
         };
         _navPanel.Children.Add(BuildDpad());
         _navPanel.Children.Add(MakeDivider());
         _navPanel.Children.Add(MakeNavButton("+", () => _mapView?.ZoomIn(), new WUX.CornerRadius(0)));
         _navPanel.Children.Add(MakeDivider());
         _navPanel.Children.Add(MakeNavButton("−", () => _mapView?.ZoomOut(), new WUX.CornerRadius(0, 0, 4, 4)));
-        View.Children.Add(_navPanel);
 
-        // GPS control — top-right, stacked below the nav panel (d-pad 30 + 2 zoom 30 + 2 dividers ≈ 92).
+        // GPS control: tracking mode, then bearing mode.
         _gpsPanel = new WUXC.StackPanel
         {
-            HorizontalAlignment = WUX.HorizontalAlignment.Right,
-            VerticalAlignment = WUX.VerticalAlignment.Top,
-            Margin = new WUX.Thickness(0, 112 + terrainSlot, 10, 0),
             Width = 30,
             Visibility = _showGpsControl ? WUX.Visibility.Visible : WUX.Visibility.Collapsed,
         };
@@ -255,7 +250,6 @@ public class MapLibreMapController : IMapLibreMapController
         _gpsBottomIcon = (WUXC.TextBlock)_gpsBottomBtn.Child;
         _gpsPanel.Children.Add(_gpsTopBtn);
         _gpsPanel.Children.Add(_gpsBottomBtn);
-        View.Children.Add(_gpsPanel);
 
         // Attribution — bottom-left, collapsed ⓘ that expands on tap.
         _attrTextBlock = new WUXC.TextBlock
@@ -274,9 +268,6 @@ public class MapLibreMapController : IMapLibreMapController
             BorderThickness = new WUX.Thickness(1),
             CornerRadius = new WUX.CornerRadius(4),
             Padding = new WUX.Thickness(6, 3, 6, 3),
-            HorizontalAlignment = WUX.HorizontalAlignment.Left,
-            VerticalAlignment = WUX.VerticalAlignment.Bottom,
-            Margin = new WUX.Thickness(10, 0, 0, 10),
             Child = _attrTextBlock,
             Visibility = _showAttrControl ? WUX.Visibility.Visible : WUX.Visibility.Collapsed,
         };
@@ -288,7 +279,22 @@ public class MapLibreMapController : IMapLibreMapController
         // Swallow DoubleTapped so a fast double-click on the attribution chip doesn't leak
         // its second press (raised as DoubleTapped) through to the map behind it.
         _attrBorder.DoubleTapped += (_, e) => e.Handled = true;
-        View.Children.Add(_attrBorder);
+
+        foreach (var corner in Enum.GetValues<MapControlCorner>())
+        {
+            bool left = corner is MapControlCorner.TopLeft or MapControlCorner.BottomLeft;
+            bool top  = corner is MapControlCorner.TopLeft or MapControlCorner.TopRight;
+            var panel = new WUXC.StackPanel
+            {
+                HorizontalAlignment = left ? WUX.HorizontalAlignment.Left : WUX.HorizontalAlignment.Right,
+                VerticalAlignment   = top ? WUX.VerticalAlignment.Top : WUX.VerticalAlignment.Bottom,
+                Margin = new WUX.Thickness(ControlMargin),
+            };
+            panel.SizeChanged += (_, _) => ReportControlInsets();
+            _cornerPanels[corner] = panel;
+            View.Children.Add(panel);
+        }
+        StackControls();
 
         View.SizeChanged += (_, _) => UpdateAttributionMaxWidth();
         UpdateAttributionMaxWidth();
@@ -305,7 +311,7 @@ public class MapLibreMapController : IMapLibreMapController
     private void UpdateAttributionMaxWidth()
     {
         if (_attrTextBlock == null) return;
-        const double sideMargins = 10 + 10;   // Margin.Left + breathing room on the right
+        const double sideMargins = ControlMargin + 10;   // its corner's margin + breathing room on the other side
         const double chrome      = 2 + 12;    // BorderThickness*2 + Padding.Left+Right
         double available = View.ActualWidth - sideMargins - chrome;
         _attrTextBlock.MaxWidth = Math.Max(120, available);
@@ -1165,12 +1171,58 @@ public class MapLibreMapController : IMapLibreMapController
             _navPanel.Visibility = show ? WUX.Visibility.Visible : WUX.Visibility.Collapsed;
     }
 
-    // The in-tree XAML overlays use fixed corners (nav/GPS top-right, attribution bottom-left);
-    // per-control corner placement is not applied yet, so these setters are accepted no-ops.
-    public void SetNavigationControlPosition(MapControlCorner corner) { }
-    public void SetGpsControlPosition(MapControlCorner corner) { }
-    public void SetAttributionControlPosition(MapControlCorner corner) { }
-    public void SetTerrainControlPosition(MapControlCorner corner) { }
+    public void SetNavigationControlPosition(MapControlCorner corner) { _navCorner = corner; StackControls(); }
+    public void SetGpsControlPosition(MapControlCorner corner) { _gpsCorner = corner; StackControls(); }
+    public void SetAttributionControlPosition(MapControlCorner corner) { _attrCorner = corner; StackControls(); }
+    public void SetTerrainControlPosition(MapControlCorner corner) { _terrainCorner = corner; StackControls(); }
+
+    public void SetCustomControls(IReadOnlyList<(object PlatformView, MapControlCorner Corner)> controls)
+    {
+        _customControls = controls.Where(c => c.PlatformView is WUX.FrameworkElement)
+                                  .Select(c => ((WUX.FrameworkElement)c.PlatformView, c.Corner)).ToList();
+        StackControls();
+    }
+
+    /// <summary>
+    /// Puts every control in its corner's panel: the built-in ones (terrain, navigation, GPS, attribution), then the
+    /// app's in the order added. The first in a corner sits nearest it: a top corner's panel lists them downward, a
+    /// bottom corner's upward. Hidden controls take no room (the gap is each control's margin, not the panel's spacing).
+    /// </summary>
+    private void StackControls()
+    {
+        if (_cornerPanels.Count == 0) return;
+        foreach (var panel in _cornerPanels.Values) panel.Children.Clear();
+        var controls = new List<(WUX.FrameworkElement? View, MapControlCorner Corner)>
+        {
+            (_terrainPanel, _terrainCorner), (_navPanel, _navCorner), (_gpsPanel, _gpsCorner), (_attrBorder, _attrCorner),
+        };
+        controls.AddRange(_customControls.Select(c => ((WUX.FrameworkElement?)c.View, c.Corner)));
+        foreach (var (view, corner) in controls)
+        {
+            if (view is null) continue;
+            if (view.Parent is WUXC.Panel old) old.Children.Remove(view);
+            bool left = corner is MapControlCorner.TopLeft or MapControlCorner.BottomLeft;
+            bool top  = corner is MapControlCorner.TopLeft or MapControlCorner.TopRight;
+            view.HorizontalAlignment = left ? WUX.HorizontalAlignment.Left : WUX.HorizontalAlignment.Right;
+            view.Margin = top ? new WUX.Thickness(0, 0, 0, ControlGap) : new WUX.Thickness(0, ControlGap, 0, 0);
+            var panel = _cornerPanels[corner];
+            if (top) panel.Children.Add(view); else panel.Children.Insert(0, view);
+        }
+        ReportControlInsets();
+    }
+
+    /// <summary>The room each corner's controls take, margins in, told when it changes.</summary>
+    private void ReportControlInsets()
+    {
+        Size Room(MapControlCorner c) => _cornerPanels.TryGetValue(c, out var p) && p.ActualWidth > 0 && p.ActualHeight > 0
+            ? new Size(p.ActualWidth + 2 * ControlMargin, p.ActualHeight + 2 * ControlMargin - ControlGap)
+            : Size.Zero;
+        var insets = new MapControlInsets(Room(MapControlCorner.TopLeft), Room(MapControlCorner.TopRight),
+                                          Room(MapControlCorner.BottomLeft), Room(MapControlCorner.BottomRight));
+        if (insets == _controlInsets) return;
+        _controlInsets = insets;
+        OnControlInsetsChanged?.Invoke(insets);
+    }
 
     public void SetShowTerrainControl(bool show, string sourceId, float exaggeration)
     {
@@ -1179,11 +1231,6 @@ public class MapLibreMapController : IMapLibreMapController
         _terrainControlExaggeration = exaggeration;
         if (_terrainPanel != null)
             _terrainPanel.Visibility = show ? WUX.Visibility.Visible : WUX.Visibility.Collapsed;
-        // Reflow the nav/GPS panels so the terrain slot at the top of the column is
-        // reserved only when the control is shown.
-        int terrainSlot = show ? TerrainSlotPx : 0;
-        if (_navPanel != null) _navPanel.Margin = new WUX.Thickness(0, 10 + terrainSlot, 10, 0);
-        if (_gpsPanel != null) _gpsPanel.Margin = new WUX.Thickness(0, 112 + terrainSlot, 10, 0);
         RefreshTerrainControl();
     }
 

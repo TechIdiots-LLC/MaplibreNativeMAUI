@@ -9,6 +9,15 @@ public interface IMapLibreMapController : IMapLibreMapOptionsSink
 {
     // Events
     public event Action<Map>? OnMapReadyReceived;
+
+    /// <summary>The room the controls take in a corner of the map changed (<see cref="MapLibreMap.ControlInsets"/>).</summary>
+    public event Action<MapControlInsets>? OnControlInsetsChanged;
+
+    /// <summary>
+    /// The app's own controls (<see cref="MapLibreMap.AddControl"/>) as platform views (a FrameworkElement, an Android
+    /// View, a UIView), each with its corner, in order: stacked after the built-in controls in their corners.
+    /// </summary>
+    public void SetCustomControls(IReadOnlyList<(object PlatformView, MapControlCorner Corner)> controls);
     public event Action? OnDidBecomeIdleReceived;
     public event Action<int>? OnCameraMoveStartedReceived;
     public event Action? OnCameraMoveReceived;

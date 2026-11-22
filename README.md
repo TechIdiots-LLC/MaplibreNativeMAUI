@@ -142,7 +142,8 @@ public static class MauiProgram
 | `TerrainLoadMode` | `TerrainLoadMode` | Terrain loading budget and mesh depth: `Quality` (default), `Balanced`, `Performance` |
 | `TerrainSkirtLength` | `TerrainSkirtLength` | `Auto` (default) or `None`, to drop the tile-edge skirts over a transparent background |
 | `CenterClampedToGround` | `bool` | Let the map centre ride the terrain, as maplibre-gl-js does (default `false`) |
-| `NavigationControlPosition` / `GpsControlPosition` / `TerrainControlPosition` / `AttributionControlPosition` | `MapControlCorner` | Corner each control is anchored to |
+| `NavigationControlPosition` / `GpsControlPosition` / `TerrainControlPosition` / `AttributionControlPosition` | `MapControlCorner` | Corner each control stacks in, see [Map Controls](#map-controls) |
+| `ControlInsets` | `MapControlInsets` | Read-only room the controls take in each corner; `ControlInsetsChanged` when it changes |
 | `GpsFollowZoomMode` / `GpsFollowZoom` | `GpsFollowZoomMode` / `double` | How the GPS control picks the zoom when it starts following (default: keep the current zoom) |
 | `UiScale` | `double` | Extra multiplier on the display density, e.g. to honour the OS font scale (default `1.0`; read once when the map is created) |
 | `ItemsSource` / `ItemTemplate` | — | Data-bound overlay elements, see [Data binding](#data-binding-itemssource) |
@@ -164,6 +165,38 @@ public static class MauiProgram
 | `UserLocationUpdateCommand` | Device location has changed |
 
 ---
+
+## Map Controls
+
+The built-in controls (terrain, navigation, GPS, attribution) and controls of your own stack in the map's corners
+as in maplibre-gl-js: the first control in a corner sits nearest it, and later ones stack away from it, down from a
+top corner and up from a bottom one. The built-in controls come first, in that order, each in the corner its
+`…ControlPosition` names; turn any of them off with its `Show…` property. A hidden control takes no room.
+
+`AddControl` puts any MAUI view on the map as a control, like gl-js's `map.addControl(control, position)`:
+
+```csharp
+var layers = new Button { Text = "Layers" };
+layers.Clicked += (_, _) => ShowLayerPicker();
+Map.AddControl(layers, MapControlCorner.TopLeft);   // first in the top-left corner
+Map.AddControl(new Button { Text = "★" });          // top right, below the built-in controls
+Map.RemoveControl(layers);
+```
+
+A control takes the map's `BindingContext`, so bindings in it work as in the page. Adding a control again moves it
+to the end of its corner. `Controls` lists them.
+
+For views of your own laid over the map that aren't controls (a banner, a panel), `ControlInsets` gives the room
+the controls take in each corner, margins included, and `ControlInsetsChanged` tells when a control is added,
+removed, shown, hidden or resized:
+
+```csharp
+Map.ControlInsetsChanged += (_, _) =>
+    Banner.Margin = new Thickness(Map.ControlInsets.TopLeft.Width, 8, Map.ControlInsets.TopRight.Width, 0);
+```
+
+The sample's **Controls** page shows controls in three corners, a button that moves the GPS control round them, one
+that hides the built-in controls, and the insets.
 
 ## Sources
 

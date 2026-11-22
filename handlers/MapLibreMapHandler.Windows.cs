@@ -7,6 +7,8 @@ using Microsoft.UI.Xaml.Input;
 using WinRT.Interop;
 using Windows.System;
 
+using Microsoft.Maui.Platform;
+
 namespace MapLibreNative.Maui.Handlers;
 
 public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.Xaml.Controls.Grid>
@@ -84,6 +86,7 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
         });
         _controller.UiScale = (float)(VirtualView?.UiScale ?? 1.0);   // read before Init creates the view
 
+        _controller.OnControlInsetsChanged          += insets => VirtualView?.OnControlInsetsChanged(insets);
         _controller.OnMapReadyReceived               += VirtualView.OnMapReady;
         _controller.OnStyleLoadedReceived            += VirtualView.OnStyleLoaded;
         _controller.OnDidBecomeIdleReceived          += VirtualView.OnDidBecomeIdle;
@@ -209,6 +212,12 @@ public partial class MapLibreMapHandler : ViewHandler<MapLibreMap, Microsoft.UI.
 
     private static float GetDpiForWindow(Microsoft.UI.Xaml.Window window)
         => (float)(window.Content?.XamlRoot?.RasterizationScale ?? 1.0);
+
+    /// <summary>The app's controls as platform views, for the controller to stack in their corners.</summary>
+    public void UpdateControls(IReadOnlyList<MapControl> controls)
+    {
+        if (MauiContext is not { } context) return;
+        _controller.SetCustomControls(controls.Select(c => ((object)c.View.ToPlatform(context), c.Corner)).ToList());
+    }
 }
 #endif
-
