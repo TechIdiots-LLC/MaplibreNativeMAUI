@@ -43,9 +43,9 @@ The `mln-cabi` native library is compiled per-platform:
 | Windows | OpenGL (WGL) | `native-windows.yml` |
 | Windows | Vulkan | `native-windows-vulkan.yml` |
 
-The workflows above (in `.github/workflows/`) build the releases. The primary repository is on
-GitLab and is mirrored here; its `.gitlab-ci.yml` runs the same native and .NET builds as checks
-on merge requests, from scripts in `.gitlab/scripts/` that also run locally
+The workflows above (in `.github/workflows/`) build the releases. This GitHub repository is the
+primary one; `mirror-gitlab.yml` pushes `main` and the tags to a GitLab copy, whose `.gitlab-ci.yml`
+runs the same native and .NET builds as checks, from scripts in `.gitlab/scripts/` that also run locally
 (`Build-NativeWindows.ps1`, `build-native-android.sh`, `build-native-apple.sh`). It does not
 build the Apple Vulkan (MoltenVK) variant yet.
 
