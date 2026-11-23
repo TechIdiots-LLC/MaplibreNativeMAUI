@@ -2,12 +2,19 @@
 
 ## master
 ### ✨ Features and improvements
-- **`AttributionLinksEnabled`: show the attribution without opening a browser** ([#37](https://github.com/TechIdiots-LLC/MaplibreNativeMAUI/issues/37)) — tapping a link in the attribution opens it in the browser on Android and iOS/macCatalyst, which a kiosk app that must stay in the foreground cannot allow. Set `AttributionLinksEnabled="False"` on `MapLibreMap`, or on the WPF `MlnMapImage`, and the attribution is still shown, as the data licences require, but as plain text that opens nothing. On iOS the text is then not selectable either, so its selection menu's "Search Web" cannot open Safari. Default `true`. The WinUI and WPF banners, which showed the attribution as plain text, now have clickable links too, opened in the default browser, so the option means the same on every platform.
 - _...Add new stuff here..._
 
 ### 🐞 Bug fixes
-- **Attribution text lost its spaces, or showed `&copy;`** — each platform stripped the attribution HTML in its own way. Android and iOS/macCatalyst trimmed every piece of text around a link, so `&copy; <a …>OpenStreetMap</a> contributors` read `©OpenStreetMapcontributors`. WPF never decoded entities, so OpenFreeMap's `&copy; OpenMapTiles` showed as written. WinUI decoded only a short list. All four now share one parser in the bindings, `MlnAttribution.Parse` (and `ToPlainText`), which keeps the spaces, decodes every HTML entity and makes only http(s) links into links.
 - _...Add new stuff here..._
+
+## 5.0.0-pre.6
+### ✨ Features and improvements
+- **`AttributionLinksEnabled`: show the attribution without opening a browser** ([#37](https://github.com/TechIdiots-LLC/MaplibreNativeMAUI/issues/37)) — tapping a link in the attribution opens it in the browser on Android and iOS/macCatalyst, which a kiosk app that must stay in the foreground cannot allow. Set `AttributionLinksEnabled="False"` on `MapLibreMap`, or on the WPF `MlnMapImage`, and the attribution is still shown, as the data licences require, but as plain text that opens nothing. On iOS the text is then not selectable either, so its selection menu's "Search Web" cannot open Safari. Default `true`. The WinUI and WPF banners, which showed the attribution as plain text, now have clickable links too, opened in the default browser, so the option means the same on every platform.
+
+### 🐞 Bug fixes
+
+- Add AttributionLinksEnabled, clickable attribution links on Windows, and fix the attribution text ([#40](https://github.com/TechIdiots-LLC/MaplibreNativeMAUI/pull/40)) (@acalcutt)
+- **Attribution text lost its spaces, or showed `&copy;`** — each platform stripped the attribution HTML in its own way. Android and iOS/macCatalyst trimmed every piece of text around a link, so `&copy; <a …>OpenStreetMap</a> contributors` read `©OpenStreetMapcontributors`. WPF never decoded entities, so OpenFreeMap's `&copy; OpenMapTiles` showed as written. WinUI decoded only a short list. All four now share one parser in the bindings, `MlnAttribution.Parse` (and `ToPlainText`), which keeps the spaces, decodes every HTML entity and makes only http(s) links into links.
 
 ## 5.0.0-pre.5
 ### ✨ Features and improvements
