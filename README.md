@@ -137,6 +137,7 @@ public static class MauiProgram
 | `ShowGpsControl` | `bool` | Show the GPS tracking control overlay (default `true`) |
 | `ShowAttributionControl` | `bool` | Show the attribution overlay (default `true`) |
 | `CustomAttribution` | `string` | Extra attribution text appended after source-derived attributions |
+| `AttributionLinksEnabled` | `bool` | Whether the attribution's links open the browser (default `true`); `false` shows them as plain text, e.g. for a kiosk |
 | `Attributions` | `IReadOnlyList<string>` | Read-only attributions in force (sources', MapLibre's, `CustomAttribution`), HTML; `AttributionsChanged` when they change |
 | `ShowTerrainControl` | `bool` | Show the 3D-terrain toggle button (default `false`), see [3D Terrain](#3d-terrain) |
 | `TerrainControlSourceId` / `TerrainControlExaggeration` | `string` / `float` | The raster-dem source the terrain button toggles, and the exaggeration it applies |
@@ -732,6 +733,9 @@ controls are real WPF children — no `HwndHost`, no floating `Popup`s, correct 
 input via normal WPF events. It supports the same camera, source, layer, and query operations as the
 MAUI handler. See `sample/WpfExample` for a full working example, and
 [docs/design/in-tree-map-surface.md](docs/design/in-tree-map-surface.md) for the design.
+
+The attribution's links open in the default browser when clicked. Set
+`AttributionLinksEnabled="False"` to show the attribution as plain text instead, e.g. on a kiosk.
 
 ---
 

@@ -99,6 +99,23 @@ public partial class MlnMapImage : Grid
             }));
 
     /// <summary>
+    /// Whether the attribution's links can be clicked. Default <c>true</c>: a click opens the
+    /// link in the browser. Set <c>false</c> to show the attribution as plain text that opens
+    /// nothing, e.g. on a kiosk where the app must stay in the foreground.
+    /// </summary>
+    public bool AttributionLinksEnabled
+    {
+        get => (bool)GetValue(AttributionLinksEnabledProperty);
+        set => SetValue(AttributionLinksEnabledProperty, value);
+    }
+    public static readonly DependencyProperty AttributionLinksEnabledProperty =
+        DependencyProperty.Register(nameof(AttributionLinksEnabled), typeof(bool), typeof(MlnMapImage),
+            new PropertyMetadata(true, (d, _) =>
+            {
+                if (d is MlnMapImage m && !m._attrCollapsed) m.FillAttributionText();
+            }));
+
+    /// <summary>
     /// Show an on-map 3D-terrain toggle button (like the navigation and GPS controls).
     /// Clicking it toggles terrain on <see cref="TerrainControlSourceId"/>: enable if off,
     /// disable if on — mirroring maplibre-gl-js's TerrainControl. The raster-dem source must
@@ -1748,6 +1765,7 @@ public partial class MlnMapImage : Grid
     private Border? _attrBorder;
     private TextBlock? _attrTextBlock;
     private string _attrText = string.Empty;
+    private IReadOnlyList<MlnAttributionSegment> _attrSegments = Array.Empty<MlnAttributionSegment>();
     private bool _attrCollapsed = true;
     private bool _attrLoaded;           // true once real source attributions have been fetched
     private string? _appliedAttribution; // content currently shown — banner re-expands only when this changes
@@ -1802,15 +1820,8 @@ public partial class MlnMapImage : Grid
     {
         if (_style == null || _attrTextBlock == null || _attrBorder == null) return;
         var parts = MlnStyle.EnsureMapLibreAttribution(_style.GetSourceAttributions());
-        var sb = new System.Text.StringBuilder();
-        foreach (var part in parts)
-        {
-            var text = StripHtml(part);
-            if (text.Length == 0) continue;
-            if (sb.Length > 0) sb.Append(" | ");
-            sb.Append(text);
-        }
-        _attrText = sb.ToString();
+        _attrSegments = MlnAttribution.Parse(parts);
+        _attrText     = string.Concat(_attrSegments.Select(s => s.Text));
         if (_attrText.Length > 0 && ShowAttributionControl)
         {
             _attrLoaded = true;
@@ -1838,7 +1849,7 @@ public partial class MlnMapImage : Grid
         // A deliberate click on the collapsed ⓘ chip gets a longer read window than
         // the standard auto-shown flash — matching the Android/iOS pinned behaviour.
         _attrCollapsed = false;
-        _attrTextBlock.Text = _attrText;
+        FillAttributionText();
         _attrCollapseTimer?.Stop();
         _attrCollapseTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(pinned ? 10 : 5) };
         _attrCollapseTimer.Tick += (_, _) => CollapseAttribution();
@@ -1854,18 +1865,42 @@ public partial class MlnMapImage : Grid
         _attrTextBlock.Text = "ⓘ";
     }
 
-    private static string StripHtml(string html)
+    /// <summary>Fills the expanded banner from the parsed runs, with a link for each link.</summary>
+    private void FillAttributionText()
     {
-        if (string.IsNullOrEmpty(html)) return string.Empty;
-        var sb = new System.Text.StringBuilder(html.Length);
-        bool inTag = false;
-        foreach (char c in html)
+        if (_attrTextBlock == null) return;
+        var inlines = _attrTextBlock.Inlines;
+        inlines.Clear();
+        foreach (var seg in _attrSegments)
         {
-            if (c == '<') inTag = true;
-            else if (c == '>') inTag = false;
-            else if (!inTag) sb.Append(c);
+            var run = new System.Windows.Documents.Run(seg.Text);
+            if (AttributionLinksEnabled && seg.Link is { } uri)
+            {
+                var link = new System.Windows.Documents.Hyperlink(run);
+                link.Click += (_, _) => OpenInBrowser(uri);
+                inlines.Add(link);
+            }
+            else
+            {
+                inlines.Add(run);
+            }
         }
-        return sb.ToString().Trim();
+    }
+
+    /// <summary>Opens an attribution link in the default browser.</summary>
+    private static void OpenInBrowser(Uri uri)
+    {
+        // Only http(s) links reach here (MlnAttribution.Parse drops the rest). A WPF
+        // Hyperlink navigates on its own only inside a NavigationWindow or Frame.
+        try
+        {
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MlnMapImage] could not open {uri}: {ex.Message}");
+        }
     }
 
     private void Teardown()
